@@ -89,6 +89,20 @@ def _node_sort_key(node: dict[str, Any]) -> tuple[str, str]:
     return str(name).casefold(), str(node.get("node_id") or "")
 
 
+def _node_sidebar_sort_key(node: dict[str, Any]) -> tuple[bool, float, str, str]:
+    last_heard = node.get("last_heard")
+    recency = 0.0
+    try:
+        if isinstance(last_heard, (int, float)):
+            recency = float(last_heard)
+        elif last_heard:
+            recency = datetime.fromisoformat(str(last_heard)).timestamp()
+    except (ValueError, TypeError, OSError):
+        pass
+    name, node_id = _node_sort_key(node)
+    return not bool(node.get("is_local")), -recency, name, node_id
+
+
 class NodePickerItem(ListItem):
     def __init__(self, node: dict[str, Any]):
         self.node = node
@@ -112,6 +126,31 @@ class NodePickerItem(ListItem):
         if self.node.get("transport") not in (None, "", "Ukjend"):
             details.append(str(self.node["transport"]))
         text.append("  " + "  •  ".join(details), style="dim")
+        return text
+
+
+class NodeSidebarItem(ListItem):
+    def __init__(self, node: dict[str, Any]):
+        self.node = node
+        self.node_id = str(node["node_id"])
+        super().__init__(Static(self._render_label(), classes="node-sidebar-label"))
+
+    def _render_label(self) -> Text:
+        name = self.node.get("long_name") or self.node.get("short_name") or "Ukjend node"
+        text = Text()
+        text.append("◆ " if self.node.get("is_local") else "● ", style="green")
+        text.append(str(name), style="bold")
+        text.append(f" [{self.node_id[-4:]}]", style="cyan")
+        text.append("\n  ")
+        details = [f"sist {_time(self.node.get('last_heard'))}"]
+        if self.node.get("hops_away") is not None:
+            details.append(f"hopp {self.node['hops_away']}")
+        if self.node.get("battery_level") is not None:
+            details.append(_battery(self.node["battery_level"]))
+        transport = self.node.get("transport")
+        if transport not in (None, "", "Ukjend"):
+            details.append(str(transport))
+        text.append("  •  ".join(details), style="dim")
         return text
 
 
@@ -331,9 +370,41 @@ class MeshPiTUI(App[None]):
     }
 
     #node-details {
-        height: 1fr;
+        height: 17;
+        min-height: 12;
         padding: 1 2;
         color: #c2c7c9;
+        border-bottom: solid #31393c;
+        overflow-y: auto;
+    }
+
+    #node-list-title {
+        height: 2;
+    }
+
+    #node-list {
+        height: 1fr;
+        background: $panel;
+        border: none;
+        padding: 0;
+        scrollbar-color: $accent;
+        scrollbar-background: $panel;
+    }
+
+    NodeSidebarItem {
+        height: 3;
+        padding: 0 1;
+        color: #cbd0d2;
+    }
+
+    NodeSidebarItem.--highlight {
+        background: #245c2a;
+        color: white;
+    }
+
+    .node-sidebar-label {
+        width: 1fr;
+        height: 2;
     }
 
     #key-bar {
@@ -412,6 +483,7 @@ class MeshPiTUI(App[None]):
         Binding("ctrl+l", "focus_input", "Skriv melding"),
         Binding("ctrl+d", "new_dm", "Ny DM"),
         Binding("f2", "focus_conversations", "Samtalar"),
+        Binding("f3", "focus_nodes", "Nodar"),
         Binding("ctrl+r", "refresh", "Oppdater"),
         Binding("ctrl+q", "quit", "Avslutt"),
     ]
@@ -439,6 +511,8 @@ class MeshPiTUI(App[None]):
         self._watch_socket: socket.socket | None = None
         self._watch_stop = threading.Event()
         self._rebuilding_list = False
+        self._rebuilding_nodes = False
+        self.selected_node_id: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Static("", id="status-bar")
@@ -466,9 +540,11 @@ class MeshPiTUI(App[None]):
             with Vertical(id="node-panel"):
                 yield Static("Nodedetaljar", classes="panel-title")
                 yield Static("Ingen node vald", id="node-details")
+                yield Static("Nodar", id="node-list-title", classes="panel-title")
+                yield ListView(id="node-list")
         yield Static(
             " Tab neste  Shift+Tab førre  Ctrl+L skriv  Ctrl+D ny DM  "
-            "F2 samtalar  Ctrl+R oppdater  Ctrl+Q avslutt ",
+            "F2 samtalar  F3 nodar  Ctrl+R oppdater  Ctrl+Q avslutt ",
             id="key-bar",
         )
 
@@ -538,7 +614,7 @@ class MeshPiTUI(App[None]):
         nodes: list[dict[str, Any]],
     ) -> None:
         self.status_data = status
-        self.nodes = {str(node["node_id"]): node for node in nodes}
+        await self._apply_nodes(nodes)
         await self._apply_conversations(conversations)
         self._update_status_bar()
         self.select_conversation(self.current_conversation)
@@ -643,6 +719,26 @@ class MeshPiTUI(App[None]):
         )
         self._rebuilding_list = False
 
+    async def _apply_nodes(self, nodes: list[dict[str, Any]]) -> None:
+        self.nodes = {str(node["node_id"]): node for node in nodes}
+        ordered = sorted(self.nodes.values(), key=_node_sidebar_sort_key)
+        preferred = self.selected_node_id
+        if preferred not in self.nodes:
+            preferred = (
+                self.current_conversation
+                if self.current_conversation != "public"
+                else str(self.status_data.get("local_node_id") or "")
+            )
+        node_list = self.query_one("#node-list", ListView)
+        self._rebuilding_nodes = True
+        await node_list.clear()
+        await node_list.extend(NodeSidebarItem(node) for node in ordered)
+        ids = [str(node["node_id"]) for node in ordered]
+        node_list.index = ids.index(preferred) if preferred in ids else (0 if ids else None)
+        self.selected_node_id = ids[node_list.index] if node_list.index is not None else None
+        self.query_one("#node-list-title", Static).update(f"Nodar · {len(ordered)}")
+        self._rebuilding_nodes = False
+
     @on(ListView.Highlighted, "#conversation-list")
     def conversation_highlighted(self, event: ListView.Highlighted) -> None:
         if self._rebuilding_list or not isinstance(event.item, ConversationItem):
@@ -654,6 +750,22 @@ class MeshPiTUI(App[None]):
         if isinstance(event.item, ConversationItem):
             self.select_conversation(event.item.conversation_id)
             self.query_one("#message-input", Input).focus()
+
+    @on(ListView.Highlighted, "#node-list")
+    def node_highlighted(self, event: ListView.Highlighted) -> None:
+        if self._rebuilding_nodes or not isinstance(event.item, NodeSidebarItem):
+            return
+        self.selected_node_id = event.item.node_id
+        self._show_node(event.item.node)
+
+    @on(ListView.Selected, "#node-list")
+    def node_selected(self, event: ListView.Selected) -> None:
+        if not isinstance(event.item, NodeSidebarItem):
+            return
+        if event.item.node.get("is_local"):
+            self.notify("Dette er den lokale noden", timeout=3)
+            return
+        self._open_node_dm(event.item.node_id)
 
     def select_conversation(self, conversation: str) -> None:
         self.current_conversation = conversation
@@ -727,6 +839,8 @@ class MeshPiTUI(App[None]):
             log.write(self._render_message(message), scroll_end=False)
         log.scroll_end(animate=False)
         self._show_node(node)
+        if node:
+            self._select_sidebar_node(str(node.get("node_id") or ""))
         for item in self.conversations:
             if _conversation_id(item) == conversation:
                 item["unread"] = 0
@@ -782,8 +896,8 @@ class MeshPiTUI(App[None]):
         battery = node.get("battery_level")
         bar = ""
         if isinstance(battery, int) and 0 < battery <= 100:
-            filled = round(battery / 10)
-            bar = "  " + "█" * filled + "░" * (10 - filled)
+            filled = round(battery / 20)
+            bar = "  " + "█" * filled + "░" * (5 - filled)
         can_dm = node.get("can_receive_dm")
         dm = "ja" if can_dm is True else "nei" if can_dm is False else "ukjend"
         rows = (
@@ -806,6 +920,16 @@ class MeshPiTUI(App[None]):
             text.append(f"{label:16}", style="dim")
             text.append(f"{value if value not in (None, '') else '–'}\n")
         panel.update(text)
+
+    def _select_sidebar_node(self, node_id: str) -> None:
+        if not node_id or node_id not in self.nodes:
+            return
+        node_list = self.query_one("#node-list", ListView)
+        for index, item in enumerate(node_list.children):
+            if isinstance(item, NodeSidebarItem) and item.node_id == node_id:
+                self.selected_node_id = node_id
+                node_list.index = index
+                return
 
     @on(Input.Submitted, "#message-input")
     def message_submitted(self, event: Input.Submitted) -> None:
@@ -917,7 +1041,7 @@ class MeshPiTUI(App[None]):
         conversations: list[dict[str, Any]],
         nodes: list[dict[str, Any]],
     ) -> None:
-        self.nodes = {str(node["node_id"]): node for node in nodes}
+        await self._apply_nodes(nodes)
         await self._apply_conversations(conversations)
         self._update_status_bar()
 
@@ -944,12 +1068,22 @@ class MeshPiTUI(App[None]):
     def action_focus_conversations(self) -> None:
         self.query_one("#conversation-list", ListView).focus()
 
+    def action_focus_nodes(self) -> None:
+        node_panel = self.query_one("#node-panel", Vertical)
+        if not node_panel.display:
+            self.action_new_dm()
+            return
+        self.query_one("#node-list", ListView).focus()
+
     def action_new_dm(self) -> None:
         self.push_screen(NewDMScreen(list(self.nodes.values())), self._open_new_dm)
 
     def _open_new_dm(self, node_id: str | None) -> None:
         if node_id is None:
             return
+        self._open_node_dm(node_id)
+
+    def _open_node_dm(self, node_id: str) -> None:
         self.current_conversation = node_id
         self.run_worker(
             self._refresh_lists_worker,

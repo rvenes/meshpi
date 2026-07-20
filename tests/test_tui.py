@@ -1,9 +1,15 @@
 import asyncio
 
-from textual.widgets import RichLog
+from textual.widgets import ListView, RichLog
 
 from meshpi.config import Settings
-from meshpi.tui import LiveEvent, MeshPiTUI, NewDMScreen, NodePickerItem
+from meshpi.tui import (
+    LiveEvent,
+    MeshPiTUI,
+    NewDMScreen,
+    NodePickerItem,
+    NodeSidebarItem,
+)
 
 
 class FakeBackend:
@@ -193,6 +199,30 @@ def test_tui_hides_node_panel_in_narrow_terminal():
             await pilot.pause(0.3)
             assert app.query_one("#node-panel").display is False
             assert app.query_one("#conversation-panel").display is True
+
+    run_scenario(scenario)
+
+
+def test_sidebar_lists_nodes_and_opens_selected_node_as_dm():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            items = list(app.query(NodeSidebarItem))
+            assert len(items) == 3
+            assert items[0].node["is_local"] is True
+
+            await pilot.press("f3")
+            node_list = app.query_one("#node-list", ListView)
+            assert node_list.has_focus
+            node_list.index = 2
+            await pilot.pause(0.1)
+            assert app.selected_node_id == "!2f779c48"
+
+            await pilot.press("enter")
+            await pilot.pause(0.3)
+            assert app.current_conversation == "!2f779c48"
 
     run_scenario(scenario)
 

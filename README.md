@@ -138,11 +138,12 @@ tilgangsrettar på ein føreseieleg måte.
 
 ## Fullskjermsgrensesnitt
 
-`meshpi` eller `meshpi tui` opnar samtalelista, den aktive samtalen og
-nodedetaljar i same terminalvindauge. Nye meldingar kjem inn automatisk, og den
-aktive samtalen rullar ned til den nyaste meldinga. Ein DM som kjem til ei anna
-samtale, gir eit synleg varsel. «Ny DM» viser heile nodelista frå
-Meshtastic-noden og kan filtrerast på namn eller node-ID.
+`meshpi` eller `meshpi tui` opnar samtalelista, den aktive samtalen,
+nodedetaljar og ei rullbar nodeliste i same terminalvindauge. Nye meldingar kjem
+inn automatisk, og den aktive samtalen rullar ned til den nyaste meldinga. Ein
+DM som kjem til ei anna samtale, gir eit synleg varsel. Marker ein node i
+høgrepanelet for å vise detaljane, og trykk Enter for å opne DM. «Ny DM» viser
+òg heile nodelista og kan filtrerast på namn eller node-ID.
 
 Tastane i grensesnittet er:
 
@@ -152,6 +153,7 @@ Ctrl+L             flytt markøren til meldingsfeltet
 Enter              send teksten i meldingsfeltet
 Ctrl+D             søk i nodelista og opne ein ny DM
 F2                 flytt markøren til samtalelista
+F3                 flytt markøren til nodelista
 Ctrl+R             oppdater samtalar og nodar
 Ctrl+Q             avslutt
 ```
