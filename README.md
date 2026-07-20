@@ -85,7 +85,8 @@ meshpi conversations
 `meshpi` eller `meshpi tui` opnar samtalelista, den aktive samtalen og
 nodedetaljar i same terminalvindauge. Nye meldingar kjem inn automatisk, og den
 aktive samtalen rullar ned til den nyaste meldinga. Ein DM som kjem til ei anna
-samtale, gir eit synleg varsel.
+samtale, gir eit synleg varsel. «Ny DM» viser heile nodelista frå
+Meshtastic-noden og kan filtrerast på namn eller node-ID.
 
 Tastane i grensesnittet er:
 
@@ -93,7 +94,7 @@ Tastane i grensesnittet er:
 Tab / Shift+Tab    neste / førre samtale
 Ctrl+L             flytt markøren til meldingsfeltet
 Enter              send teksten i meldingsfeltet
-Ctrl+D             opne ein ny DM med node-ID
+Ctrl+D             søk i nodelista og opne ein ny DM
 F2                 flytt markøren til samtalelista
 Ctrl+R             oppdater samtalar og nodar
 Ctrl+Q             avslutt
@@ -101,6 +102,10 @@ Ctrl+Q             avslutt
 
 Grensesnittet tilpassar seg terminalbreidda. Nodedetaljane blir skjulte først
 dersom vindauget er smalt.
+
+I nodeveljaren kan du skrive for å filtrere lista, bruke `↑`/`↓` og trykkje
+Enter. Den lokale noden blir ikkje vist som mottakar. Dersom mottakaren ikkje
+finst i lista, kan du skrive den fulle node-ID-en og trykkje Enter.
 
 ## Kommandoar
 

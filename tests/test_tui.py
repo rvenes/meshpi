@@ -3,7 +3,7 @@ import asyncio
 from textual.widgets import RichLog
 
 from meshpi.config import Settings
-from meshpi.tui import LiveEvent, MeshPiTUI
+from meshpi.tui import LiveEvent, MeshPiTUI, NewDMScreen, NodePickerItem
 
 
 class FakeBackend:
@@ -49,6 +49,17 @@ class FakeBackend:
                 "snr": 10.5,
                 "rssi": -33,
                 "hops_away": 0,
+                "transport": "RF",
+                "can_receive_dm": True,
+                "is_local": False,
+            },
+            {
+                "node_id": "!2f779c48",
+                "short_name": "9c48",
+                "long_name": "VenesSol-A 9c48",
+                "battery_level": 99,
+                "snr": 8.5,
+                "hops_away": 1,
                 "transport": "RF",
                 "can_receive_dm": True,
                 "is_local": False,
@@ -182,5 +193,50 @@ def test_tui_hides_node_panel_in_narrow_terminal():
             await pilot.pause(0.3)
             assert app.query_one("#node-panel").display is False
             assert app.query_one("#conversation-panel").display is True
+
+    run_scenario(scenario)
+
+
+def test_new_dm_picker_lists_and_filters_remote_nodes():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("ctrl+d")
+            await pilot.pause(0.2)
+            assert isinstance(app.screen, NewDMScreen)
+            assert len(app.screen.query(NodePickerItem)) == 2
+
+            await pilot.press(*"reserve")
+            await pilot.pause(0.2)
+            assert len(app.screen.query(NodePickerItem)) == 1
+            await pilot.press("enter")
+            await pilot.pause(0.3)
+            assert app.current_conversation == "!710365c8"
+
+    run_scenario(scenario)
+
+
+def test_tui_closes_socket_safely_if_watch_worker_clears_reference():
+    class RacingSocket:
+        def __init__(self, app):
+            self.app = app
+            self.closed = False
+
+        def shutdown(self, _how):
+            self.app._watch_socket = None
+
+        def close(self):
+            self.closed = True
+
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
+        racing_socket = RacingSocket(app)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.pause(0.2)
+            app._watch_socket = racing_socket
+        assert racing_socket.closed is True
 
     run_scenario(scenario)

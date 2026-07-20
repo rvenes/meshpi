@@ -84,25 +84,133 @@ class ConversationItem(ListItem):
         return text
 
 
+def _node_sort_key(node: dict[str, Any]) -> tuple[str, str]:
+    name = node.get("long_name") or node.get("short_name") or node.get("node_id") or ""
+    return str(name).casefold(), str(node.get("node_id") or "")
+
+
+class NodePickerItem(ListItem):
+    def __init__(self, node: dict[str, Any]):
+        self.node = node
+        self.node_id = str(node["node_id"])
+        super().__init__(Static(self._render_label(), classes="node-picker-label"))
+
+    def _render_label(self) -> Text:
+        name = self.node.get("long_name") or self.node.get("short_name") or "Ukjend node"
+        short_name = self.node.get("short_name")
+        text = Text()
+        text.append(str(name), style="bold")
+        if short_name and short_name != name:
+            text.append(f"  {short_name}", style="dim")
+        text.append(f"  {self.node_id}", style="cyan")
+        text.append("\n")
+        details = [f"sist sett {_time(self.node.get('last_heard'))}"]
+        if self.node.get("hops_away") is not None:
+            details.append(f"hopp {self.node['hops_away']}")
+        if self.node.get("battery_level") is not None:
+            details.append(f"batteri {_battery(self.node['battery_level'])}")
+        if self.node.get("transport") not in (None, "", "Ukjend"):
+            details.append(str(self.node["transport"]))
+        text.append("  " + "  •  ".join(details), style="dim")
+        return text
+
+
 class NewDMScreen(ModalScreen[str | None]):
-    BINDINGS = [Binding("escape", "cancel", "Avbryt")]
+    BINDINGS = [
+        Binding("escape", "cancel", "Avbryt", priority=True),
+        Binding("down", "next_node", "Neste node", priority=True),
+        Binding("up", "previous_node", "Førre node", priority=True),
+    ]
+
+    def __init__(self, nodes: list[dict[str, Any]]):
+        super().__init__()
+        self.all_nodes = sorted(
+            (node for node in nodes if not node.get("is_local")),
+            key=_node_sort_key,
+        )
+        self.filtered_nodes = list(self.all_nodes)
 
     def compose(self) -> ComposeResult:
         with Container(id="new-dm-dialog"):
             yield Label("Ny direkte samtale", id="new-dm-title")
-            yield Label("Skriv full node-ID, med eller utan !")
-            yield Input(placeholder="710365c8", id="new-dm-input")
-            yield Static("Enter: opne   Esc: avbryt", id="new-dm-help")
+            yield Input(
+                placeholder="Søk på namn eller node-ID",
+                id="new-dm-input",
+            )
+            yield Static("", id="new-dm-count")
+            with ListView(id="node-picker-list"):
+                yield from (NodePickerItem(node) for node in self.filtered_nodes)
+            yield Static(
+                "Skriv: søk   ↑/↓: vel   Enter: opne   Esc: avbryt",
+                id="new-dm-help",
+            )
 
     def on_mount(self) -> None:
+        self._update_count()
+        node_list = self.query_one("#node-picker-list", ListView)
+        if self.filtered_nodes:
+            node_list.index = 0
         self.query_one("#new-dm-input", Input).focus()
+
+    def _update_count(self) -> None:
+        total = len(self.all_nodes)
+        shown = len(self.filtered_nodes)
+        label = f"{shown} av {total} nodar" if shown != total else f"{total} nodar"
+        if not shown:
+            label += " – skriv full node-ID for ein ukjend node"
+        self.query_one("#new-dm-count", Static).update(label)
+
+    @on(Input.Changed, "#new-dm-input")
+    async def filter_nodes(self, event: Input.Changed) -> None:
+        query = event.value.strip().casefold().removeprefix("!")
+        self.filtered_nodes = [
+            node
+            for node in self.all_nodes
+            if not query
+            or query
+            in " ".join(
+                str(node.get(field) or "")
+                for field in ("long_name", "short_name", "node_id")
+            )
+            .casefold()
+            .replace("!", "")
+        ]
+        node_list = self.query_one("#node-picker-list", ListView)
+        await node_list.clear()
+        await node_list.extend(NodePickerItem(node) for node in self.filtered_nodes)
+        node_list.index = 0 if self.filtered_nodes else None
+        self._update_count()
 
     @on(Input.Submitted, "#new-dm-input")
     def submit_node(self, event: Input.Submitted) -> None:
+        selected = self.query_one("#node-picker-list", ListView).highlighted_child
+        if isinstance(selected, NodePickerItem):
+            self.dismiss(selected.node_id)
+            return
         try:
             self.dismiss(normalize_node_id(event.value))
         except ValueError as exc:
-            self.notify(str(exc), severity="error")
+            message = "Ingen nodar passar søket" if event.value.strip() else "Vel ein node"
+            self.notify(f"{message}. {exc}", severity="error")
+
+    @on(ListView.Selected, "#node-picker-list")
+    def select_node(self, event: ListView.Selected) -> None:
+        if isinstance(event.item, NodePickerItem):
+            self.dismiss(event.item.node_id)
+
+    def _move_node(self, direction: int) -> None:
+        node_list = self.query_one("#node-picker-list", ListView)
+        count = len(self.filtered_nodes)
+        if not count:
+            return
+        current = node_list.index if node_list.index is not None else 0
+        node_list.index = (current + direction) % count
+
+    def action_next_node(self) -> None:
+        self._move_node(1)
+
+    def action_previous_node(self) -> None:
+        self._move_node(-1)
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -244,8 +352,10 @@ class MeshPiTUI(App[None]):
     }
 
     #new-dm-dialog {
-        width: 54;
-        height: 11;
+        width: 78;
+        max-width: 96%;
+        height: 32;
+        max-height: 90%;
         padding: 1 2;
         border: round $accent;
         background: $panel;
@@ -258,11 +368,39 @@ class MeshPiTUI(App[None]):
     }
 
     #new-dm-input {
-        margin-top: 1;
+        margin-top: 0;
+    }
+
+    #new-dm-count {
+        height: 1;
+        margin: 0 1;
+        color: #8d9699;
+    }
+
+    #node-picker-list {
+        height: 1fr;
+        margin: 1 0;
+        border: round #394245;
+        background: $panel;
+    }
+
+    NodePickerItem {
+        height: 3;
+        padding: 0 1;
+    }
+
+    NodePickerItem.--highlight {
+        background: #245c2a;
+        color: white;
+    }
+
+    .node-picker-label {
+        width: 1fr;
+        height: 2;
     }
 
     #new-dm-help {
-        margin-top: 1;
+        height: 1;
         color: #8d9699;
     }
 
@@ -366,11 +504,13 @@ class MeshPiTUI(App[None]):
 
     def on_unmount(self) -> None:
         self._watch_stop.set()
-        if self._watch_socket is not None:
+        watch_socket = self._watch_socket
+        self._watch_socket = None
+        if watch_socket is not None:
             with suppress(OSError):
-                self._watch_socket.shutdown(socket.SHUT_RDWR)
+                watch_socket.shutdown(socket.SHUT_RDWR)
             with suppress(OSError):
-                self._watch_socket.close()
+                watch_socket.close()
 
     def _call(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self.requester(self.settings, payload)
@@ -796,7 +936,7 @@ class MeshPiTUI(App[None]):
         self.query_one("#conversation-list", ListView).focus()
 
     def action_new_dm(self) -> None:
-        self.push_screen(NewDMScreen(), self._open_new_dm)
+        self.push_screen(NewDMScreen(list(self.nodes.values())), self._open_new_dm)
 
     def _open_new_dm(self, node_id: str | None) -> None:
         if node_id is None:

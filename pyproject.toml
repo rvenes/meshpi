@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "meshpi"
-version = "0.2.0"
+version = "0.2.1"
 description = "Ein stabil Meshtastic-klient for terminalen"
 readme = "README.md"
 requires-python = ">=3.11"
