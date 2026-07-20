@@ -1,0 +1,449 @@
+from __future__ import annotations
+
+import argparse
+import json
+import socket
+import sys
+import threading
+from contextlib import suppress
+from datetime import datetime
+from typing import Any
+
+from meshpi.config import Settings
+from meshpi.daemon import run_daemon
+from meshpi.models import normalize_node_id
+
+EXIT_ERROR = 1
+
+
+class CLIError(RuntimeError):
+    pass
+
+
+def _request(
+    settings: Settings, payload: dict[str, Any], timeout: float = 10
+) -> dict[str, Any]:
+    try:
+        with socket.create_connection(
+            (settings.ipc_host, settings.ipc_port), timeout=timeout
+        ) as sock:
+            stream = sock.makefile("rwb")
+            stream.write(
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+                + b"\n"
+            )
+            stream.flush()
+            raw = stream.readline()
+    except OSError as exc:
+        raise CLIError(
+            "Får ikkje kontakt med meshpi-tenesta. "
+            "Kontroller at ho køyrer med «systemctl status meshpi»."
+        ) from exc
+    if not raw:
+        raise CLIError("Meshpi-tenesta lukka sambandet utan svar")
+    response = json.loads(raw)
+    if not response.get("ok"):
+        raise CLIError(str(response.get("error", "Ukjend feil")))
+    return response
+
+
+def _local_time(value: str | int | None) -> str:
+    if value is None:
+        return "–"
+    try:
+        if isinstance(value, int):
+            parsed = datetime.fromtimestamp(value).astimezone()
+        else:
+            parsed = datetime.fromisoformat(value).astimezone()
+        return parsed.strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError, OSError):
+        return str(value)
+
+
+def _trim(value: Any, width: int) -> str:
+    text = "–" if value in (None, "") else str(value)
+    if len(text) <= width:
+        return text
+    return text[: max(1, width - 1)] + "…"
+
+
+def _battery(value: Any) -> str:
+    if value in (None, ""):
+        return "–"
+    if value in (0, 101, "0", "101"):
+        return "Straum"
+    return f"{value}%"
+
+
+def _format_message(message: dict[str, Any]) -> str:
+    timestamp = _local_time(message.get("timestamp"))
+    timestamp = timestamp[5:] if len(timestamp) >= 19 else timestamp
+    name = (
+        message.get("from_long_name")
+        or message.get("from_short_name")
+        or message.get("from_node")
+        or "Ukjend"
+    )
+    short_id = (message.get("from_node") or "????")[-4:]
+    transport = message.get("transport", "Ukjend")
+    direction = "→" if message.get("direction") == "ut" else "←"
+    context = "CH0" if message.get("kind") == "public" else "DM "
+    status = f" [{message['status']}]" if message.get("direction") == "ut" else ""
+    quality: list[str] = []
+    if message.get("rssi") is not None:
+        quality.append(f"RSSI {message['rssi']}")
+    if message.get("snr") is not None:
+        quality.append(f"SNR {message['snr']}")
+    if message.get("hop_start") is not None or message.get("hop_limit") is not None:
+        quality.append(
+            f"hopp {message.get('hop_start', '–')}/{message.get('hop_limit', '–')}"
+        )
+    detail = f"  ({', '.join(quality)})" if quality else ""
+    return (
+        f"{timestamp}  {context} {direction} {_trim(name, 22):22} [{short_id}] "
+        f"{transport:6}  {message.get('text', '')}{status}{detail}"
+    )
+
+
+def _print_status(data: dict[str, Any]) -> None:
+    print(f"Status:       {data.get('state', 'ukjend')}")
+    print(f"Meshtastic:   {data.get('host')}:{data.get('port')}")
+    print(f"Lokal node:   {data.get('local_node_id') or 'ikkje kjend enno'}")
+    print(f"Tilkopla frå: {_local_time(data.get('connected_since'))}")
+    if data.get("reconnect_attempt"):
+        print(f"Reconnect:    forsøk {data['reconnect_attempt']}")
+    if data.get("error"):
+        print(f"Feil:         {data['error']}")
+
+
+def _print_nodes(nodes: list[dict[str, Any]]) -> None:
+    if not nodes:
+        print("Ingen kjende nodar.")
+        return
+    print(
+        f"{' ':1} {'Namn':24} {'Kort':6} {'Node-ID':10} {'Sist sett':19} "
+        f"{'Batt':5} {'SNR':6} {'Hopp':4} {'Veg':7} {'DM':7}"
+    )
+    print("─" * 105)
+    for node in nodes:
+        marker = "*" if node.get("is_local") else " "
+        name = node.get("long_name") or node.get("short_name") or "Ukjend"
+        battery = _battery(node.get("battery_level"))
+        can_dm = node.get("can_receive_dm")
+        dm = "ja" if can_dm is True else "nei" if can_dm is False else "ukjend"
+        print(
+            f"{marker} {_trim(name, 24):24} "
+            f"{_trim(node.get('short_id'), 6):6} "
+            f"{_trim(node.get('node_id'), 10):10} "
+            f"{_local_time(node.get('last_heard')):19} "
+            f"{battery:5} {_trim(node.get('snr'), 6):6} "
+            f"{_trim(node.get('hops_away'), 4):4} "
+            f"{_trim(node.get('transport'), 7):7} {dm:7}"
+        )
+    print("\n* = lokal node")
+
+
+def _print_node(node: dict[str, Any]) -> None:
+    can_dm = node.get("can_receive_dm")
+    dm = "ja" if can_dm is True else "nei" if can_dm is False else "ukjend"
+    fields = (
+        ("Namn", node.get("long_name")),
+        ("Kortnamn", node.get("short_name")),
+        ("Node-ID", node.get("node_id")),
+        ("Kort-ID", node.get("short_id")),
+        ("Nodenummer", node.get("node_num")),
+        ("Maskinvare", node.get("hw_model")),
+        ("Rolle", node.get("role")),
+        ("Sist sett", _local_time(node.get("last_heard"))),
+        ("Batteri", _battery(node.get("battery_level"))),
+        ("Spenning", f"{node['voltage']} V" if node.get("voltage") is not None else None),
+        ("SNR", node.get("snr")),
+        ("RSSI", node.get("rssi")),
+        ("Hopp", node.get("hops_away")),
+        ("Siste transport", node.get("transport")),
+        ("Kan ta imot DM", dm),
+        ("Lokal node", "ja" if node.get("is_local") else "nei"),
+    )
+    for label, value in fields:
+        print(f"{label + ':':18} {value if value not in (None, '') else '–'}")
+    if not node.get("is_local"):
+        print(f"\nStart samtale: meshpi chat {node['node_id']}")
+
+
+def _print_conversations(conversations: list[dict[str, Any]]) -> None:
+    if not conversations:
+        print("Ingen samtalar er lagra enno.")
+        return
+    print(f"{'Samtale':28} {'Ulest':5} {'Siste melding':19}  Tekst")
+    print("─" * 90)
+    for item in conversations:
+        if item["kind"] == "public":
+            label = "Public – kanal 0"
+        else:
+            name = item.get("long_name") or item.get("short_name") or item["conversation"]
+            label = f"{name} [{item['conversation'][-4:]}]"
+        print(
+            f"{_trim(label, 28):28} {item.get('unread', 0):5} "
+            f"{_local_time(item.get('last_timestamp')):19}  "
+            f"{_trim(item.get('last_text'), 32)}"
+        )
+
+
+def _print_messages(messages: list[dict[str, Any]]) -> None:
+    if not messages:
+        print("Ingen meldingar.")
+        return
+    for message in messages:
+        print(_format_message(message))
+
+
+def _open_watch(settings: Settings, conversation: str) -> tuple[socket.socket, Any]:
+    try:
+        sock = socket.create_connection((settings.ipc_host, settings.ipc_port), timeout=10)
+        sock.settimeout(None)
+        stream = sock.makefile("rwb")
+        stream.write(
+            json.dumps(
+                {"command": "watch", "conversation": conversation},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            + b"\n"
+        )
+        stream.flush()
+        response = json.loads(stream.readline())
+        if not response.get("ok"):
+            raise CLIError(str(response.get("error", "Klarte ikkje starte overvaking")))
+        return sock, stream
+    except OSError as exc:
+        raise CLIError("Får ikkje kontakt med meshpi-tenesta") from exc
+
+
+def _watch(settings: Settings, conversation: str, raw_json: bool = False) -> None:
+    sock, stream = _open_watch(settings, conversation)
+    try:
+        for raw in stream:
+            event = json.loads(raw)
+            if raw_json and event.get("type") != "heartbeat":
+                print(json.dumps(event, ensure_ascii=False), flush=True)
+                continue
+            if event.get("type") == "message":
+                print(_format_message(event["data"]), flush=True)
+            elif event.get("type") == "message_status":
+                data = event["data"]
+                print(
+                    f"Status for pakke {data.get('packet_id')}: {data.get('status')}",
+                    flush=True,
+                )
+            elif event.get("type") == "status":
+                print(f"— Samband: {event['data'].get('state')} —", flush=True)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stream.close()
+        sock.close()
+
+
+def _chat(settings: Settings, conversation: str, limit: int) -> None:
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.patch_stdout import patch_stdout
+
+    normalized = "public" if conversation == "public" else normalize_node_id(conversation)
+    history = _request(
+        settings,
+        {
+            "command": "messages",
+            "conversation": normalized,
+            "limit": limit,
+            "mark_read": True,
+        },
+    )["data"]
+    label = "Public – kanal 0" if normalized == "public" else f"DM {normalized}"
+    status = _request(settings, {"command": "status"})["data"]
+    print(f"\n{label}   |   {status.get('state')}")
+    print("─" * 78)
+    _print_messages(history)
+    print("\nSkriv /hjelp for kommandoar. Ctrl-D eller /slutt avsluttar.\n")
+
+    sock, stream = _open_watch(settings, normalized)
+    stop = threading.Event()
+
+    def receive() -> None:
+        try:
+            for raw in stream:
+                if stop.is_set():
+                    return
+                event = json.loads(raw)
+                if event.get("type") == "message":
+                    print(_format_message(event["data"]))
+                elif event.get("type") == "message_status":
+                    data = event["data"]
+                    print(f"— Pakke {data.get('packet_id')}: {data.get('status')} —")
+                elif event.get("type") == "status":
+                    print(f"— Samband: {event['data'].get('state')} —")
+        except (OSError, ValueError):
+            if not stop.is_set():
+                print("— Overvakingssambandet blei brote —")
+
+    receiver = threading.Thread(target=receive, name="cli-watch", daemon=True)
+    receiver.start()
+    session: PromptSession[str] = PromptSession()
+    try:
+        with patch_stdout():
+            while True:
+                try:
+                    text = session.prompt("> ")
+                except (EOFError, KeyboardInterrupt):
+                    break
+                command = text.strip()
+                if not command:
+                    continue
+                if command in {"/slutt", "/quit", "/exit"}:
+                    break
+                if command == "/hjelp":
+                    print("/hjelp  /status  /nodar  /slutt")
+                    continue
+                if command == "/status":
+                    _print_status(_request(settings, {"command": "status"})["data"])
+                    continue
+                if command == "/nodar":
+                    _print_nodes(_request(settings, {"command": "nodes"})["data"])
+                    continue
+                payload = (
+                    {"command": "send_public", "text": command}
+                    if normalized == "public"
+                    else {"command": "send_dm", "node_id": normalized, "text": command}
+                )
+                try:
+                    _request(settings, payload)
+                except CLIError as exc:
+                    print(f"Feil: {exc}")
+    finally:
+        stop.set()
+        with suppress(OSError):
+            sock.shutdown(socket.SHUT_RDWR)
+        stream.close()
+        sock.close()
+        receiver.join(timeout=2)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="meshpi",
+        description="Meshtastic-chat for terminalen",
+    )
+    parser.add_argument(
+        "--env-file",
+        default=".env",
+        help="sti til miljøfil (standard: .env)",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="skriv maskinlesbar JSON for ikkje-interaktive kommandoar",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("daemon", help="køyr bakgrunnstenesta i framgrunnen")
+    sub.add_parser("status", help="vis tilkoplingsstatus")
+
+    nodes = sub.add_parser("nodes", help="vis kjende nodar")
+    nodes.add_argument("--search", default="", help="søk på namn eller node-ID")
+    nodes.add_argument(
+        "--sort",
+        choices=("name", "seen", "id"),
+        default="seen",
+        help="sorter nodelista",
+    )
+    node = sub.add_parser("node", help="vis alle detaljar om éin node")
+    node.add_argument("node_id")
+    sub.add_parser("conversations", help="vis samtalar og uleste meldingar")
+
+    public = sub.add_parser("public", help="vis meldingar frå public kanal 0")
+    public.add_argument("--limit", type=int, default=100)
+    dm = sub.add_parser("dm", help="vis DM-samtale")
+    dm.add_argument("node_id")
+    dm.add_argument("--limit", type=int, default=100)
+
+    send_public = sub.add_parser("send-public", help="send til public kanal 0")
+    send_public.add_argument("text")
+    send_dm = sub.add_parser("send-dm", help="send direkte melding")
+    send_dm.add_argument("node_id")
+    send_dm.add_argument("text")
+
+    watch = sub.add_parser("watch", help="følg nye meldingar")
+    watch.add_argument("conversation", nargs="?", default="all", help="all, public eller node-ID")
+    chat = sub.add_parser("chat", help="start interaktiv chat")
+    chat.add_argument("conversation", help="public eller node-ID")
+    chat.add_argument("--limit", type=int, default=50)
+    return parser
+
+
+def run(args: argparse.Namespace, settings: Settings) -> None:
+    command = args.command
+    if command == "daemon":
+        run_daemon(settings)
+    elif command == "status":
+        data = _request(settings, {"command": "status"})["data"]
+        print(json.dumps(data, ensure_ascii=False)) if args.json else _print_status(data)
+    elif command == "nodes":
+        data = _request(
+            settings,
+            {"command": "nodes", "search": args.search, "sort": args.sort},
+        )["data"]
+        print(json.dumps(data, ensure_ascii=False)) if args.json else _print_nodes(data)
+    elif command == "node":
+        data = _request(
+            settings,
+            {"command": "node", "node_id": args.node_id},
+        )["data"]
+        print(json.dumps(data, ensure_ascii=False)) if args.json else _print_node(data)
+    elif command == "conversations":
+        data = _request(settings, {"command": "conversations"})["data"]
+        print(json.dumps(data, ensure_ascii=False)) if args.json else _print_conversations(data)
+    elif command in {"public", "dm"}:
+        conversation = "public" if command == "public" else normalize_node_id(args.node_id)
+        data = _request(
+            settings,
+            {
+                "command": "messages",
+                "conversation": conversation,
+                "limit": args.limit,
+                "mark_read": not args.json,
+            },
+        )["data"]
+        print(json.dumps(data, ensure_ascii=False)) if args.json else _print_messages(data)
+    elif command == "send-public":
+        message = _request(
+            settings, {"command": "send_public", "text": args.text}
+        )["data"]
+        if args.json:
+            print(json.dumps(message, ensure_ascii=False))
+        else:
+            print(f"Sendt som pakke {message.get('packet_id') or 'utan kjend ID'}.")
+    elif command == "send-dm":
+        message = _request(
+            settings,
+            {"command": "send_dm", "node_id": args.node_id, "text": args.text},
+        )["data"]
+        if args.json:
+            print(json.dumps(message, ensure_ascii=False))
+        else:
+            print(f"Sendt som pakke {message.get('packet_id') or 'utan kjend ID'}.")
+    elif command == "watch":
+        conversation = args.conversation
+        if conversation not in {"all", "public"}:
+            conversation = normalize_node_id(conversation)
+        _watch(settings, conversation, raw_json=args.json)
+    elif command == "chat":
+        _chat(settings, args.conversation, args.limit)
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        settings = Settings.load(args.env_file)
+        run(args, settings)
+    except (CLIError, ValueError, RuntimeError) as exc:
+        print(f"Feil: {exc}", file=sys.stderr)
+        raise SystemExit(EXIT_ERROR) from exc

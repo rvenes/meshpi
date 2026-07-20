@@ -1,0 +1,13 @@
+services:
+  meshpi:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_PATH: /data/meshtastic.db
+    volumes:
+      - meshpi-data:/data
+
+volumes:
+  meshpi-data:
