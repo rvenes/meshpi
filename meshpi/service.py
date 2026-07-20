@@ -7,6 +7,13 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 from meshpi.config import Settings
+from meshpi.connections import (
+    ConnectionProfile,
+    ConnectionStore,
+    discover_serial,
+    discover_tcp,
+    parse_connection_target,
+)
 from meshpi.database import Database
 from meshpi.events import EventHub
 from meshpi.models import (
@@ -34,21 +41,31 @@ class Interface(Protocol):
     def close(self) -> None: ...
 
 
-InterfaceFactory = Callable[[str, int], Interface]
+InterfaceFactory = Callable[[ConnectionProfile], Interface]
 
 
-def default_interface_factory(host: str, port: int) -> Interface:
-    from meshtastic.tcp_interface import TCPInterface
+def default_interface_factory(profile: ConnectionProfile) -> Interface:
+    if profile.transport == "serial":
+        from meshtastic.serial_interface import SerialInterface
 
-    class TimedTCPInterface(TCPInterface):
-        def myConnect(self) -> None:  # noqa: N802
-            connected = socket.create_connection(
-                (self.hostname, self.portNumber), timeout=10
-            )
-            connected.settimeout(None)
-            self.socket = connected
+        return SerialInterface(devPath=profile.device, timeout=30)
+    if profile.transport == "tcp":
+        from meshtastic.tcp_interface import TCPInterface
 
-    return TimedTCPInterface(hostname=host, portNumber=port, timeout=10)
+        class TimedTCPInterface(TCPInterface):
+            def myConnect(self) -> None:  # noqa: N802
+                connected = socket.create_connection(
+                    (self.hostname, self.portNumber), timeout=10
+                )
+                connected.settimeout(None)
+                self.socket = connected
+
+        return TimedTCPInterface(
+            hostname=str(profile.host),
+            portNumber=int(profile.port or 4403),
+            timeout=10,
+        )
+    raise ValueError(f"Ustøtta transport: {profile.transport}")
 
 
 def reconnect_delay(attempt: int) -> int:
@@ -78,26 +95,46 @@ class MeshtasticService:
         database: Database,
         events: EventHub,
         interface_factory: InterfaceFactory = default_interface_factory,
+        connections: ConnectionStore | None = None,
     ):
         self.settings = settings
         self.database = database
         self.events = events
         self.interface_factory = interface_factory
+        default_profile = ConnectionProfile.tcp(
+            settings.meshtastic_host, settings.meshtastic_port
+        )
+        self.connections = connections or ConnectionStore(
+            settings.database_path.with_name("connections.json"),
+            default_profile,
+        )
+        self._profile = self.connections.active_profile()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._lost = threading.Event()
+        self._switch_requested = threading.Event()
         self._lock = threading.RLock()
         self._state_lock = threading.Lock()
         self._interface: Interface | None = None
         self._local_node_id: str | None = None
-        self._status: dict[str, Any] = {
+        self._status: dict[str, Any] = self._profile_status(self._profile) | {
             "state": "fråkopla",
-            "host": settings.meshtastic_host,
-            "port": settings.meshtastic_port,
             "error": None,
             "connected_since": None,
             "reconnect_attempt": 0,
             "local_node_id": None,
+        }
+
+    @staticmethod
+    def _profile_status(profile: ConnectionProfile) -> dict[str, Any]:
+        return {
+            "connection_id": profile.profile_id,
+            "connection_name": profile.name,
+            "transport": profile.transport,
+            "endpoint": profile.endpoint,
+            "host": profile.host,
+            "port": profile.port,
+            "device": profile.device,
         }
 
     def start(self) -> None:
@@ -110,6 +147,7 @@ class MeshtasticService:
     def stop(self) -> None:
         self._stop.set()
         self._lost.set()
+        self._switch_requested.set()
         with self._lock:
             interface = self._interface
             self._interface = None
@@ -125,6 +163,65 @@ class MeshtasticService:
     def status(self) -> dict[str, Any]:
         with self._state_lock:
             return dict(self._status)
+
+    def list_connections(self) -> dict[str, Any]:
+        with self._lock:
+            active_id = self._profile.profile_id
+        return {
+            "active_profile_id": active_id,
+            "profiles": [profile.as_dict() for profile in self.connections.list_profiles()],
+        }
+
+    def discover_connections(self) -> dict[str, Any]:
+        result = self.list_connections()
+        result["serial"] = discover_serial()
+        try:
+            result["tcp"] = discover_tcp(
+                self.settings.discovery_subnet,
+                self.settings.meshtastic_port,
+            )
+            result["tcp_error"] = None
+        except Exception as exc:
+            result["tcp"] = []
+            result["tcp_error"] = str(exc)
+        return result
+
+    def connect(
+        self,
+        *,
+        profile_id: str | None = None,
+        target: str | None = None,
+        name: str | None = None,
+    ) -> dict[str, Any]:
+        if profile_id:
+            profile = self.connections.activate(profile_id)
+        elif target:
+            profile = self.connections.save_and_activate(
+                parse_connection_target(target, name=name)
+            )
+        else:
+            raise ValueError("Oppgi profil-ID eller tilkoplingsmål")
+
+        with self._lock:
+            if profile == self._profile and self._interface is not None:
+                return self.status()
+            self._profile = profile
+            interface = self._interface
+            self._interface = None
+            self._local_node_id = None
+            self._switch_requested.set()
+            self._lost.set()
+        self.database.set_local_node(None)
+        with self._state_lock:
+            self._status.update(self._profile_status(profile))
+            self._status["local_node_id"] = None
+        self._set_status("koplar til", attempt=0)
+        if interface:
+            try:
+                interface.close()
+            except Exception:
+                LOG.debug("Feil ved profilbyte", exc_info=True)
+        return self.status()
 
     def _set_status(
         self,
@@ -155,17 +252,23 @@ class MeshtasticService:
         try:
             while not self._stop.is_set():
                 self._lost.clear()
+                with self._lock:
+                    profile = self._profile
+                with self._state_lock:
+                    self._status.update(self._profile_status(profile))
                 self._set_status("koplar til", attempt=attempt)
                 LOG.info(
-                    "Koplar til Meshtastic-node %s:%s",
-                    self.settings.meshtastic_host,
-                    self.settings.meshtastic_port,
+                    "Koplar til Meshtastic-node via %s %s",
+                    profile.transport,
+                    profile.endpoint,
                 )
                 try:
-                    interface = self.interface_factory(
-                        self.settings.meshtastic_host, self.settings.meshtastic_port
-                    )
+                    interface = self.interface_factory(profile)
                     with self._lock:
+                        if profile != self._profile:
+                            interface.close()
+                            self._switch_requested.set()
+                            raise RuntimeError("Tilkoplingsprofilen blei endra")
                         self._interface = interface
                     self._discover_local_node(interface)
                     self._sync_nodes(interface)
@@ -176,10 +279,12 @@ class MeshtasticService:
                         self._sync_nodes(interface)
                     if self._stop.is_set():
                         break
-                    LOG.warning("Meshtastic-sambandet fall ut")
+                    if not self._switch_requested.is_set():
+                        LOG.warning("Meshtastic-sambandet fall ut")
                 except Exception as exc:
-                    LOG.error("Meshtastic-feil: %s", exc)
-                    self._set_status("feil", error=str(exc), attempt=attempt + 1)
+                    if not self._switch_requested.is_set():
+                        LOG.error("Meshtastic-feil: %s", exc)
+                        self._set_status("feil", error=str(exc), attempt=attempt + 1)
                 finally:
                     with self._lock:
                         old_interface = self._interface
@@ -191,6 +296,10 @@ class MeshtasticService:
                             LOG.debug("Feil ved sambandslukking", exc_info=True)
                 if self._stop.is_set():
                     break
+                if self._switch_requested.is_set():
+                    self._switch_requested.clear()
+                    attempt = 0
+                    continue
                 delay = reconnect_delay(attempt)
                 attempt += 1
                 self._set_status("fråkopla", attempt=attempt)
@@ -208,12 +317,17 @@ class MeshtasticService:
                     LOG.debug("Klarte ikkje melde av %s", topic, exc_info=True)
 
     def _on_connection(self, interface: Interface, **_: Any) -> None:
+        with self._lock:
+            if interface is not self._interface:
+                return
         self._discover_local_node(interface)
         self._sync_nodes(interface)
         self._set_status("tilkopla", attempt=0)
 
     def _on_lost(self, interface: Interface, **_: Any) -> None:
-        del interface
+        with self._lock:
+            if interface is not self._interface:
+                return
         self._lost.set()
 
     def _discover_local_node(self, interface: Interface) -> None:
@@ -234,6 +348,7 @@ class MeshtasticService:
                 local_id = f"!{node_num & 0xFFFFFFFF:08x}"
         if local_id:
             self._local_node_id = local_id.lower()
+            self.database.set_local_node(self._local_node_id)
             with self._state_lock:
                 self._status["local_node_id"] = self._local_node_id
 
@@ -255,11 +370,22 @@ class MeshtasticService:
         self, packet: dict[str, Any], interface: Interface | None = None, **_: Any
     ) -> None:
         try:
+            if interface is not None:
+                with self._lock:
+                    if interface is not self._interface:
+                        return
             message = parse_text_packet(packet, self._local_node_id)
             if message is None:
                 if interface:
                     self._sync_nodes(interface)
                 return
+            metadata = dict(message.raw_metadata or {})
+            with self._lock:
+                profile = self._profile
+            metadata["gateway_id"] = profile.profile_id
+            metadata["gateway_transport"] = profile.transport
+            metadata["gateway_endpoint"] = profile.endpoint
+            message.raw_metadata = metadata
             inserted, message_id = self.database.insert_message(message)
             if not inserted:
                 return
@@ -288,6 +414,7 @@ class MeshtasticService:
         text = validate_message_text(text)
         with self._lock:
             interface = self._interface
+            profile = self._profile
             state = self.status()["state"]
             if interface is None or state != "tilkopla":
                 raise RuntimeError("Meshtastic-noden er ikkje tilkopla")
@@ -334,7 +461,13 @@ class MeshtasticService:
             transport=Transport.UNKNOWN,
             want_ack=not public,
             status=MessageStatus.QUEUED,
-            raw_metadata={"source": "meshpi", "packet_id": pending_id},
+            raw_metadata={
+                "source": "meshpi",
+                "packet_id": pending_id,
+                "gateway_id": profile.profile_id,
+                "gateway_transport": profile.transport,
+                "gateway_endpoint": profile.endpoint,
+            },
             is_read=True,
         )
         inserted, message_id = self.database.insert_message(message)

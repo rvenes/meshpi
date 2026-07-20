@@ -21,12 +21,23 @@ class FakeService:
     def send_dm(self, node_id, text):
         return {"text": text, "peer_node": node_id}
 
+    def list_connections(self):
+        return {"active_profile_id": "tcp-test", "profiles": []}
+
+    def discover_connections(self):
+        return {"active_profile_id": "tcp-test", "profiles": [], "serial": [], "tcp": []}
+
+    def connect(self, **kwargs):
+        return {"state": "koplar til", **kwargs}
+
 
 def test_settings_load_env_file(tmp_path, monkeypatch):
     for name in (
         "MESHTASTIC_HOST",
         "MESHTASTIC_PORT",
         "DATABASE_PATH",
+        "CONNECTIONS_PATH",
+        "DISCOVERY_SUBNET",
         "IPC_HOST",
         "IPC_PORT",
         "LOG_LEVEL",
@@ -40,6 +51,7 @@ def test_settings_load_env_file(tmp_path, monkeypatch):
     settings = Settings.load(path)
     assert settings.meshtastic_host == "10.0.0.152"
     assert settings.meshtastic_port == 4403
+    assert settings.connections_path == settings.database_path.with_name("connections.json")
 
 
 def test_settings_reject_non_loopback_ipc(monkeypatch):
@@ -53,6 +65,12 @@ def test_ipc_dispatch_and_validation(tmp_path):
     database.initialize()
     app = IPCApplication(Settings(database_path=database.path), database, FakeService(), EventHub())
     assert app.dispatch({"command": "status"})["data"]["state"] == "tilkopla"
+    assert app.dispatch({"command": "connections"})["data"]["active_profile_id"] == "tcp-test"
+    assert app.dispatch({"command": "discover_connections"})["data"]["serial"] == []
+    assert (
+        app.dispatch({"command": "connect", "target": "10.0.0.135"})["data"]["target"]
+        == "10.0.0.135"
+    )
     assert app.dispatch({"command": "send_public", "text": "hei"})["data"]["text"] == "hei"
     assert (
         app.dispatch(

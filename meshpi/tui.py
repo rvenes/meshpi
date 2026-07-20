@@ -428,6 +428,8 @@ class MeshPiTUI(App[None]):
         self.watcher = watcher
         self.status_data: dict[str, Any] = {
             "state": "koplar til",
+            "transport": "tcp",
+            "endpoint": f"{settings.meshtastic_host}:{settings.meshtastic_port}",
             "host": settings.meshtastic_host,
             "port": settings.meshtastic_port,
         }
@@ -581,10 +583,17 @@ class MeshPiTUI(App[None]):
         text.append(state.capitalize(), style=state_style)
         text.append("  │  Lokal node: ")
         text.append(f"{local_name} [{local_id[-4:]}]", style="green")
-        text.append("  │  Node: ")
+        transport = str(status.get("transport") or "tcp").upper()
+        endpoint = str(
+            status.get("endpoint")
+            or f"{status.get('host', self.settings.meshtastic_host)}:"
+            f"{status.get('port', self.settings.meshtastic_port)}"
+        )
+        if len(endpoint) > 46:
+            endpoint = "…" + endpoint[-45:]
+        text.append(f"  │  {transport}: ")
         text.append(
-            f"{status.get('host', self.settings.meshtastic_host)}:"
-            f"{status.get('port', self.settings.meshtastic_port)}",
+            endpoint,
             style="cyan",
         )
         text.append("  │  ")

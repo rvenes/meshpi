@@ -5,6 +5,7 @@ import signal
 import threading
 
 from meshpi.config import Settings
+from meshpi.connections import ConnectionProfile, ConnectionStore
 from meshpi.database import Database
 from meshpi.events import EventHub
 from meshpi.ipc import IPCApplication, IPCServer
@@ -25,8 +26,12 @@ def run_daemon(settings: Settings) -> None:
     configure_logging(settings.log_level)
     database = Database(settings.database_path)
     database.initialize()
+    connections = ConnectionStore(
+        settings.connections_path,
+        ConnectionProfile.tcp(settings.meshtastic_host, settings.meshtastic_port),
+    )
     events = EventHub()
-    service = MeshtasticService(settings, database, events)
+    service = MeshtasticService(settings, database, events, connections=connections)
     app = IPCApplication(settings, database, service, events)
     server = IPCServer(settings, app)
     stopping = threading.Event()
@@ -47,4 +52,3 @@ def run_daemon(settings: Settings) -> None:
     finally:
         service.stop()
         server.shutdown()
-

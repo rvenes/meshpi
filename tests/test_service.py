@@ -98,6 +98,19 @@ def test_send_requires_connection(service):
         value.send_public("hei")
 
 
+def test_service_switches_connection_profile_and_closes_old_interface(service):
+    value, interface, database = service
+
+    status = value.connect(target="/dev/ttyACM0", name="USB-node")
+
+    assert interface.closed is True
+    assert status["state"] == "koplar til"
+    assert status["transport"] == "serial"
+    assert status["endpoint"] == "/dev/ttyACM0"
+    assert value.connections.active_profile().name == "USB-node"
+    assert not any(node["is_local"] for node in database.list_nodes())
+
+
 def test_reconnect_backoff_is_bounded():
     assert [reconnect_delay(i) for i in range(7)] == [2, 5, 10, 30, 30, 30, 30]
 
@@ -109,8 +122,8 @@ def test_service_retries_after_connection_failure(tmp_path, monkeypatch):
     attempts = []
     holder = {}
 
-    def factory(host, port):
-        attempts.append((host, port))
+    def factory(profile):
+        attempts.append(profile)
         if len(attempts) == 1:
             raise OSError("ingen node")
         holder["service"]._stop.set()
@@ -129,3 +142,42 @@ def test_service_retries_after_connection_failure(tmp_path, monkeypatch):
         time.sleep(0.01)
     value.stop()
     assert len(attempts) == 2
+    assert attempts[0].transport == "tcp"
+    assert attempts[0].endpoint == "10.0.0.152:4403"
+
+
+def test_running_service_switches_from_tcp_to_serial_without_backoff(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr("meshpi.service.RECONNECT_DELAYS", (0, 0, 0, 0))
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    attempts = []
+    interfaces = []
+
+    def factory(profile):
+        attempts.append(profile)
+        interface = FakeInterface()
+        interfaces.append(interface)
+        return interface
+
+    value = MeshtasticService(
+        Settings(database_path=database.path),
+        database,
+        EventHub(),
+        interface_factory=factory,
+    )
+    value.start()
+    deadline = time.monotonic() + 2
+    while len(attempts) < 1 and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    value.connect(target="/dev/ttyACM0", name="USB")
+    deadline = time.monotonic() + 2
+    while len(attempts) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    value.stop()
+    assert [profile.transport for profile in attempts[:2]] == ["tcp", "serial"]
+    assert attempts[1].endpoint == "/dev/ttyACM0"
+    assert interfaces[0].closed is True

@@ -34,6 +34,19 @@ class IPCApplication:
         command = request.get("command")
         if command == "status":
             return {"ok": True, "data": self.service.status()}
+        if command == "connections":
+            return {"ok": True, "data": self.service.list_connections()}
+        if command == "discover_connections":
+            return {"ok": True, "data": self.service.discover_connections()}
+        if command == "connect":
+            return {
+                "ok": True,
+                "data": self.service.connect(
+                    profile_id=str(request.get("profile_id", "")).strip() or None,
+                    target=str(request.get("target", "")).strip() or None,
+                    name=str(request.get("name", "")).strip() or None,
+                ),
+            }
         if command == "nodes":
             return {
                 "ok": True,

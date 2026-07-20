@@ -36,6 +36,8 @@ class Settings:
     meshtastic_host: str = "10.0.0.152"
     meshtastic_port: int = 4403
     database_path: Path = Path("./data/meshtastic.db")
+    connections_path: Path = Path("./data/connections.json")
+    discovery_subnet: str = "10.0.0.0/24"
     ipc_host: str = "127.0.0.1"
     ipc_port: int = 8765
     log_level: str = "INFO"
@@ -52,12 +54,22 @@ class Settings:
         level = os.environ.get("LOG_LEVEL", "INFO").strip().upper()
         if level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
             raise ValueError("Ugyldig LOG_LEVEL")
+        database_path = Path(
+            os.environ.get("DATABASE_PATH", "./data/meshtastic.db")
+        ).expanduser()
         return cls(
             meshtastic_host=host,
             meshtastic_port=_env_int("MESHTASTIC_PORT", 4403, 1, 65535),
-            database_path=Path(
-                os.environ.get("DATABASE_PATH", "./data/meshtastic.db")
+            database_path=database_path,
+            connections_path=Path(
+                os.environ.get(
+                    "CONNECTIONS_PATH",
+                    str(database_path.with_name("connections.json")),
+                )
             ).expanduser(),
+            discovery_subnet=os.environ.get(
+                "DISCOVERY_SUBNET", "10.0.0.0/24"
+            ).strip(),
             ipc_host=ipc_host,
             ipc_port=_env_int("IPC_PORT", 8765, 1, 65535),
             log_level=level,

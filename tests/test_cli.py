@@ -1,4 +1,4 @@
-from meshpi.cli import _battery, _format_message, build_parser
+from meshpi.cli import _battery, _format_message, _normalize_argv, build_parser
 
 
 def test_battery_display_handles_external_power():
@@ -41,3 +41,15 @@ def test_cli_parser_supports_json_and_node_details():
 def test_cli_defaults_to_tui():
     args = build_parser().parse_args([])
     assert args.command == "tui"
+
+
+def test_cli_accepts_connection_shortcuts():
+    tcp = build_parser().parse_args(_normalize_argv(["10.0.0.135"]))
+    serial = build_parser().parse_args(_normalize_argv(["/dev/ttyACM0"]))
+    assert (tcp.command, tcp.target) == ("connect", "10.0.0.135")
+    assert (serial.command, serial.target) == ("connect", "/dev/ttyACM0")
+
+
+def test_cli_has_new_connection_dialog_command():
+    args = build_parser().parse_args(["new"])
+    assert args.command == "new"

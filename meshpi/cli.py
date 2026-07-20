@@ -17,6 +17,29 @@ from meshpi.daemon import run_daemon
 from meshpi.models import normalize_node_id
 
 EXIT_ERROR = 1
+COMMANDS = {
+    "tui",
+    "new",
+    "connect",
+    "connections",
+    "daemon",
+    "status",
+    "nodes",
+    "node",
+    "conversations",
+    "public",
+    "dm",
+    "send-public",
+    "send-dm",
+    "watch",
+    "chat",
+}
+
+
+def _normalize_argv(argv: list[str]) -> list[str]:
+    if argv and not argv[0].startswith("-") and argv[0] not in COMMANDS:
+        return ["connect", argv[0], *argv[1:]]
+    return argv
 
 
 def _local_time(value: str | int | None) -> str:
@@ -79,7 +102,9 @@ def _format_message(message: dict[str, Any]) -> str:
 
 def _print_status(data: dict[str, Any]) -> None:
     print(f"Status:       {data.get('state', 'ukjend')}")
-    print(f"Meshtastic:   {data.get('host')}:{data.get('port')}")
+    transport = str(data.get("transport") or "tcp").upper()
+    endpoint = data.get("endpoint") or f"{data.get('host')}:{data.get('port')}"
+    print(f"Meshtastic:   {transport} {endpoint}")
     print(f"Lokal node:   {data.get('local_node_id') or 'ikkje kjend enno'}")
     print(f"Tilkopla frå: {_local_time(data.get('connected_since'))}")
     if data.get("reconnect_attempt"):
@@ -159,6 +184,24 @@ def _print_conversations(conversations: list[dict[str, Any]]) -> None:
             f"{_local_time(item.get('last_timestamp')):19}  "
             f"{_trim(item.get('last_text'), 32)}"
         )
+
+
+def _print_connections(data: dict[str, Any]) -> None:
+    active_id = data.get("active_profile_id")
+    profiles = data.get("profiles", [])
+    if not profiles:
+        print("Ingen lagra tilkoplingar.")
+        return
+    print(f"{' ':1} {'Namn':24} {'Type':8} Endepunkt")
+    print("─" * 76)
+    for profile in profiles:
+        marker = "*" if profile.get("profile_id") == active_id else " "
+        print(
+            f"{marker} {_trim(profile.get('name'), 24):24} "
+            f"{str(profile.get('transport', '')).upper():8} "
+            f"{profile.get('endpoint', '–')}"
+        )
+    print("\n* = aktiv tilkopling")
 
 
 def _print_messages(messages: list[dict[str, Any]]) -> None:
@@ -295,6 +338,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     parser.set_defaults(command="tui")
     sub.add_parser("tui", help="start fullskjerms terminalgrensesnitt")
+    sub.add_parser("new", help="oppdag, vel eller legg til ei tilkopling")
+    connect = sub.add_parser("connect", help="byt til TCP- eller serielltilkopling")
+    connect.add_argument("target", help="IP, vert[:port], /dev/sti eller COM-port")
+    connect.add_argument("--name", help="namn på den lagra profilen")
+    sub.add_parser("connections", help="vis lagra tilkoplingar")
     sub.add_parser("daemon", help="køyr bakgrunnstenesta i framgrunnen")
     sub.add_parser("status", help="vis tilkoplingsstatus")
 
@@ -336,6 +384,29 @@ def run(args: argparse.Namespace, settings: Settings) -> None:
         from meshpi.tui import run_tui
 
         run_tui(settings)
+    elif command == "new":
+        from meshpi.connect_tui import choose_connection
+        from meshpi.tui import run_tui
+
+        selection = choose_connection(settings)
+        if selection is not None:
+            _request(settings, {"command": "connect"} | selection)
+            run_tui(settings)
+    elif command == "connect":
+        from meshpi.tui import run_tui
+
+        _request(
+            settings,
+            {
+                "command": "connect",
+                "target": args.target,
+                "name": args.name,
+            },
+        )
+        run_tui(settings)
+    elif command == "connections":
+        data = _request(settings, {"command": "connections"})["data"]
+        print(json.dumps(data, ensure_ascii=False)) if args.json else _print_connections(data)
     elif command == "daemon":
         run_daemon(settings)
     elif command == "status":
@@ -395,8 +466,9 @@ def run(args: argparse.Namespace, settings: Settings) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    raw_argv = _normalize_argv(list(sys.argv[1:] if argv is None else argv))
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_argv)
     try:
         settings = Settings.load(args.env_file)
         run(args, settings)

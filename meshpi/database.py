@@ -273,6 +273,15 @@ class Database:
             item["can_receive_dm"] = bool(item["can_receive_dm"])
         return item
 
+    def set_local_node(self, node_id: str | None) -> None:
+        with self._connect() as connection:
+            connection.execute("UPDATE nodes SET is_local = 0 WHERE is_local != 0")
+            if node_id:
+                connection.execute(
+                    "UPDATE nodes SET is_local = 1 WHERE node_id = ?",
+                    (node_id,),
+                )
+
     def _message_row(self, row: sqlite3.Row) -> dict[str, Any]:
         result = dict(row)
         result["want_ack"] = bool(result["want_ack"])

@@ -13,6 +13,7 @@ likevel skilde frå CLI-en, slik at eit webgrensesnitt kan leggjast til seinare.
 - mottek og sender direkte meldingar
 - lagrar samtalehistorikk og ulest-status i SQLite
 - viser kjende nodar og tilgjengeleg nodeinformasjon
+- kan byte mellom lagra, oppdaga eller manuelle TCP- og USB/serielle profilar
 - viser RF, MQTT eller «Ukjend» utan å gjette
 - viser RSSI, SNR og hoppinformasjon når ho finst
 - følgjer ACK/NAK for direkte meldingar når Meshtastic gir sikkert svar
@@ -79,6 +80,61 @@ meshpi status
 meshpi nodes
 meshpi conversations
 ```
+
+## Velje Meshtastic-node
+
+Utan argument opnar MeshPi den sist brukte tilkoplinga:
+
+```bash
+meshpi
+```
+
+Du kan byte TCP-node direkte. Profilen blir lagra og vald før TUI-en opnar:
+
+```bash
+meshpi 10.0.0.135
+meshpi meshtastic.local
+meshpi 10.0.0.135:4403
+```
+
+USB/seriell fungerer på same måte. Bruk helst den stabile `by-id`-stien på
+Linux:
+
+```bash
+meshpi /dev/serial/by-id/usb-Seeed_Studio_XIAO-BOOT_...-if00
+```
+
+På Windows kan målet vere til dømes `COM3`. Den eksplisitte forma er òg
+tilgjengeleg:
+
+```bash
+meshpi connect 10.0.0.135
+meshpi connect /dev/ttyACM0 --name "USB-node"
+```
+
+Opne den interaktive tilkoplingsveljaren:
+
+```bash
+meshpi new
+```
+
+Veljaren viser lagra profilar, oppdaga USB-portar og Meshtastic TCP-portar i det
+konfigurerte lokalnettet. Skriv for å filtrere eller skrive eit manuelt mål,
+bruk `↑`/`↓`, og trykk Enter for å byte og opne TUI-en. Vis profilane utan å
+byte:
+
+```bash
+meshpi connections
+```
+
+Daemonen eig framleis berre eitt radiosamband om gongen. Profilbyte lukkar det
+gamle sambandet kontrollert og koplar til det nye utan systemd-omstart.
+Meldingshistorikken er felles, medan kvar melding får lagra kva gatewayprofil
+ho kom gjennom.
+
+Bluetooth/BLE er ikkje aktivert i denne versjonen. Det blir ei eiga seinare
+fase, sidan Linux-tenesta då òg må handtere Bluetooth-oppdaging, paring og
+tilgangsrettar på ein føreseieleg måte.
 
 ## Fullskjermsgrensesnitt
 
@@ -199,6 +255,8 @@ miljøvariablar har prioritet.
 MESHTASTIC_HOST=10.0.0.152
 MESHTASTIC_PORT=4403
 DATABASE_PATH=./data/meshtastic.db
+CONNECTIONS_PATH=./data/connections.json
+DISCOVERY_SUBNET=10.0.0.0/24
 IPC_HOST=127.0.0.1
 IPC_PORT=8765
 LOG_LEVEL=INFO
@@ -207,6 +265,10 @@ LOG_LEVEL=INFO
 `IPC_HOST` godtek berre `127.0.0.1`, `::1` eller `localhost`. IPC-tenesta har
 ikkje eiga innlogging og skal derfor berre vere tilgjengeleg for lokale,
 betrodde brukarar.
+
+`DISCOVERY_SUBNET` avgrensar TCP-søket i `meshpi new`. Nettet kan maksimalt
+vere `/22`. Seriell oppdaging brukar systemet si portliste og føretrekkjer
+stabile stiar under `/dev/serial/by-id`.
 
 ## Anbefalt installasjon med systemd
 

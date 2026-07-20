@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 User=meshpi
 Group=meshpi
+SupplementaryGroups=dialout
 WorkingDirectory=/opt/meshpi
 EnvironmentFile=/etc/meshpi.env
 Environment=PYTHONDONTWRITEBYTECODE=1
