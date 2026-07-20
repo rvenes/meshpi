@@ -40,6 +40,11 @@ ON messages(kind, channel, timestamp);
 CREATE INDEX IF NOT EXISTS messages_dm_peer_time
 ON messages(kind, peer_node, timestamp);
 
+CREATE TABLE IF NOT EXISTS archived_conversations (
+    peer_node TEXT PRIMARY KEY,
+    archived_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS nodes (
     node_id TEXT PRIMARY KEY,
     node_num INTEGER,
@@ -111,6 +116,11 @@ class Database:
         with self._connect() as connection:
             cursor = connection.execute(sql, values)
             inserted = cursor.rowcount == 1
+            if inserted and str(message.kind) == "dm" and message.peer_node:
+                connection.execute(
+                    "DELETE FROM archived_conversations WHERE peer_node = ?",
+                    (message.peer_node,),
+                )
             return inserted, cursor.lastrowid if inserted else None
 
     def update_message_status(self, packet_id: int, status: MessageStatus) -> bool:
@@ -161,6 +171,11 @@ class Database:
                 MAX(timestamp) AS last_timestamp,
                 SUM(CASE WHEN direction = 'inn' AND is_read = 0 THEN 1 ELSE 0 END) AS unread
             FROM messages
+            WHERE kind = 'public'
+               OR NOT EXISTS (
+                   SELECT 1 FROM archived_conversations
+                   WHERE peer_node = messages.peer_node
+               )
             GROUP BY kind, CASE WHEN kind = 'public' THEN 'public' ELSE peer_node END
         )
         SELECT grouped.*, messages.text AS last_text, messages.from_node, messages.to_node,
@@ -179,6 +194,24 @@ class Database:
         """
         with self._connect() as connection:
             return [dict(row) for row in connection.execute(sql).fetchall()]
+
+    def archive_conversation(self, peer_node: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO archived_conversations (peer_node, archived_at)
+                VALUES (?, ?)
+                ON CONFLICT(peer_node) DO UPDATE SET archived_at=excluded.archived_at
+                """,
+                (peer_node, now_iso()),
+            )
+
+    def unarchive_conversation(self, peer_node: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "DELETE FROM archived_conversations WHERE peer_node = ?",
+                (peer_node,),
+            )
 
     def upsert_node(self, node: Node) -> None:
         node.updated_at = node.updated_at or now_iso()

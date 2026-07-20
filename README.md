@@ -4,6 +4,11 @@ MeshPi er ein liten og stabil Meshtastic-klient for terminalen. Han held eitt
 TCP-samband til ein Meshtastic-node ope i bakgrunnen, lagrar meldingar i SQLite
 og gir eit nynorsk fullskjermsgrensesnitt og vanlege CLI-kommandoar over SSH.
 
+> [!WARNING]
+> MeshPi er framleis i ein tidleg utviklingsfase. Funksjonar, brukargrensesnitt,
+> konfigurasjon og lagringsformat kan endre seg, og prosjektet bør testast nøye
+> før det blir brukt i kritiske eller produksjonsnære miljø.
+
 Første utgåve har ikkje webgrensesnitt. Kjernen og den lokale IPC-protokollen er
 likevel skilde frå CLI-en, slik at eit webgrensesnitt kan leggjast til seinare.
 
@@ -145,12 +150,14 @@ DM som kjem til ei anna samtale, gir eit synleg varsel. Marker ein node i
 høgrepanelet for å vise detaljane, og trykk Enter for å opne DM. «Ny DM» viser
 òg heile nodelista og kan filtrerast på namn eller node-ID.
 
-Tastane i grensesnittet er:
+Piltastane flyttar den blå markeringa i ei liste. Trykk Enter for å gjere den
+markerte samtalen eller noden aktiv i chatten. Tastane i grensesnittet er:
 
 ```text
-Tab / Shift+Tab    neste / førre samtale
+Tab / Shift+Tab    neste / førre felt: samtalar, chat og nodar
 Ctrl+L             flytt markøren til meldingsfeltet
-Enter              send teksten i meldingsfeltet
+Enter              opne markert samtale/node, eller send tekst i meldingsfeltet
+Delete             lukk/arkiver markert DM frå samtalelista
 Ctrl+D             søk i nodelista og opne ein ny DM
 F2                 flytt markøren til samtalelista
 F3                 flytt markøren til nodelista
@@ -160,6 +167,10 @@ Ctrl+Q             avslutt
 
 Grensesnittet tilpassar seg terminalbreidda. Nodedetaljane blir skjulte først
 dersom vindauget er smalt.
+
+Ein lukka DM blir berre skjult frå samtalelista; meldingane blir ikkje sletta.
+Opnar du noden frå nodelista, sender ei ny melding, eller får ein ny DM frå
+noden, kjem samtalen automatisk tilbake.
 
 I nodeveljaren kan du skrive for å filtrere lista, bruke `↑`/`↓` og trykkje
 Enter. Den lokale noden blir ikkje vist som mottakar. Dersom mottakaren ikkje
@@ -355,3 +366,9 @@ Bruk denne rekkjefølgja:
 
 Ikkje bruk Meshtastic sine konfigurasjonskommandoar gjennom same TCP-node medan
 MeshPi køyrer.
+
+## Lisens
+
+MeshPi er fri programvare distribuert under GNU General Public License,
+versjon 3 (`GPL-3.0-only`). Sjå [LICENSE](LICENSE) for dei fullstendige
+lisensvilkåra.

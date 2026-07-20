@@ -60,6 +60,30 @@ def test_dm_storage_is_separate_per_peer(tmp_path):
     assert len(database.list_messages("dm", "!33334444")) == 1
 
 
+def test_archived_dm_is_hidden_until_a_new_message_arrives(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    database.insert_message(message(1, ConversationKind.DM, "!11112222"))
+
+    database.archive_conversation("!11112222")
+    assert database.conversations() == []
+    assert len(database.list_messages("dm", "!11112222")) == 1
+
+    database.insert_message(message(2, ConversationKind.DM, "!11112222"))
+    assert database.conversations()[0]["conversation"] == "!11112222"
+
+
+def test_conversation_can_be_unarchived_without_new_message(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    database.insert_message(message(1, ConversationKind.DM, "!11112222"))
+    database.archive_conversation("!11112222")
+
+    database.unarchive_conversation("!11112222")
+
+    assert database.conversations()[0]["conversation"] == "!11112222"
+
+
 def test_update_outgoing_status(tmp_path):
     database = Database(tmp_path / "messages.db")
     database.initialize()

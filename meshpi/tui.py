@@ -65,7 +65,12 @@ class ConversationItem(ListItem):
     def __init__(self, conversation: dict[str, Any]):
         self.conversation = conversation
         self.conversation_id = _conversation_id(conversation)
-        super().__init__(Static(self._render_label(), classes="conversation-label"))
+        self.label_widget = Static(self._render_label(), classes="conversation-label")
+        super().__init__(self.label_widget)
+
+    def update_conversation(self, conversation: dict[str, Any]) -> None:
+        self.conversation = conversation
+        self.label_widget.update(self._render_label())
 
     def _render_label(self) -> Text:
         unread = int(self.conversation.get("unread") or 0)
@@ -133,7 +138,12 @@ class NodeSidebarItem(ListItem):
     def __init__(self, node: dict[str, Any]):
         self.node = node
         self.node_id = str(node["node_id"])
-        super().__init__(Static(self._render_label(), classes="node-sidebar-label"))
+        self.label_widget = Static(self._render_label(), classes="node-sidebar-label")
+        super().__init__(self.label_widget)
+
+    def update_node(self, node: dict[str, Any]) -> None:
+        self.node = node
+        self.label_widget.update(self._render_label())
 
     def _render_label(self) -> Text:
         name = self.node.get("long_name") or self.node.get("short_name") or "Ukjend node"
@@ -478,12 +488,13 @@ class MeshPiTUI(App[None]):
     """
 
     BINDINGS = [
-        Binding("tab", "next_conversation", "Neste samtale", priority=True),
-        Binding("shift+tab", "previous_conversation", "Førre samtale", priority=True),
+        Binding("tab", "focus_next_pane", "Neste felt", priority=True),
+        Binding("shift+tab", "focus_previous_pane", "Førre felt", priority=True),
         Binding("ctrl+l", "focus_input", "Skriv melding"),
         Binding("ctrl+d", "new_dm", "Ny DM"),
         Binding("f2", "focus_conversations", "Samtalar"),
         Binding("f3", "focus_nodes", "Nodar"),
+        Binding("delete", "archive_conversation", "Lukk DM"),
         Binding("ctrl+r", "refresh", "Oppdater"),
         Binding("ctrl+q", "quit", "Avslutt"),
     ]
@@ -534,7 +545,7 @@ class MeshPiTUI(App[None]):
                     id="message-input",
                 )
                 yield Static(
-                    "Enter: send   Tab/Shift+Tab: samtale   Ctrl+D: ny DM",
+                    "Enter: send   Tab/Shift+Tab: neste/førre felt   Ctrl+D: ny DM",
                     id="input-help",
                 )
             with Vertical(id="node-panel"):
@@ -543,7 +554,7 @@ class MeshPiTUI(App[None]):
                 yield Static("Nodar", id="node-list-title", classes="panel-title")
                 yield ListView(id="node-list")
         yield Static(
-            " Tab neste  Shift+Tab førre  Ctrl+L skriv  Ctrl+D ny DM  "
+            " Tab/Shift+Tab byter felt  Enter opnar  Del lukk DM  Ctrl+D ny DM  "
             "F2 samtalar  F3 nodar  Ctrl+R oppdater  Ctrl+Q avslutt ",
             id="key-bar",
         )
@@ -708,8 +719,22 @@ class MeshPiTUI(App[None]):
         return [public, *direct]
 
     async def _apply_conversations(self, conversations: list[dict[str, Any]]) -> None:
-        self.conversations = self._with_public(conversations)
+        incoming = self._with_public(conversations)
         list_view = self.query_one("#conversation-list", ListView)
+        existing = [
+            item for item in list_view.children if isinstance(item, ConversationItem)
+        ]
+        existing_ids = [item.conversation_id for item in existing]
+        incoming_by_id = {_conversation_id(item): item for item in incoming}
+        incoming_ids = list(incoming_by_id)
+
+        if existing and set(existing_ids) == set(incoming_ids):
+            self.conversations = [incoming_by_id[item_id] for item_id in existing_ids]
+            for item in existing:
+                item.update_conversation(incoming_by_id[item.conversation_id])
+            return
+
+        self.conversations = incoming
         self._rebuilding_list = True
         await list_view.clear()
         await list_view.extend(ConversationItem(item) for item in self.conversations)
@@ -730,6 +755,38 @@ class MeshPiTUI(App[None]):
                 else str(self.status_data.get("local_node_id") or "")
             )
         node_list = self.query_one("#node-list", ListView)
+        existing = [
+            item for item in node_list.children if isinstance(item, NodeSidebarItem)
+        ]
+        existing_ids = [item.node_id for item in existing]
+        incoming_ids = list(self.nodes)
+        existing_local = next(
+            (item.node_id for item in existing if item.node.get("is_local")),
+            None,
+        )
+        incoming_local = next(
+            (
+                str(node["node_id"])
+                for node in self.nodes.values()
+                if node.get("is_local")
+            ),
+            None,
+        )
+
+        if (
+            existing
+            and set(existing_ids) == set(incoming_ids)
+            and existing_local == incoming_local
+        ):
+            for item in existing:
+                item.update_node(self.nodes[item.node_id])
+            if self.selected_node_id in self.nodes:
+                self._show_node(self.nodes[self.selected_node_id])
+            self.query_one("#node-list-title", Static).update(
+                f"Nodar · {len(self.nodes)}"
+            )
+            return
+
         self._rebuilding_nodes = True
         await node_list.clear()
         await node_list.extend(NodeSidebarItem(node) for node in ordered)
@@ -741,15 +798,12 @@ class MeshPiTUI(App[None]):
 
     @on(ListView.Highlighted, "#conversation-list")
     def conversation_highlighted(self, event: ListView.Highlighted) -> None:
-        if self._rebuilding_list or not isinstance(event.item, ConversationItem):
-            return
-        self.select_conversation(event.item.conversation_id)
+        del event
 
     @on(ListView.Selected, "#conversation-list")
     def conversation_selected(self, event: ListView.Selected) -> None:
         if isinstance(event.item, ConversationItem):
             self.select_conversation(event.item.conversation_id)
-            self.query_one("#message-input", Input).focus()
 
     @on(ListView.Highlighted, "#node-list")
     def node_highlighted(self, event: ListView.Highlighted) -> None:
@@ -765,7 +819,7 @@ class MeshPiTUI(App[None]):
         if event.item.node.get("is_local"):
             self.notify("Dette er den lokale noden", timeout=3)
             return
-        self._open_node_dm(event.item.node_id)
+        self._open_node_dm(event.item.node_id, focus_input=False)
 
     def select_conversation(self, conversation: str) -> None:
         self.current_conversation = conversation
@@ -1003,7 +1057,14 @@ class MeshPiTUI(App[None]):
             self.select_conversation(self.current_conversation)
             return
         if event_type == "nodes":
-            self.action_refresh()
+            self.run_worker(
+                self._refresh_lists_worker,
+                name="refresh-nodes",
+                group="refresh",
+                thread=True,
+                exclusive=True,
+                exit_on_error=False,
+            )
             return
         if event_type != "message":
             return
@@ -1045,22 +1106,28 @@ class MeshPiTUI(App[None]):
         await self._apply_conversations(conversations)
         self._update_status_bar()
 
-    def action_next_conversation(self) -> None:
-        self._move_conversation(1)
+    def _focus_targets(self) -> list[ListView | Input]:
+        targets: list[ListView | Input] = []
+        if self.query_one("#conversation-panel", Vertical).display:
+            targets.append(self.query_one("#conversation-list", ListView))
+        targets.append(self.query_one("#message-input", Input))
+        if self.query_one("#node-panel", Vertical).display:
+            targets.append(self.query_one("#node-list", ListView))
+        return targets
 
-    def action_previous_conversation(self) -> None:
-        self._move_conversation(-1)
-
-    def _move_conversation(self, direction: int) -> None:
-        list_view = self.query_one("#conversation-list", ListView)
-        count = len(self.conversations)
-        if not count:
+    def _move_focus(self, direction: int) -> None:
+        targets = self._focus_targets()
+        if not targets:
             return
-        current = list_view.index if list_view.index is not None else 0
-        list_view.index = (current + direction) % count
-        item = list_view.highlighted_child
-        if isinstance(item, ConversationItem):
-            self.select_conversation(item.conversation_id)
+        focused = self.focused
+        current = targets.index(focused) if focused in targets else -1
+        targets[(current + direction) % len(targets)].focus()
+
+    def action_focus_next_pane(self) -> None:
+        self._move_focus(1)
+
+    def action_focus_previous_pane(self) -> None:
+        self._move_focus(-1)
 
     def action_focus_input(self) -> None:
         self.query_one("#message-input", Input).focus()
@@ -1081,12 +1148,12 @@ class MeshPiTUI(App[None]):
     def _open_new_dm(self, node_id: str | None) -> None:
         if node_id is None:
             return
-        self._open_node_dm(node_id)
+        self._open_node_dm(node_id, focus_input=True)
 
-    def _open_node_dm(self, node_id: str) -> None:
+    def _open_node_dm(self, node_id: str, *, focus_input: bool) -> None:
         self.current_conversation = node_id
         self.run_worker(
-            self._refresh_lists_worker,
+            lambda: self._unarchive_and_refresh_worker(node_id),
             name="new-dm-refresh",
             group="refresh",
             thread=True,
@@ -1094,7 +1161,57 @@ class MeshPiTUI(App[None]):
             exit_on_error=False,
         )
         self.select_conversation(node_id)
-        self.query_one("#message-input", Input).focus()
+        if focus_input:
+            self.query_one("#message-input", Input).focus()
+
+    def _unarchive_and_refresh_worker(self, node_id: str) -> None:
+        with suppress(Exception):
+            self._call({"command": "unarchive_conversation", "node_id": node_id})
+        self._refresh_lists_worker()
+
+    def action_archive_conversation(self) -> None:
+        conversation_list = self.query_one("#conversation-list", ListView)
+        if not conversation_list.has_focus:
+            return
+        selected = conversation_list.highlighted_child
+        if not isinstance(selected, ConversationItem):
+            return
+        if selected.conversation_id == "public":
+            self.notify("Public-kanalen kan ikkje lukkast", timeout=3)
+            return
+        node_id = selected.conversation_id
+        self.run_worker(
+            lambda: self._archive_conversation_worker(node_id),
+            name=f"archive-{node_id}",
+            group="archive",
+            thread=True,
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    def _archive_conversation_worker(self, node_id: str) -> None:
+        try:
+            self._call({"command": "archive_conversation", "node_id": node_id})
+            conversations = self._call({"command": "conversations"})["data"]
+            self.call_from_thread(self._finish_archive, node_id, conversations)
+        except Exception as exc:
+            self.call_from_thread(
+                self.notify,
+                f"Klarte ikkje lukke samtalen: {exc}",
+                severity="error",
+            )
+
+    async def _finish_archive(
+        self,
+        node_id: str,
+        conversations: list[dict[str, Any]],
+    ) -> None:
+        if self.current_conversation == node_id:
+            self.current_conversation = "public"
+            self.select_conversation("public")
+        await self._apply_conversations(conversations)
+        self.query_one("#conversation-list", ListView).focus()
+        self.notify("Samtalen er lukka. Ein ny DM opnar han att.", timeout=5)
 
     def action_refresh(self) -> None:
         self._schedule_status_refresh()

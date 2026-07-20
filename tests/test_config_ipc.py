@@ -71,6 +71,14 @@ def test_ipc_dispatch_and_validation(tmp_path):
         app.dispatch({"command": "connect", "target": "10.0.0.135"})["data"]["target"]
         == "10.0.0.135"
     )
+    archived = app.dispatch(
+        {"command": "archive_conversation", "node_id": "11112222"}
+    )["data"]
+    assert archived == {"node_id": "!11112222", "archived": True}
+    restored = app.dispatch(
+        {"command": "unarchive_conversation", "node_id": "!11112222"}
+    )["data"]
+    assert restored == {"node_id": "!11112222", "archived": False}
     assert app.dispatch({"command": "send_public", "text": "hei"})["data"]["text"] == "hei"
     assert (
         app.dispatch(

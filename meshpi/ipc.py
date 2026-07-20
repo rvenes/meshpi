@@ -63,6 +63,14 @@ class IPCApplication:
             return {"ok": True, "data": node}
         if command == "conversations":
             return {"ok": True, "data": self.database.conversations()}
+        if command == "archive_conversation":
+            node_id = normalize_node_id(str(request.get("node_id", "")))
+            self.database.archive_conversation(node_id)
+            return {"ok": True, "data": {"node_id": node_id, "archived": True}}
+        if command == "unarchive_conversation":
+            node_id = normalize_node_id(str(request.get("node_id", "")))
+            self.database.unarchive_conversation(node_id)
+            return {"ok": True, "data": {"node_id": node_id, "archived": False}}
         if command == "messages":
             conversation = str(request.get("conversation", "public"))
             limit = int(request.get("limit", 100))

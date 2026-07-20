@@ -1,9 +1,10 @@
 import asyncio
 
-from textual.widgets import ListView, RichLog
+from textual.widgets import Input, ListView, RichLog
 
 from meshpi.config import Settings
 from meshpi.tui import (
+    ConversationItem,
     LiveEvent,
     MeshPiTUI,
     NewDMScreen,
@@ -15,6 +16,7 @@ from meshpi.tui import (
 class FakeBackend:
     def __init__(self):
         self.calls = []
+        self.archived = set()
         self.status = {
             "state": "tilkopla",
             "host": "10.0.0.152",
@@ -93,6 +95,7 @@ class FakeBackend:
                     "text": "Hei",
                 }
             ],
+            "!2f779c48": [],
         }
 
     def request(self, settings, payload):
@@ -102,7 +105,11 @@ class FakeBackend:
         if command == "status":
             data = self.status
         elif command == "conversations":
-            data = self.conversations
+            data = [
+                conversation
+                for conversation in self.conversations
+                if conversation["conversation"] not in self.archived
+            ]
         elif command == "nodes":
             data = self.nodes
         elif command == "messages":
@@ -111,6 +118,12 @@ class FakeBackend:
             data = next(
                 node for node in self.nodes if node["node_id"] == payload["node_id"]
             )
+        elif command == "archive_conversation":
+            self.archived.add(payload["node_id"])
+            data = {"node_id": payload["node_id"], "archived": True}
+        elif command == "unarchive_conversation":
+            self.archived.discard(payload["node_id"])
+            data = {"node_id": payload["node_id"], "archived": False}
         elif command in {"send_public", "send_dm"}:
             data = {"packet_id": 123}
         else:
@@ -122,7 +135,7 @@ def run_scenario(scenario):
     asyncio.run(scenario())
 
 
-def test_tui_loads_and_tab_switches_conversations():
+def test_tui_uses_enter_to_activate_and_tab_to_move_between_panes():
     async def scenario():
         backend = FakeBackend()
         app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
@@ -130,9 +143,20 @@ def test_tui_loads_and_tab_switches_conversations():
             await pilot.pause(0.3)
             assert len(app.conversations) == 2
             assert app.current_conversation == "public"
-            await pilot.press("tab")
-            await pilot.pause(0.2)
+            await pilot.press("f2", "down")
+            assert app.current_conversation == "public"
+            await pilot.press("enter")
             assert app.current_conversation == "!710365c8"
+            assert app.query_one("#conversation-list", ListView).has_focus
+
+            await pilot.press("tab")
+            assert app.query_one("#message-input", Input).has_focus
+            await pilot.press("tab")
+            assert app.query_one("#node-list", ListView).has_focus
+            await pilot.press("tab")
+            assert app.query_one("#conversation-list", ListView).has_focus
+            await pilot.press("shift+tab")
+            assert app.query_one("#node-list", ListView).has_focus
 
     run_scenario(scenario)
 
@@ -143,7 +167,7 @@ def test_tui_sends_to_selected_dm():
         app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
         async with app.run_test(size=(160, 48)) as pilot:
             await pilot.pause(0.3)
-            await pilot.press("tab", "ctrl+l")
+            await pilot.press("f2", "down", "enter", "tab")
             await pilot.press(*"test")
             await pilot.press("enter")
             await pilot.pause(0.3)
@@ -162,7 +186,7 @@ def test_live_message_is_appended_to_active_dm():
         app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
         async with app.run_test(size=(160, 48)) as pilot:
             await pilot.pause(0.3)
-            await pilot.press("tab")
+            await pilot.press("f2", "down", "enter")
             await pilot.pause(0.2)
             log = app.query_one("#message-log", RichLog)
             before = len(log.lines)
@@ -187,6 +211,46 @@ def test_live_message_is_appended_to_active_dm():
             )
             await pilot.pause(0.2)
             assert len(log.lines) > before
+
+    run_scenario(scenario)
+
+
+def test_refresh_updates_existing_list_items_without_rebuilding():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            conversation_item = list(app.query(ConversationItem))[1]
+            node_item = list(app.query(NodeSidebarItem))[1]
+            backend.conversations[1]["last_text"] = "Oppdatert"
+            backend.nodes[1]["battery_level"] = 60
+
+            await app._apply_refresh(backend.conversations, backend.nodes)
+
+            assert list(app.query(ConversationItem))[1] is conversation_item
+            assert list(app.query(NodeSidebarItem))[1] is node_item
+            assert conversation_item.conversation["last_text"] == "Oppdatert"
+            assert node_item.node["battery_level"] == 60
+
+    run_scenario(scenario)
+
+
+def test_delete_archives_selected_dm_without_deleting_messages():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("f2", "down", "enter", "delete")
+            await pilot.pause(0.3)
+
+            assert backend.archived == {"!710365c8"}
+            assert app.current_conversation == "public"
+            assert [item.conversation_id for item in app.query(ConversationItem)] == [
+                "public"
+            ]
+            assert backend.messages["!710365c8"][0]["text"] == "Hei"
 
     run_scenario(scenario)
 
