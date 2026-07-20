@@ -37,3 +37,7 @@ def test_cli_parser_supports_json_and_node_details():
     assert args.command == "node"
     assert args.node_id == "!11112222"
 
+
+def test_cli_defaults_to_tui():
+    args = build_parser().parse_args([])
+    assert args.command == "tui"

@@ -2,7 +2,7 @@
 
 MeshPi er ein liten og stabil Meshtastic-klient for terminalen. Han held eitt
 TCP-samband til ein Meshtastic-node ope i bakgrunnen, lagrar meldingar i SQLite
-og gir eit nynorsk kommandolinjegrensesnitt over SSH.
+og gir eit nynorsk fullskjermsgrensesnitt og vanlege CLI-kommandoar over SSH.
 
 Første utgåve har ikkje webgrensesnitt. Kjernen og den lokale IPC-protokollen er
 likevel skilde frå CLI-en, slik at eit webgrensesnitt kan leggjast til seinare.
@@ -17,7 +17,7 @@ likevel skilde frå CLI-en, slik at eit webgrensesnitt kan leggjast til seinare.
 - viser RSSI, SNR og hoppinformasjon når ho finst
 - følgjer ACK/NAK for direkte meldingar når Meshtastic gir sikkert svar
 - koplar automatisk til på nytt etter sambandsbrot
-- har både vanlege kommandoar og interaktiv chat
+- har fullskjerms TUI, vanlege kommandoar og enkel interaktiv chat
 - kan køyre kontinuerleg som ein avgrensa systemd-teneste
 
 MeshPi endrar aldri konfigurasjonen på Meshtastic-noden og sender aldri
@@ -65,14 +65,42 @@ source .venv/bin/activate
 meshpi daemon
 ```
 
-Bruk CLI-en i ein annan terminal:
+Start fullskjermsgrensesnittet i ein annan terminal:
 
 ```bash
 source .venv/bin/activate
+meshpi
+```
+
+Du kan òg bruke dei vanlege CLI-kommandoane:
+
+```bash
 meshpi status
 meshpi nodes
 meshpi conversations
 ```
+
+## Fullskjermsgrensesnitt
+
+`meshpi` eller `meshpi tui` opnar samtalelista, den aktive samtalen og
+nodedetaljar i same terminalvindauge. Nye meldingar kjem inn automatisk, og den
+aktive samtalen rullar ned til den nyaste meldinga. Ein DM som kjem til ei anna
+samtale, gir eit synleg varsel.
+
+Tastane i grensesnittet er:
+
+```text
+Tab / Shift+Tab    neste / førre samtale
+Ctrl+L             flytt markøren til meldingsfeltet
+Enter              send teksten i meldingsfeltet
+Ctrl+D             opne ein ny DM med node-ID
+F2                 flytt markøren til samtalelista
+Ctrl+R             oppdater samtalar og nodar
+Ctrl+Q             avslutt
+```
+
+Grensesnittet tilpassar seg terminalbreidda. Nodedetaljane blir skjulte først
+dersom vindauget er smalt.
 
 ## Kommandoar
 
@@ -82,7 +110,7 @@ meshpi conversations
 meshpi status
 meshpi nodes
 meshpi nodes --search venes --sort name
-meshpi node !710365c8
+meshpi node 710365c8
 ```
 
 Ei stjerne i nodelista markerer den lokale Meshtastic-noden.
@@ -93,7 +121,7 @@ Ei stjerne i nodelista markerer den lokale Meshtastic-noden.
 meshpi conversations
 meshpi public
 meshpi public --limit 200
-meshpi dm !710365c8
+meshpi dm 710365c8
 ```
 
 ### Sending
@@ -103,7 +131,7 @@ chat:
 
 ```bash
 meshpi send-public "Test på public kanal 0"
-meshpi send-dm !710365c8 "Direkte testmelding"
+meshpi send-dm 710365c8 "Direkte testmelding"
 ```
 
 Tekst blir validert som UTF-8 og kan vere maksimalt 237 byte. DM-node-ID må
@@ -121,15 +149,19 @@ Følg berre public kanal 0 eller ein DM:
 
 ```bash
 meshpi watch public
-meshpi watch !710365c8
+meshpi watch 710365c8
 ```
 
 Start ein interaktiv samtale:
 
 ```bash
 meshpi chat public
-meshpi chat !710365c8
+meshpi chat 710365c8
 ```
+
+Du kan bruke `!` framfor node-ID, men i Bash må argumentet då stå i enkle
+hermeteikn, til dømes `meshpi dm '!710365c8'`. Utan hermeteikn tolkar Bash
+utropsteiknet som historikkutviding.
 
 I chatten:
 
@@ -254,4 +286,3 @@ Bruk denne rekkjefølgja:
 
 Ikkje bruk Meshtastic sine konfigurasjonskommandoar gjennom same TCP-node medan
 MeshPi køyrer.
-

@@ -9,42 +9,14 @@ from contextlib import suppress
 from datetime import datetime
 from typing import Any
 
+from meshpi.client import CLIError
+from meshpi.client import open_watch as _open_watch
+from meshpi.client import request as _request
 from meshpi.config import Settings
 from meshpi.daemon import run_daemon
 from meshpi.models import normalize_node_id
 
 EXIT_ERROR = 1
-
-
-class CLIError(RuntimeError):
-    pass
-
-
-def _request(
-    settings: Settings, payload: dict[str, Any], timeout: float = 10
-) -> dict[str, Any]:
-    try:
-        with socket.create_connection(
-            (settings.ipc_host, settings.ipc_port), timeout=timeout
-        ) as sock:
-            stream = sock.makefile("rwb")
-            stream.write(
-                json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-                + b"\n"
-            )
-            stream.flush()
-            raw = stream.readline()
-    except OSError as exc:
-        raise CLIError(
-            "Får ikkje kontakt med meshpi-tenesta. "
-            "Kontroller at ho køyrer med «systemctl status meshpi»."
-        ) from exc
-    if not raw:
-        raise CLIError("Meshpi-tenesta lukka sambandet utan svar")
-    response = json.loads(raw)
-    if not response.get("ok"):
-        raise CLIError(str(response.get("error", "Ukjend feil")))
-    return response
 
 
 def _local_time(value: str | int | None) -> str:
@@ -197,28 +169,6 @@ def _print_messages(messages: list[dict[str, Any]]) -> None:
         print(_format_message(message))
 
 
-def _open_watch(settings: Settings, conversation: str) -> tuple[socket.socket, Any]:
-    try:
-        sock = socket.create_connection((settings.ipc_host, settings.ipc_port), timeout=10)
-        sock.settimeout(None)
-        stream = sock.makefile("rwb")
-        stream.write(
-            json.dumps(
-                {"command": "watch", "conversation": conversation},
-                ensure_ascii=False,
-                separators=(",", ":"),
-            ).encode("utf-8")
-            + b"\n"
-        )
-        stream.flush()
-        response = json.loads(stream.readline())
-        if not response.get("ok"):
-            raise CLIError(str(response.get("error", "Klarte ikkje starte overvaking")))
-        return sock, stream
-    except OSError as exc:
-        raise CLIError("Får ikkje kontakt med meshpi-tenesta") from exc
-
-
 def _watch(settings: Settings, conversation: str, raw_json: bool = False) -> None:
     sock, stream = _open_watch(settings, conversation)
     try:
@@ -342,7 +292,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="skriv maskinlesbar JSON for ikkje-interaktive kommandoar",
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command")
+    parser.set_defaults(command="tui")
+    sub.add_parser("tui", help="start fullskjerms terminalgrensesnitt")
     sub.add_parser("daemon", help="køyr bakgrunnstenesta i framgrunnen")
     sub.add_parser("status", help="vis tilkoplingsstatus")
 
@@ -380,7 +332,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run(args: argparse.Namespace, settings: Settings) -> None:
     command = args.command
-    if command == "daemon":
+    if command == "tui":
+        from meshpi.tui import run_tui
+
+        run_tui(settings)
+    elif command == "daemon":
         run_daemon(settings)
     elif command == "status":
         data = _request(settings, {"command": "status"})["data"]
