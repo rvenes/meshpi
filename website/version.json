@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.5.0",
-  "published_at": "2026-07-20T17:40:00Z",
+  "latest_version": "0.5.1",
+  "published_at": "2026-07-20T22:23:35Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.5.0",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.5.1",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.0-py3-none-any.whl",
-    "filename": "meshpi-0.5.0-py3-none-any.whl",
-    "sha256": "d13218fe8705355d1f8d3536817ae68f52943643fc0d7530bd3862c691fb2b96",
-    "size": 63375,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.1-py3-none-any.whl",
+    "filename": "meshpi-0.5.1-py3-none-any.whl",
+    "sha256": "a7e6af11711177a62ec25310b3348544f70cc5b554d5c6f0d58d2183e43d574f",
+    "size": 63973,
     "format": "wheel"
   },
   "locks": {
@@ -49,6 +49,8 @@
     }
   },
   "release_notes": [
+    "Versjonsnummeret er alltid synleg først i topplinja.",
+    "Global F1-dialog viser alle tastatursnarvegane.",
     "Always- og session-modus for bakgrunnsdaemonen.",
     "Val om å stoppe daemonen når TUI-en blir avslutta.",
     "Versjonert installasjon, offline sjølvtest og automatisk rollback.",

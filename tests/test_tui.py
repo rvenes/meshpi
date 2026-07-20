@@ -1,10 +1,11 @@
 import asyncio
 
-from textual.widgets import Input, ListView, RichLog
+from textual.widgets import Input, ListView, RichLog, Static
 
 from meshpi.config import Settings
 from meshpi.tui import (
     ConversationItem,
+    HelpScreen,
     LiveEvent,
     MeshPiTUI,
     NewDMScreen,
@@ -161,6 +162,48 @@ def test_tui_uses_enter_to_activate_and_tab_to_move_between_panes():
             assert app.query_one("#conversation-list", ListView).has_focus
             await pilot.press("shift+tab")
             assert app.query_one("#node-list", ListView).has_focus
+
+    run_scenario(scenario)
+
+
+def test_status_bar_shows_current_meshpi_version():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            rendered = app.query_one("#status-bar", Static).render()
+            text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
+            assert "MeshPi 0.5.1" in text
+
+    run_scenario(scenario)
+
+
+def test_f1_opens_global_shortcut_help_and_f1_closes_it():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("ctrl+l")
+            assert app.query_one("#message-input", Input).has_focus
+
+            await pilot.press("f1")
+            await pilot.pause(0.1)
+            assert isinstance(app.screen, HelpScreen)
+            rendered = app.screen.query_one("#help-shortcuts", Static).render()
+            text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
+            assert "Tab / Shift+Tab" in text
+            assert "Ctrl+D" in text
+            assert "Ctrl+Q" in text
+
+            await pilot.press("f1")
+            await pilot.pause(0.1)
+            assert not isinstance(app.screen, HelpScreen)
 
     run_scenario(scenario)
 

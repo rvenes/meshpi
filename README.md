@@ -238,6 +238,7 @@ Piltastane flyttar den blå markeringa i ei liste. Trykk Enter for å gjere den
 markerte samtalen eller noden aktiv i chatten. Tastane i grensesnittet er:
 
 ```text
+F1                 vis eller lukk oversikta over alle tastatursnarvegane
 Tab / Shift+Tab    neste / førre felt: samtalar, chat og nodar
 Ctrl+L             flytt markøren til meldingsfeltet
 Enter              opne markert samtale/node, eller send tekst i meldingsfeltet

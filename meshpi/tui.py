@@ -20,6 +20,7 @@ from textual.message import Message as TextualMessage
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, ListItem, ListView, RichLog, Static
 
+from meshpi import __version__
 from meshpi.client import CLIError, open_watch, request
 from meshpi.config import Settings
 from meshpi.models import normalize_node_id, validate_message_text
@@ -303,6 +304,41 @@ class QuitScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class HelpScreen(ModalScreen[None]):
+    BINDINGS = [
+        Binding("f1", "close_help", "Lukk hjelp", priority=True),
+        Binding("escape", "close_help", "Lukk hjelp", priority=True),
+    ]
+
+    SHORTCUTS = (
+        ("F1", "Vis eller lukk denne oversikta"),
+        ("Tab / Shift+Tab", "Flytt mellom samtalar, melding og nodar"),
+        ("Enter", "Opne vald samtale/node eller send melding"),
+        ("↑ / ↓", "Naviger i den aktive lista"),
+        ("Ctrl+L", "Flytt markøren til meldingsfeltet"),
+        ("Ctrl+D", "Finn ein node og start ein ny DM"),
+        ("F2", "Flytt markøren til samtalelista"),
+        ("F3", "Flytt markøren til nodelista"),
+        ("Delete", "Lukk vald DM utan å slette historikken"),
+        ("Ctrl+R", "Oppdater status, samtalar og nodar"),
+        ("Ctrl+Q", "Avslutt MeshPi og vel kva som skjer med daemonen"),
+        ("Esc", "Lukk dialogen som er open"),
+    )
+
+    def compose(self) -> ComposeResult:
+        with Container(id="help-dialog"):
+            yield Label("Tastatursnarvegar", id="help-title")
+            help_text = Text()
+            for key, description in self.SHORTCUTS:
+                help_text.append(f"{key:<18}", style="bold cyan")
+                help_text.append(description + "\n")
+            yield Static(help_text, id="help-shortcuts")
+            yield Static("Trykk F1 eller Esc for å lukke", id="help-close")
+
+    def action_close_help(self) -> None:
+        self.dismiss(None)
+
+
 class LiveEvent(TextualMessage):
     def __init__(self, event: dict[str, Any]):
         self.event = event
@@ -553,9 +589,43 @@ class MeshPiTUI(App[str | None]):
         margin: 0 0 1 0;
     }
 
+    HelpScreen {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.72);
+    }
+
+    #help-dialog {
+        width: 76;
+        max-width: 96%;
+        height: 31;
+        max-height: 94%;
+        padding: 1 2;
+        border: round $accent;
+        background: $panel;
+    }
+
+    #help-title {
+        height: 2;
+        color: $accent;
+        text-style: bold;
+    }
+
+    #help-shortcuts {
+        height: 1fr;
+        padding: 1 0;
+        color: #cbd0d2;
+    }
+
+    #help-close {
+        height: 1;
+        color: #8d9699;
+        text-align: center;
+    }
+
     """
 
     BINDINGS = [
+        Binding("f1", "show_help", "Hjelp", priority=True),
         Binding("tab", "focus_next_pane", "Neste felt", priority=True),
         Binding("shift+tab", "focus_previous_pane", "Førre felt", priority=True),
         Binding("ctrl+l", "focus_input", "Skriv melding"),
@@ -625,7 +695,7 @@ class MeshPiTUI(App[str | None]):
                 yield Static("Nodar", id="node-list-title", classes="panel-title")
                 yield ListView(id="node-list")
         yield Static(
-            " Tab/Shift+Tab byter felt  Enter opnar  Del lukk DM  Ctrl+D ny DM  "
+            " F1 hjelp  Tab/Shift+Tab byter felt  Enter opnar  Del lukk DM  Ctrl+D ny DM  "
             "F2 samtalar  F3 nodar  Ctrl+R oppdater  Ctrl+Q avslutt ",
             id="key-bar",
         )
@@ -773,7 +843,7 @@ class MeshPiTUI(App[str | None]):
         local_node = self.nodes.get(local_id, {})
         local_name = local_node.get("short_name") or local_node.get("long_name") or local_id
         text = Text()
-        text.append("meshpi", style="bold green")
+        text.append(f"MeshPi {__version__}", style="bold green")
         text.append("  │  ")
         text.append("● ", style="green" if state == "tilkopla" else "yellow")
         text.append(state.capitalize(), style=state_style)
@@ -1338,6 +1408,12 @@ class MeshPiTUI(App[str | None]):
             exit_on_error=False,
         )
         self.select_conversation(self.current_conversation)
+
+    def action_show_help(self) -> None:
+        if isinstance(self.screen, HelpScreen):
+            self.screen.dismiss(None)
+        else:
+            self.push_screen(HelpScreen())
 
     def action_quit(self) -> None:
         self.push_screen(QuitScreen(self.settings.background_mode), self._finish_quit)
