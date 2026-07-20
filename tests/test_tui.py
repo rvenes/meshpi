@@ -10,6 +10,7 @@ from meshpi.tui import (
     NewDMScreen,
     NodePickerItem,
     NodeSidebarItem,
+    QuitScreen,
 )
 from meshpi.update import UpdateNotice
 
@@ -271,6 +272,50 @@ def test_update_notice_is_local_and_never_fills_or_sends_message_input():
             assert not any(
                 call["command"] in {"send_public", "send_dm"} for call in backend.calls
             )
+
+    run_scenario(scenario)
+
+
+def test_quit_dialog_defaults_to_leave_service_in_always_mode():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(
+            Settings(background_mode="always"),
+            requester=backend.request,
+            watcher=None,
+            update_checker=None,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.pause(0.2)
+            await pilot.press("ctrl+q")
+            await pilot.pause(0.1)
+            assert isinstance(app.screen, QuitScreen)
+            assert app.screen.query_one("#quit-leave").has_focus
+            await pilot.press("enter")
+            await pilot.pause(0.1)
+            assert app.return_value == "leave"
+
+    run_scenario(scenario)
+
+
+def test_quit_dialog_defaults_to_stop_service_in_session_mode():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(
+            Settings(background_mode="session"),
+            requester=backend.request,
+            watcher=None,
+            update_checker=None,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.pause(0.2)
+            await pilot.press("ctrl+q")
+            await pilot.pause(0.1)
+            assert isinstance(app.screen, QuitScreen)
+            assert app.screen.query_one("#quit-stop").has_focus
+            await pilot.press("enter")
+            await pilot.pause(0.1)
+            assert app.return_value == "stop"
 
     run_scenario(scenario)
 

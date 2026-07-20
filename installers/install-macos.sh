@@ -2,16 +2,31 @@
 set -eu
 
 BASE_URL="${MESHPI_BASE_URL:-https://venes.org/meshpi}"
-APP_ROOT="${MESHPI_APP_ROOT:-$HOME/Library/Application Support/MeshPi}"
-DATA_DIR="${MESHPI_DATA_DIR:-$APP_ROOT/data}"
-CONFIG_FILE="${MESHPI_CONFIG_FILE:-$APP_ROOT/meshpi.env}"
-BIN_DIR="${MESHPI_BIN_DIR:-$HOME/.local/bin}"
-LAUNCH_AGENTS_DIR="${MESHPI_LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
-PLIST_FILE="$LAUNCH_AGENTS_DIR/org.venes.meshpi.plist"
+MODE="${MESHPI_MODE:-always}"
+IPC_PORT_VALUE="${MESHPI_IPC_PORT:-8765}"
 SKIP_SERVICE="${MESHPI_SKIP_SERVICE:-0}"
 
+for argument in "$@"; do
+    case "$argument" in
+        --mode=always) MODE=always ;;
+        --mode=session | --no-service) MODE=session ;;
+        *) echo "Ukjent argument: $argument" >&2; exit 2 ;;
+    esac
+done
+[ "$MODE" = "always" ] || [ "$MODE" = "session" ] || {
+    echo "Modus må vere «always» eller «session»." >&2
+    exit 2
+}
+
+for command in curl shasum; do
+    command -v "$command" >/dev/null 2>&1 || {
+        echo "Manglar kommandoen «$command»." >&2
+        exit 1
+    }
+done
+
 find_python() {
-    for candidate in python3.13 python3.12 python3.11 python3; do
+    for candidate in python3.14 python3.13 python3.12 python3.11 python3; do
         if command -v "$candidate" >/dev/null 2>&1 &&
             "$candidate" -c 'import sys; raise SystemExit(sys.version_info < (3, 11))'
         then
@@ -29,10 +44,19 @@ if [ -z "$PYTHON" ]; then
     exit 1
 fi
 
+APP_ROOT="${MESHPI_APP_ROOT:-$HOME/Library/Application Support/MeshPi}"
+DATA_DIR="${MESHPI_DATA_DIR:-$APP_ROOT/data}"
+CONFIG_FILE="${MESHPI_CONFIG_FILE:-$APP_ROOT/meshpi.env}"
+BIN_DIR="${MESHPI_BIN_DIR:-$HOME/.local/bin}"
+LAUNCH_AGENTS_DIR="${MESHPI_LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
+PLIST_FILE="$LAUNCH_AGENTS_DIR/org.venes.meshpi.plist"
+RELEASES_DIR="$APP_ROOT/releases"
+CURRENT_LINK="$APP_ROOT/current"
+PREVIOUS_LINK="$APP_ROOT/previous"
+
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
 MANIFEST="$TMP_DIR/version.json"
-
 if [ -n "${MESHPI_MANIFEST_FILE:-}" ]; then
     cp "$MESHPI_MANIFEST_FILE" "$MANIFEST"
 else
@@ -58,8 +82,11 @@ PY
 VERSION="$(manifest_value latest_version)"
 PACKAGE_URL="$(manifest_value package.url)"
 EXPECTED_SHA256="$(manifest_value package.sha256)"
-WHEEL="$TMP_DIR/meshpi-$VERSION-py3-none-any.whl"
-
+LOCK_URL="$(manifest_value locks.macos.url)"
+EXPECTED_LOCK_SHA256="$(manifest_value locks.macos.sha256)"
+case "$VERSION" in
+    *[!0-9.]* | *.*.*.* | .* | *.) echo "Ugyldig versjon i manifestet" >&2; exit 1 ;;
+esac
 case "$EXPECTED_SHA256" in
     *[!0-9a-fA-F]* | "") echo "Ugyldig SHA-256 i version.json" >&2; exit 1 ;;
 esac
@@ -67,19 +94,41 @@ esac
     echo "Ugyldig SHA-256-lengd i version.json" >&2
     exit 1
 }
+case "$EXPECTED_LOCK_SHA256" in
+    *[!0-9a-fA-F]* | "") echo "Ugyldig låsefil-hash i version.json" >&2; exit 1 ;;
+esac
+[ "${#EXPECTED_LOCK_SHA256}" -eq 64 ] || {
+    echo "Ugyldig låsefil-hash i version.json" >&2
+    exit 1
+}
 
-curl -fsSL "$PACKAGE_URL" -o "$WHEEL"
+WHEEL="$TMP_DIR/meshpi-$VERSION-py3-none-any.whl"
+LOCK_FILE="$TMP_DIR/requirements-macos.txt"
+if [ -n "${MESHPI_PACKAGE_FILE:-}" ]; then
+    cp "$MESHPI_PACKAGE_FILE" "$WHEEL"
+else
+    curl -fsSL "$PACKAGE_URL" -o "$WHEEL"
+fi
+if [ -n "${MESHPI_LOCK_FILE:-}" ]; then
+    cp "$MESHPI_LOCK_FILE" "$LOCK_FILE"
+else
+    curl -fsSL "$LOCK_URL" -o "$LOCK_FILE"
+fi
 ACTUAL_SHA256="$(shasum -a 256 "$WHEEL" | awk '{print $1}')"
 [ "$ACTUAL_SHA256" = "$EXPECTED_SHA256" ] || {
     echo "SHA-256 stemmer ikkje. Installasjonen er avbroten." >&2
     exit 1
 }
+ACTUAL_LOCK_SHA256="$(shasum -a 256 "$LOCK_FILE" | awk '{print $1}')"
+[ "$ACTUAL_LOCK_SHA256" = "$EXPECTED_LOCK_SHA256" ] || {
+    echo "SHA-256 for låsefila stemmer ikkje. Installasjonen er avbroten." >&2
+    exit 1
+}
 
-mkdir -p "$APP_ROOT" "$DATA_DIR" "$BIN_DIR" "$LAUNCH_AGENTS_DIR"
-"$PYTHON" -m venv "$APP_ROOT/venv"
-"$APP_ROOT/venv/bin/python" -m pip install -q --upgrade pip
-"$APP_ROOT/venv/bin/python" -m pip install -q --upgrade --force-reinstall "$WHEEL"
-
+mkdir -p \
+    "$APP_ROOT" "$DATA_DIR" "$BIN_DIR" "$LAUNCH_AGENTS_DIR" "$RELEASES_DIR" \
+    "$(dirname "$CONFIG_FILE")"
+chmod 0700 "$DATA_DIR"
 if [ ! -f "$CONFIG_FILE" ]; then
     cat >"$CONFIG_FILE" <<EOF
 MESHTASTIC_HOST=10.0.0.152
@@ -88,18 +137,76 @@ DATABASE_PATH=$DATA_DIR/meshtastic.db
 CONNECTIONS_PATH=$DATA_DIR/connections.json
 DISCOVERY_SUBNET=10.0.0.0/24
 IPC_HOST=127.0.0.1
-IPC_PORT=8765
+IPC_PORT=$IPC_PORT_VALUE
 LOG_LEVEL=INFO
 UPDATE_URL=$BASE_URL/version.json
 UPDATE_TIMEOUT=3
+BACKGROUND_MODE=$MODE
 EOF
-    chmod 0600 "$CONFIG_FILE"
+else
+    if grep -q '^BACKGROUND_MODE=' "$CONFIG_FILE"; then
+        sed "s/^BACKGROUND_MODE=.*/BACKGROUND_MODE=$MODE/" "$CONFIG_FILE" >"$TMP_DIR/config"
+        cat "$TMP_DIR/config" >"$CONFIG_FILE"
+    else
+        printf '\nBACKGROUND_MODE=%s\n' "$MODE" >>"$CONFIG_FILE"
+    fi
 fi
+chmod 0600 "$CONFIG_FILE"
+
+RELEASE="$RELEASES_DIR/$VERSION"
+OLD_RELEASE=""
+if [ -L "$CURRENT_LINK" ]; then
+    OLD_RELEASE="$(cd "$CURRENT_LINK" 2>/dev/null && pwd -P || true)"
+fi
+if [ "$RELEASE" != "$OLD_RELEASE" ]; then
+    rm -rf "$RELEASE"
+    "$PYTHON" -m venv "$RELEASE/venv"
+    "$RELEASE/venv/bin/python" -m pip install -q --require-hashes -r "$LOCK_FILE"
+    "$RELEASE/venv/bin/python" -m pip install -q --no-deps "$WHEEL"
+fi
+INSTALLED_VERSION="$("$RELEASE/venv/bin/meshpi" --version)"
+[ "$INSTALLED_VERSION" = "MeshPi $VERSION" ] || {
+    echo "Pakken rapporterer «$INSTALLED_VERSION», venta MeshPi $VERSION." >&2
+    exit 1
+}
+"$RELEASE/venv/bin/meshpi" --env-file "$CONFIG_FILE" doctor --offline >/dev/null
+
+DOMAIN="gui/$(id -u)"
+LABEL="org.venes.meshpi"
+launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
+if [ -x "$BIN_DIR/meshpi" ]; then
+    "$BIN_DIR/meshpi" service stop >/dev/null 2>&1 || true
+fi
+
+if [ -z "$OLD_RELEASE" ] && [ -d "$APP_ROOT/venv" ]; then
+    LEGACY_VERSION="$("$APP_ROOT/venv/bin/python" -m pip show meshpi 2>/dev/null |
+        awk '/^Version:/{print $2; exit}')"
+    LEGACY_VERSION="${LEGACY_VERSION:-legacy}"
+    OLD_RELEASE="$RELEASES_DIR/$LEGACY_VERSION"
+    if [ ! -e "$OLD_RELEASE" ]; then
+        mkdir -p "$OLD_RELEASE"
+        mv "$APP_ROOT/venv" "$OLD_RELEASE/venv"
+    fi
+fi
+
+switch_link() {
+    target="$1"
+    temporary="$APP_ROOT/.current-$$"
+    rm -f "$temporary"
+    ln -s "$target" "$temporary"
+    mv -f "$temporary" "$CURRENT_LINK"
+}
+
+if [ -n "$OLD_RELEASE" ] && [ "$OLD_RELEASE" != "$RELEASE" ]; then
+    rm -f "$PREVIOUS_LINK"
+    ln -s "$OLD_RELEASE" "$PREVIOUS_LINK"
+fi
+switch_link "$RELEASE"
 
 rm -f "$BIN_DIR/meshpi"
 cat >"$BIN_DIR/meshpi" <<EOF
 #!/bin/sh
-exec "$APP_ROOT/venv/bin/meshpi" --env-file "$CONFIG_FILE" "\$@"
+exec "$CURRENT_LINK/venv/bin/meshpi" --env-file "$CONFIG_FILE" "\$@"
 EOF
 chmod 0755 "$BIN_DIR/meshpi"
 
@@ -109,40 +216,61 @@ if [ "${MESHPI_SKIP_PATH:-0}" != "1" ] &&
     ! grep -F "$PATH_LINE" "$PROFILE" >/dev/null 2>&1
 then
     printf '\n%s\n' "$PATH_LINE" >>"$PROFILE"
+    : >"$APP_ROOT/path-added-by-meshpi"
 fi
 
-if [ "$SKIP_SERVICE" != "1" ]; then
+if [ "$MODE" = "always" ] && [ "$SKIP_SERVICE" != "1" ]; then
     cat >"$PLIST_FILE" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>org.venes.meshpi</string>
+    <string>$LABEL</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$APP_ROOT/venv/bin/meshpi</string>
+        <string>$CURRENT_LINK/venv/bin/meshpi</string>
         <string>--env-file</string>
         <string>$CONFIG_FILE</string>
         <string>daemon</string>
     </array>
     <key>WorkingDirectory</key>
     <string>$DATA_DIR</string>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>$DATA_DIR/meshpi.log</string>
-    <key>StandardErrorPath</key>
-    <string>$DATA_DIR/meshpi-error.log</string>
+    <key>RunAtLoad</key><true/>
+    <key>KeepAlive</key><true/>
+    <key>ThrottleInterval</key><integer>5</integer>
+    <key>StandardOutPath</key><string>$DATA_DIR/meshpi.log</string>
+    <key>StandardErrorPath</key><string>$DATA_DIR/meshpi-error.log</string>
 </dict>
 </plist>
 EOF
     plutil -lint "$PLIST_FILE" >/dev/null
-    launchctl bootout "gui/$(id -u)/org.venes.meshpi" >/dev/null 2>&1 || true
-    launchctl bootstrap "gui/$(id -u)" "$PLIST_FILE"
+    launchctl bootstrap "$DOMAIN" "$PLIST_FILE"
+
+    READY=0
+    i=0
+    while [ "$i" -lt 40 ]; do
+        if [ "${MESHPI_FORCE_HEALTH_FAILURE:-0}" != "1" ] &&
+            "$CURRENT_LINK/venv/bin/meshpi" --env-file "$CONFIG_FILE" status >/dev/null 2>&1
+        then
+            READY=1
+            break
+        fi
+        i=$((i + 1))
+        sleep 0.25
+    done
+    if [ "$READY" != "1" ]; then
+        launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
+        if [ -n "$OLD_RELEASE" ] && [ -d "$OLD_RELEASE" ]; then
+            switch_link "$OLD_RELEASE"
+            launchctl bootstrap "$DOMAIN" "$PLIST_FILE" >/dev/null 2>&1 || true
+            echo "Oppdateringa feila. Førre versjon er sett tilbake." >&2
+        fi
+        exit 1
+    fi
+else
+    rm -f "$PLIST_FILE"
 fi
 
-echo "MeshPi $VERSION er installert."
+echo "MeshPi $VERSION er installert i $MODE-modus."
 echo "Opne ein ny terminal og start med: meshpi"

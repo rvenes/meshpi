@@ -54,6 +54,7 @@ class Settings:
     log_level: str = "INFO"
     update_url: str = "https://venes.org/meshpi/version.json"
     update_timeout: float = 3.0
+    background_mode: str = "always"
 
     @classmethod
     def load(cls, env_file: str | Path = ".env") -> Settings:
@@ -67,6 +68,9 @@ class Settings:
         level = os.environ.get("LOG_LEVEL", "INFO").strip().upper()
         if level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
             raise ValueError("Ugyldig LOG_LEVEL")
+        background_mode = os.environ.get("BACKGROUND_MODE", "always").strip().lower()
+        if background_mode not in {"always", "session"}:
+            raise ValueError("BACKGROUND_MODE må vere «always» eller «session»")
         database_path = Path(
             os.environ.get("DATABASE_PATH", "./data/meshtastic.db")
         ).expanduser()
@@ -90,4 +94,5 @@ class Settings:
                 "UPDATE_URL", "https://venes.org/meshpi/version.json"
             ).strip(),
             update_timeout=_env_float("UPDATE_TIMEOUT", 3, 0.5, 30),
+            background_mode=background_mode,
         )

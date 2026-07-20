@@ -18,7 +18,7 @@ from textual.css.query import NoMatches
 from textual.events import Resize
 from textual.message import Message as TextualMessage
 from textual.screen import ModalScreen
-from textual.widgets import Input, Label, ListItem, ListView, RichLog, Static
+from textual.widgets import Button, Input, Label, ListItem, ListView, RichLog, Static
 
 from meshpi.client import CLIError, open_watch, request
 from meshpi.config import Settings
@@ -267,13 +267,49 @@ class NewDMScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class QuitScreen(ModalScreen[str | None]):
+    BINDINGS = [Binding("escape", "cancel", "Avbryt", priority=True)]
+
+    def __init__(self, background_mode: str):
+        super().__init__()
+        self.background_mode = background_mode
+
+    def compose(self) -> ComposeResult:
+        with Container(id="quit-dialog"):
+            yield Label("Avslutt MeshPi", id="quit-title")
+            yield Static(
+                "Vil du berre lukke terminalgrensesnittet, eller stoppe "
+                "bakgrunnstenesta òg?",
+                id="quit-text",
+            )
+            yield Button("Lukk appen – tenesta held fram", id="quit-leave")
+            yield Button("Lukk appen og stopp tenesta", id="quit-stop")
+            yield Button("Avbryt", id="quit-cancel")
+
+    def on_mount(self) -> None:
+        target = "#quit-stop" if self.background_mode == "session" else "#quit-leave"
+        self.query_one(target, Button).focus()
+
+    @on(Button.Pressed)
+    def choose(self, event: Button.Pressed) -> None:
+        result = {
+            "quit-leave": "leave",
+            "quit-stop": "stop",
+            "quit-cancel": None,
+        }.get(event.button.id)
+        self.dismiss(result)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class LiveEvent(TextualMessage):
     def __init__(self, event: dict[str, Any]):
         self.event = event
         super().__init__()
 
 
-class MeshPiTUI(App[None]):
+class MeshPiTUI(App[str | None]):
     TITLE = "MeshPi"
     SUB_TITLE = "Meshtastic"
     ENABLE_COMMAND_PALETTE = False
@@ -485,6 +521,36 @@ class MeshPiTUI(App[None]):
     #new-dm-help {
         height: 1;
         color: #8d9699;
+    }
+
+    QuitScreen {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.72);
+    }
+
+    #quit-dialog {
+        width: 58;
+        max-width: 94%;
+        height: 18;
+        padding: 1 2;
+        border: round $accent;
+        background: $panel;
+    }
+
+    #quit-title {
+        height: 2;
+        color: $accent;
+        text-style: bold;
+    }
+
+    #quit-text {
+        height: 4;
+        color: #cbd0d2;
+    }
+
+    #quit-dialog Button {
+        width: 1fr;
+        margin: 0 0 1 0;
     }
 
     """
@@ -1273,6 +1339,13 @@ class MeshPiTUI(App[None]):
         )
         self.select_conversation(self.current_conversation)
 
+    def action_quit(self) -> None:
+        self.push_screen(QuitScreen(self.settings.background_mode), self._finish_quit)
 
-def run_tui(settings: Settings) -> None:
-    MeshPiTUI(settings).run()
+    def _finish_quit(self, result: str | None) -> None:
+        if result is not None:
+            self.exit(result)
+
+
+def run_tui(settings: Settings) -> str | None:
+    return MeshPiTUI(settings).run()

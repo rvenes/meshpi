@@ -43,6 +43,7 @@ def test_settings_load_env_file(tmp_path, monkeypatch):
         "LOG_LEVEL",
         "UPDATE_URL",
         "UPDATE_TIMEOUT",
+        "BACKGROUND_MODE",
     ):
         monkeypatch.delenv(name, raising=False)
     path = tmp_path / ".env"
@@ -56,6 +57,7 @@ def test_settings_load_env_file(tmp_path, monkeypatch):
     assert settings.connections_path == settings.database_path.with_name("connections.json")
     assert settings.update_url == "https://venes.org/meshpi/version.json"
     assert settings.update_timeout == 3
+    assert settings.background_mode == "always"
 
 
 def test_settings_reject_non_loopback_ipc(monkeypatch):
@@ -64,11 +66,20 @@ def test_settings_reject_non_loopback_ipc(monkeypatch):
         Settings.load("missing")
 
 
+def test_settings_reject_unknown_background_mode(monkeypatch):
+    monkeypatch.setenv("BACKGROUND_MODE", "ukjend")
+    with pytest.raises(ValueError):
+        Settings.load("missing")
+
+
 def test_ipc_dispatch_and_validation(tmp_path):
     database = Database(tmp_path / "db.sqlite")
     database.initialize()
     app = IPCApplication(Settings(database_path=database.path), database, FakeService(), EventHub())
-    assert app.dispatch({"command": "status"})["data"]["state"] == "tilkopla"
+    status = app.dispatch({"command": "status"})["data"]
+    assert status["state"] == "tilkopla"
+    assert status["background_mode"] == "always"
+    assert isinstance(status["daemon_pid"], int)
     assert app.dispatch({"command": "connections"})["data"]["active_profile_id"] == "tcp-test"
     assert app.dispatch({"command": "discover_connections"})["data"]["serial"] == []
     assert (
@@ -105,7 +116,14 @@ def test_ipc_socket_roundtrip(tmp_path):
     database = Database(tmp_path / "db.sqlite")
     database.initialize()
     settings = Settings(database_path=database.path, ipc_port=0)
-    app = IPCApplication(settings, database, FakeService(), EventHub())
+    stopped = threading.Event()
+    app = IPCApplication(
+        settings,
+        database,
+        FakeService(),
+        EventHub(),
+        shutdown_callback=stopped.set,
+    )
     server = IPCServer(settings, app)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -115,7 +133,15 @@ def test_ipc_socket_roundtrip(tmp_path):
             stream.write(b'{"command":"status"}\n')
             stream.flush()
             response = json.loads(stream.readline())
-        assert response == {"ok": True, "data": {"state": "tilkopla"}}
+        assert response["ok"] is True
+        assert response["data"]["state"] == "tilkopla"
+        with socket.create_connection(server.address, timeout=2) as connection:
+            stream = connection.makefile("rwb")
+            stream.write(b'{"command":"shutdown"}\n')
+            stream.flush()
+            response = json.loads(stream.readline())
+        assert response == {"ok": True, "data": {"stopping": True}}
+        assert stopped.wait(1)
     finally:
         server.shutdown()
         thread.join(timeout=2)

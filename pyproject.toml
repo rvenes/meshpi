@@ -1,20 +1,18 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "meshpi"
-version = "0.4.0"
+version = "0.5.0"
 description = "Ein stabil Meshtastic-klient for terminalen"
 readme = "README.md"
-license = { text = "GPL-3.0-only" }
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
-classifiers = [
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
-]
 dependencies = [
     "meshtastic==2.7.11",
-    "prompt-toolkit>=3.0.51,<4",
+    "prompt-toolkit==3.0.52",
     "textual==8.2.8",
 ]
 

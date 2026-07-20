@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import queue
 import socketserver
+import threading
+from collections.abc import Callable
 from contextlib import suppress
 from typing import Any
 
@@ -24,16 +27,30 @@ class IPCApplication:
         database: Database,
         service: MeshtasticService,
         events: EventHub,
+        shutdown_callback: Callable[[], None] | None = None,
     ):
         self.settings = settings
         self.database = database
         self.service = service
         self.events = events
+        self.shutdown_callback = shutdown_callback
 
     def dispatch(self, request: dict[str, Any]) -> dict[str, Any]:
         command = request.get("command")
         if command == "status":
-            return {"ok": True, "data": self.service.status()}
+            return {
+                "ok": True,
+                "data": self.service.status()
+                | {
+                    "background_mode": self.settings.background_mode,
+                    "daemon_pid": os.getpid(),
+                },
+            }
+        if command == "shutdown":
+            if self.shutdown_callback is None:
+                raise RuntimeError("Denne daemonen kan ikkje stoppast via IPC")
+            threading.Thread(target=self.shutdown_callback, daemon=True).start()
+            return {"ok": True, "data": {"stopping": True}}
         if command == "connections":
             return {"ok": True, "data": self.service.list_connections()}
         if command == "discover_connections":

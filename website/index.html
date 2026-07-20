@@ -21,6 +21,7 @@
       <a href="#funksjonar">Funksjonar</a>
       <a href="#installasjon">Installer</a>
       <a href="#oppdatering">Oppdater</a>
+      <a href="#drift">Drift</a>
       <a href="https://github.com/rvenes/meshpi">GitHub</a>
     </nav>
   </header>
@@ -28,7 +29,7 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.4.0</div>
+        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.5.0</div>
         <h1>Meshtastic-chat.<br><span>Rett i terminalen.</span></h1>
         <p class="lead">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
@@ -119,8 +120,12 @@
     <section id="installasjon" class="section install-section">
       <div class="section-heading">
         <span>Kom i gang</span>
-        <h2>Éin kommando</h2>
-        <p>Vel operativsystem. Installeren kontrollerer SHA-256 før pakken blir installert.</p>
+        <h2>Vel kor lenge bakgrunnen skal køyre</h2>
+        <p>
+          Standard er <strong>always</strong>: meldingar kjem inn også når
+          terminalgrensesnittet er lukka. Vel <strong>session</strong> dersom
+          daemonen berre skal køyre medan du bruker MeshPi.
+        </p>
       </div>
 
       <div class="platform-tabs" role="tablist" aria-label="Vel operativsystem">
@@ -132,29 +137,31 @@
       <div class="platform-panel active" data-platform-panel="linux">
         <div>
           <h3>Linux og Raspberry Pi OS</h3>
-          <p>Installerer under <code>/opt/meshpi</code> og set opp ei avgrensa systemd-teneste.</p>
+          <p>Installerer under <code>/opt/meshpi</code> og set opp ei avgrensa systemd-teneste (always).</p>
         </div>
         <div class="command-box">
           <code id="install-linux-command">curl -fsSL https://venes.org/meshpi/install-linux.sh | sudo bash</code>
           <button data-copy-target="install-linux-command">Kopier</button>
         </div>
+        <p>Session: <code>curl -fsSL https://venes.org/meshpi/install-linux.sh | sudo bash -s -- --mode=session</code></p>
       </div>
 
       <div class="platform-panel" data-platform-panel="macos" hidden>
         <div>
           <h3>macOS</h3>
-          <p>Installerer for gjeldande brukar og held daemonen i gang med launchd.</p>
+          <p>Installerer for gjeldande brukar og held daemonen i gang med launchd (always).</p>
         </div>
         <div class="command-box">
           <code id="install-macos-command">curl -fsSL https://venes.org/meshpi/install-macos.sh | bash</code>
           <button data-copy-target="install-macos-command">Kopier</button>
         </div>
+        <p>Session: <code>curl -fsSL https://venes.org/meshpi/install-macos.sh | bash -s -- --mode=session</code></p>
       </div>
 
       <div class="platform-panel" data-platform-panel="windows" hidden>
         <div>
           <h3>Windows PowerShell</h3>
-          <p>Installerer for gjeldande brukar og startar daemonen skjult ved innlogging.</p>
+          <p>Installerer per brukar og bruker ein prosessvakt som startar daemonen ved innlogging og etter krasj.</p>
         </div>
         <div class="command-box">
           <code id="install-windows-command">powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://venes.org/meshpi/install-windows.ps1 | iex"</code>
@@ -169,6 +176,31 @@
           <li>Køyr <code>meshpi new</code> og vel TCP-node eller USB-port.</li>
           <li>Køyr <code>meshpi</code> for å opne terminalgrensesnittet.</li>
         </ol>
+        <p>
+          Installeren lagar ei ny versjonsmappe, kontrollerer pakken og alle
+          avhengigheiter med SHA-256, køyrer ein offline sjølvtest og byter
+          først deretter. Ved mislykka helsesjekk blir førre versjon sett
+          tilbake automatisk.
+        </p>
+      </div>
+
+      <div class="after-install">
+        <h3>Les skriptet før du køyrer det</h3>
+        <p>
+          Dei korte kommandoane over stoler på det serveren leverer akkurat
+          då. Du kan i staden laste ned skriptet, lese det og køyre den lokale
+          fila:
+        </p>
+        <p><code>curl -fLO https://venes.org/meshpi/install-linux.sh</code><br>
+          <code>less install-linux.sh</code><br>
+          <code>sudo sh install-linux.sh</code></p>
+        <p><code>curl -fLO https://venes.org/meshpi/install-macos.sh</code><br>
+          <code>less install-macos.sh</code><br>
+          <code>sh install-macos.sh</code></p>
+        <p><code>Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1</code><br>
+          <code>Get-Content .\install-windows.ps1</code><br>
+          <code>Set-ExecutionPolicy -Scope Process Bypass; .\install-windows.ps1</code></p>
+        <p>Windows session-modus: <code>.\install-windows.ps1 -Mode Session</code>.</p>
       </div>
     </section>
 
@@ -187,14 +219,45 @@
         </p>
       </div>
       <div class="info-card">
-        <h3>Trygg nedlasting</h3>
+        <h3>Kontrollert nedlasting</h3>
         <ul>
           <li>Manifest og installasjon over HTTPS</li>
-          <li>SHA-256 blir kontrollert før installasjon</li>
+          <li>SHA-256 for MeshPi-pakken og låste avhengigheiter</li>
+          <li>Offline sjølvtest og automatisk rollback</li>
           <li>Ingen automatisk køyring av oppdateringar</li>
           <li>Ingen telemetri eller konto</li>
         </ul>
+        <p>
+          Manifest og filer kjem førebels frå same server og er ikkje digitalt
+          signerte. SHA-256 åleine vernar derfor ikkje dersom sjølve serveren
+          blir kompromittert.
+        </p>
         <a href="version.json">Opne versjonsmanifestet →</a>
+      </div>
+    </section>
+
+    <section id="drift" class="section split-section">
+      <div>
+        <span class="section-kicker">Bakgrunn og diagnostikk</span>
+        <h2>Styr daemonen utan å leite i systemmenyar</h2>
+        <p><code>meshpi service status</code><br>
+          <code>meshpi service start</code><br>
+          <code>meshpi service stop</code><br>
+          <code>meshpi doctor --offline</code></p>
+        <p>
+          I session-modus startar MeshPi daemonen ved behov. Når du avsluttar
+          TUI-en, kan du velje om han skal stoppast eller stå att.
+        </p>
+      </div>
+      <div class="info-card">
+        <h3>Avinstaller utan datatap</h3>
+        <p>Standard avinstallering fjernar program og autostart, men bevarer konfigurasjon, historikk og profilar.</p>
+        <ul>
+          <li><a href="uninstall-linux.sh">Linux / Pi</a> – bruk <code>--purge-data</code> for full sletting</li>
+          <li><a href="uninstall-macos.sh">macOS</a> – bruk <code>--purge-data</code> for full sletting</li>
+          <li><a href="uninstall-windows.ps1">Windows</a> – bruk <code>-PurgeData</code> for full sletting</li>
+        </ul>
+        <p>Detaljerte mapper, loggkommandoar og drift står i <a href="https://github.com/rvenes/meshpi#drift-filer-og-avinstallering">README-en</a>.</p>
       </div>
     </section>
 
@@ -213,21 +276,21 @@
       </div>
     </section>
 
-    <section id="release-0.4.0" class="section release-section">
+    <section id="release-0.5.0" class="section release-section">
       <div class="section-heading">
         <span>Siste versjon</span>
-        <h2>MeshPi 0.4.0</h2>
+        <h2>MeshPi 0.5.0</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li>Installasjonsskript for Linux, macOS og Windows</li>
-          <li>Trygg oppdateringssjekk med lokal TUI-melding</li>
-          <li>Stabil nodeliste utan unødvendig blinking</li>
-          <li>Tab-navigasjon og arkivering av samtalar</li>
-          <li>TCP- og USB/serielle tilkoplingsprofilar</li>
+          <li>Always- og session-modus for bakgrunnsdaemonen</li>
+          <li>Val om å stoppe daemonen når TUI-en blir avslutta</li>
+          <li>Versjonert installasjon, offline sjølvtest og automatisk rollback</li>
+          <li>Hash-låste Python-avhengigheiter på alle tre plattformer</li>
+          <li>Robust per-brukar-autostart på Windows og ryddige avinstallerarar</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.4.0-py3-none-any.whl">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.5.0-py3-none-any.whl">Last ned Python-pakken</a>
           <a href="https://github.com/rvenes/meshpi">Kjeldekode på GitHub</a>
         </div>
       </div>

@@ -1,16 +1,38 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.4.0",
-  "published_at": "2026-07-20T15:40:21Z",
+  "latest_version": "0.5.0",
+  "published_at": "2026-07-20T17:40:00Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.4.0",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.5.0",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.4.0-py3-none-any.whl",
-    "filename": "meshpi-0.4.0-py3-none-any.whl",
-    "sha256": "027459767cf5d3deb91cc0dba292d5863cf624c2770e85b2b79d56f6b92fb85e",
-    "size": 57320,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.0-py3-none-any.whl",
+    "filename": "meshpi-0.5.0-py3-none-any.whl",
+    "sha256": "d13218fe8705355d1f8d3536817ae68f52943643fc0d7530bd3862c691fb2b96",
+    "size": 63375,
     "format": "wheel"
+  },
+  "locks": {
+    "linux": {
+      "url": "https://venes.org/meshpi/locks/linux.txt",
+      "sha256": "6aded801d934a1c33b225e32a6695f7a4afde1e995aa6f587010de1689bbe237",
+      "size": 25656
+    },
+    "macos": {
+      "url": "https://venes.org/meshpi/locks/macos.txt",
+      "sha256": "3b7929fd710e799a8c6fec13852a682f6769d68b060b68f7a36d12997c8219b2",
+      "size": 23596
+    },
+    "windows": {
+      "url": "https://venes.org/meshpi/locks/windows.txt",
+      "sha256": "9bbc34bf8a9d4469e62c766d8d0ef00701d8bd7247fe052640bbf296b702ad4b",
+      "size": 35246
+    }
+  },
+  "security": {
+    "integrity": "sha256",
+    "dependency_policy": "pip-require-hashes",
+    "manifest_signature": null
   },
   "installers": {
     "linux": {
@@ -27,9 +49,10 @@
     }
   },
   "release_notes": [
-    "Installasjonsskript for Linux, macOS og Windows.",
-    "Trygg oppdateringssjekk med lokal melding i TUI-en.",
-    "Navigerbar nodeliste, stabil rendering og arkivering av samtalar.",
-    "TCP- og USB/serielle tilkoplingsprofilar."
+    "Always- og session-modus for bakgrunnsdaemonen.",
+    "Val om å stoppe daemonen når TUI-en blir avslutta.",
+    "Versjonert installasjon, offline sjølvtest og automatisk rollback.",
+    "Hash-låste Python-avhengigheiter på Windows, macOS og Linux.",
+    "Robust per-brukar-autostart på Windows og avinstallerarar for alle plattformer."
   ]
 }

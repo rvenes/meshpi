@@ -9,12 +9,16 @@ from contextlib import suppress
 from datetime import datetime
 from typing import Any
 
+from meshpi import __version__
 from meshpi.client import CLIError
 from meshpi.client import open_watch as _open_watch
 from meshpi.client import request as _request
 from meshpi.config import Settings
 from meshpi.daemon import run_daemon
+from meshpi.doctor import offline_checks
+from meshpi.lifecycle import DaemonHandle, start_session_daemon, stop_daemon
 from meshpi.models import normalize_node_id
+from meshpi.platform_service import manage_service
 
 EXIT_ERROR = 1
 COMMANDS = {
@@ -23,6 +27,8 @@ COMMANDS = {
     "connect",
     "connections",
     "daemon",
+    "doctor",
+    "service",
     "status",
     "nodes",
     "node",
@@ -111,6 +117,28 @@ def _print_status(data: dict[str, Any]) -> None:
         print(f"Reconnect:    forsøk {data['reconnect_attempt']}")
     if data.get("error"):
         print(f"Feil:         {data['error']}")
+
+
+def _print_service(data: dict[str, Any], action: str) -> None:
+    if action == "status":
+        state = data.get("state", "ukjend")
+        print(f"Bakgrunn:     {state}")
+        print(f"Modus:        {data.get('background_mode', 'ukjend')}")
+        if data.get("daemon_pid"):
+            print(f"Prosess-ID:   {data['daemon_pid']}")
+        if data.get("endpoint"):
+            print(f"Meshtastic:   {str(data.get('transport') or 'tcp').upper()} "
+                  f"{data['endpoint']}")
+        if data.get("error"):
+            print(f"Feil:         {data['error']}")
+        return
+    labels = {
+        "start": "Bakgrunnstenesta er starta.",
+        "stop": "Bakgrunnstenesta er stoppa.",
+        "enable": "Automatisk oppstart er slått på.",
+        "disable": "Automatisk oppstart er slått av.",
+    }
+    print(labels[action])
 
 
 def _print_nodes(nodes: list[dict[str, Any]]) -> None:
@@ -326,6 +354,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="Meshtastic-chat for terminalen",
     )
     parser.add_argument(
+        "--version",
+        action="version",
+        version=f"MeshPi {__version__}",
+    )
+    parser.add_argument(
         "--env-file",
         default=".env",
         help="sti til miljøfil (standard: .env)",
@@ -343,7 +376,19 @@ def build_parser() -> argparse.ArgumentParser:
     connect.add_argument("target", help="IP, vert[:port], /dev/sti eller COM-port")
     connect.add_argument("--name", help="namn på den lagra profilen")
     sub.add_parser("connections", help="vis lagra tilkoplingar")
-    sub.add_parser("daemon", help="køyr bakgrunnstenesta i framgrunnen")
+    daemon = sub.add_parser("daemon", help="køyr bakgrunnstenesta i framgrunnen")
+    daemon.add_argument("--parent-pid", type=int, help=argparse.SUPPRESS)
+    doctor = sub.add_parser("doctor", help="køyr ein offline sjølvtest")
+    doctor.add_argument(
+        "--offline",
+        action="store_true",
+        help="ikkje krev ein tilgjengeleg Meshtastic-node",
+    )
+    service = sub.add_parser("service", help="styr bakgrunnstenesta")
+    service.add_argument(
+        "action",
+        choices=("status", "start", "stop", "enable", "disable"),
+    )
     sub.add_parser("status", help="vis tilkoplingsstatus")
 
     nodes = sub.add_parser("nodes", help="vis kjende nodar")
@@ -378,12 +423,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def run(args: argparse.Namespace, settings: Settings) -> None:
+def run(args: argparse.Namespace, settings: Settings) -> str | None:
     command = args.command
     if command == "tui":
         from meshpi.tui import run_tui
 
-        run_tui(settings)
+        return run_tui(settings)
     elif command == "new":
         from meshpi.connect_tui import choose_connection
         from meshpi.tui import run_tui
@@ -391,7 +436,7 @@ def run(args: argparse.Namespace, settings: Settings) -> None:
         selection = choose_connection(settings)
         if selection is not None:
             _request(settings, {"command": "connect"} | selection)
-            run_tui(settings)
+            return run_tui(settings)
     elif command == "connect":
         from meshpi.tui import run_tui
 
@@ -403,12 +448,24 @@ def run(args: argparse.Namespace, settings: Settings) -> None:
                 "name": args.name,
             },
         )
-        run_tui(settings)
+        return run_tui(settings)
     elif command == "connections":
         data = _request(settings, {"command": "connections"})["data"]
         print(json.dumps(data, ensure_ascii=False)) if args.json else _print_connections(data)
     elif command == "daemon":
-        run_daemon(settings)
+        run_daemon(settings, parent_pid=args.parent_pid)
+    elif command == "doctor":
+        failed = False
+        for name, ok, detail in offline_checks(settings):
+            print(f"{'OK' if ok else 'FEIL':4}  {name:18} {detail}")
+            failed = failed or not ok
+        if failed:
+            raise RuntimeError("Sjølvtesten fann feil")
+    elif command == "service":
+        data = manage_service(args.action, settings, args.env_file)
+        print(json.dumps(data, ensure_ascii=False)) if args.json else _print_service(
+            data, args.action
+        )
     elif command == "status":
         data = _request(settings, {"command": "status"})["data"]
         print(json.dumps(data, ensure_ascii=False)) if args.json else _print_status(data)
@@ -471,7 +528,19 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(raw_argv)
     try:
         settings = Settings.load(args.env_file)
-        run(args, settings)
+        handle = DaemonHandle()
+        needs_daemon = args.command not in {"daemon", "doctor", "service"}
+        if settings.background_mode == "session" and needs_daemon:
+            handle = start_session_daemon(settings, args.env_file)
+        outcome: str | None = None
+        try:
+            outcome = run(args, settings)
+        finally:
+            should_stop = outcome == "stop" or (
+                handle.owned and outcome != "leave"
+            )
+            if should_stop:
+                stop_daemon(settings)
     except (CLIError, ValueError, RuntimeError) as exc:
         print(f"Feil: {exc}", file=sys.stderr)
         raise SystemExit(EXIT_ERROR) from exc

@@ -24,7 +24,8 @@ likevel skilde frå CLI-en, slik at eit webgrensesnitt kan leggjast til seinare.
 - følgjer ACK/NAK for direkte meldingar når Meshtastic gir sikkert svar
 - koplar automatisk til på nytt etter sambandsbrot
 - har fullskjerms TUI, vanlege kommandoar og enkel interaktiv chat
-- kan køyre kontinuerleg som ein avgrensa systemd-teneste
+- kan køyre kontinuerleg som systemd-teneste, LaunchAgent eller
+  per-brukar-autostart på Windows
 
 MeshPi endrar aldri konfigurasjonen på Meshtastic-noden og sender aldri
 meldingar automatisk.
@@ -50,7 +51,10 @@ Standard utviklingsnode er:
 10.0.0.152:4403
 ```
 
-## Rask installasjon
+## Installere
+
+Standardvalet er `always`: daemonen startar automatisk og tek imot meldingar
+sjølv om TUI-en er lukka.
 
 Linux, inkludert Raspberry Pi OS:
 
@@ -70,15 +74,65 @@ Windows PowerShell:
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://venes.org/meshpi/install-windows.ps1 | iex"
 ```
 
-Installasjonsskripta lastar ned versjonsmanifest og Python-pakke over HTTPS,
-kontrollerer SHA-256 før installasjon og tek vare på eksisterande konfigurasjon
-ved oppdatering. Linux bruker `systemd`, macOS bruker ein `launchd`-agent, og
-Windows startar daemonen skjult ved innlogging.
+Vel `session` dersom daemonen berre skal leve medan MeshPi er i bruk:
+
+```bash
+# Linux
+curl -fsSL https://venes.org/meshpi/install-linux.sh | sudo bash -s -- --mode=session
+
+# macOS
+curl -fsSL https://venes.org/meshpi/install-macos.sh | bash -s -- --mode=session
+```
+
+På Windows lastar du ned skriptet som vist under og køyrer
+`.\install-windows.ps1 -Mode Session`.
+
+Installasjonsskripta lastar ned versjonsmanifest, ei plattformspesifikk låsefil
+og MeshPi-pakken over HTTPS. Både låsefila og pakken blir kontrollerte med
+SHA-256. Alle Python-avhengigheiter har eksakt versjon og hash og blir
+installerte med `pip --require-hashes`. Eksisterande konfigurasjon og data blir
+bevarte.
+
+### Transparent installasjon
+
+Direkte piping til `bash`, `sudo bash` eller `iex` betyr at du stoler på
+innhaldet webserveren leverer akkurat då. Eit meir transparent alternativ er å
+laste ned og lese skriptet først:
+
+```bash
+# Linux
+curl -fLO https://venes.org/meshpi/install-linux.sh
+less install-linux.sh
+sudo sh install-linux.sh
+
+# macOS
+curl -fLO https://venes.org/meshpi/install-macos.sh
+less install-macos.sh
+sh install-macos.sh
+```
+
+```powershell
+# Windows PowerShell
+Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1
+Get-Content .\install-windows.ps1
+Set-ExecutionPolicy -Scope Process Bypass
+.\install-windows.ps1
+```
+
+SHA-256 hindrar skadde eller uventa filer etter at manifestet er lasta ned,
+men manifest og filer kjem førebels frå same HTTPS-server. Ei kompromittering
+av serveren kan derfor byte begge. Utgivingane er enno ikkje digitalt signerte;
+den avgrensinga er medviten og dokumentert fram til ei enkel nøkkelrutine er på
+plass.
 
 Køyr den same kommandoen på nytt for å oppdatere. TUI-en sjekkar
 `https://venes.org/meshpi/version.json` ved oppstart. Dersom ein ny versjon
 finst, viser chatloggen ei lokal systemmelding med rett kommando. Kommandoen
 blir aldri lagd i sendefeltet eller sendt over Meshtastic.
+
+Oppdateringa blir bygd i ei ny versjonsmappe og testa offline før daemonen blir
+stoppa. Etter eit atomisk byte blir den nye daemonen helsesjekka. Dersom
+helsesjekken feilar, blir førre fungerande versjon sett tilbake automatisk.
 
 ## Lokal utvikling
 
@@ -305,6 +359,7 @@ IPC_PORT=8765
 LOG_LEVEL=INFO
 UPDATE_URL=https://venes.org/meshpi/version.json
 UPDATE_TIMEOUT=3
+BACKGROUND_MODE=always
 ```
 
 `IPC_HOST` godtek berre `127.0.0.1`, `::1` eller `localhost`. IPC-tenesta har
@@ -318,50 +373,76 @@ stabile stiar under `/dev/serial/by-id`.
 Set `UPDATE_URL` til tom verdi dersom automatisk oppdateringssjekk skal vere
 av. Nettverksfeil under sjekken blir ignorerte og hindrar aldri oppstart.
 
-## Anbefalt installasjon med systemd
+`BACKGROUND_MODE=always` held daemonen i gang uavhengig av TUI-en.
+`BACKGROUND_MODE=session` startar han ved behov og gir val om å stoppe han når
+du avsluttar TUI-en med `Ctrl+Q`.
 
-Desse kommandoane installerer koden under `/opt/meshpi`, databasen under
-`/var/lib/meshpi` og konfigurasjonen i `/etc/meshpi.env`. Dei startar ikkje
-andre tenester på nytt og krev ikkje omstart av Pi-en.
+## Drift, filer og avinstallering
 
-```bash
-sudo useradd --system --home-dir /opt/meshpi --shell /usr/sbin/nologin meshpi
-sudo git clone https://github.com/rvenes/meshpi.git /opt/meshpi
-sudo python3 -m venv /opt/meshpi/.venv
-sudo /opt/meshpi/.venv/bin/pip install /opt/meshpi
+Felles kommandoar:
 
-sudo install -m 0644 /opt/meshpi/.env.example /etc/meshpi.env
-sudo sed -i 's#DATABASE_PATH=.*#DATABASE_PATH=/var/lib/meshpi/meshtastic.db#' \
-    /etc/meshpi.env
-sudo install -m 0644 /opt/meshpi/meshpi.service /etc/systemd/system/meshpi.service
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now meshpi
-sudo systemctl status meshpi
+```text
+meshpi service status
+meshpi service start
+meshpi service stop
+meshpi doctor --offline
 ```
 
-Gjer CLI-en tilgjengeleg utan å aktivere virtualenv:
+På Linux kan `enable`, `disable` og start av ei stoppa systemteneste krevje
+`sudo`. `meshpi service stop` prøver først ei kontrollert avslutting over lokal
+IPC.
+
+### Linux / Raspberry Pi OS
+
+- programversjonar: `/opt/meshpi/releases/`
+- aktiv og førre versjon: `/opt/meshpi/current` og `/opt/meshpi/previous`
+- konfigurasjon: `/etc/meshpi.env` (`root:meshpi`, `0640`)
+- database og profilar: `/var/lib/meshpi` (`meshpi:meshpi`, `0750`)
+- logg: `journalctl -u meshpi -f`
+- teneste: `sudo systemctl status|start|stop|restart meshpi`
+
+Avinstaller og bevar data:
 
 ```bash
-sudo ln -s /opt/meshpi/.venv/bin/meshpi /usr/local/bin/meshpi
+curl -fLO https://venes.org/meshpi/uninstall-linux.sh
+sudo sh uninstall-linux.sh
 ```
 
-Følg loggen:
+Legg til `--purge-data` for å slette konfigurasjon, database og profilar.
+For ein session-installasjon bruker du òg `--mode=session`.
+
+### macOS
+
+- program, konfigurasjon, data og loggar:
+  `~/Library/Application Support/MeshPi/`
+- autostart:
+  `~/Library/LaunchAgents/org.venes.meshpi.plist`
+- loggar: `meshpi.log` og `meshpi-error.log` i datamappa
 
 ```bash
-journalctl -u meshpi -f
+curl -fLO https://venes.org/meshpi/uninstall-macos.sh
+sh uninstall-macos.sh
 ```
 
-Stopp eller start berre MeshPi:
+Legg til `--purge-data` for å slette personlege data. Avinstalleraren fjernar
+berre PATH-linja dersom MeshPi-installatøren sjølv la henne til.
 
-```bash
-sudo systemctl stop meshpi
-sudo systemctl start meshpi
-sudo systemctl restart meshpi
+### Windows
+
+- programversjonar: `%LOCALAPPDATA%\MeshPi\releases`
+- database og loggar: `%LOCALAPPDATA%\MeshPi\data`
+- konfigurasjon: `%APPDATA%\MeshPi\meshpi.env`
+- autostart: snarveg i brukaren si Startup-mappe
+- prosessvakt: `meshpi-supervisor.ps1`, som startar daemonen på nytt etter krasj
+
+```powershell
+Invoke-WebRequest https://venes.org/meshpi/uninstall-windows.ps1 -OutFile uninstall-windows.ps1
+Set-ExecutionPolicy -Scope Process Bypass
+.\uninstall-windows.ps1
 ```
 
-Systemd-tenesta køyrer som den separate brukaren `meshpi`, har skrivevern på
-systemet og får berre skrive til `/var/lib/meshpi`.
+Bruk `-PurgeData` berre når konfigurasjon, database, profilar og loggar også
+skal slettast. Skripta toler å bli køyrde fleire gonger.
 
 ## Docker, valfritt
 
