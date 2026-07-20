@@ -23,9 +23,11 @@ from textual.widgets import Input, Label, ListItem, ListView, RichLog, Static
 from meshpi.client import CLIError, open_watch, request
 from meshpi.config import Settings
 from meshpi.models import normalize_node_id, validate_message_text
+from meshpi.update import UpdateNotice, check_for_update
 
 Requester = Callable[[Settings, dict[str, Any]], dict[str, Any]]
 Watcher = Callable[[Settings, str], tuple[socket.socket, BinaryIO]]
+UpdateChecker = Callable[[Settings], UpdateNotice | None]
 
 
 def _time(value: str | int | None, seconds: bool = False) -> str:
@@ -504,11 +506,13 @@ class MeshPiTUI(App[None]):
         settings: Settings,
         requester: Requester = request,
         watcher: Watcher | None = open_watch,
+        update_checker: UpdateChecker | None = check_for_update,
     ):
         super().__init__()
         self.settings = settings
         self.requester = requester
         self.watcher = watcher
+        self.update_checker = update_checker
         self.status_data: dict[str, Any] = {
             "state": "koplar til",
             "transport": "tcp",
@@ -524,6 +528,7 @@ class MeshPiTUI(App[None]):
         self._rebuilding_list = False
         self._rebuilding_nodes = False
         self.selected_node_id: str | None = None
+        self.update_notice: UpdateNotice | None = None
 
     def compose(self) -> ComposeResult:
         yield Static("", id="status-bar")
@@ -574,6 +579,15 @@ class MeshPiTUI(App[None]):
                 self._watch_worker,
                 name="events",
                 group="events",
+                thread=True,
+                exclusive=True,
+                exit_on_error=False,
+            )
+        if self.update_checker is not None:
+            self.run_worker(
+                self._update_worker,
+                name="update-check",
+                group="update",
                 thread=True,
                 exclusive=True,
                 exit_on_error=False,
@@ -653,6 +667,35 @@ class MeshPiTUI(App[None]):
     def _set_status(self, status: dict[str, Any]) -> None:
         self.status_data = status
         self._update_status_bar()
+
+    def _update_worker(self) -> None:
+        try:
+            notice = self.update_checker(self.settings) if self.update_checker else None
+        except Exception:
+            return
+        if notice is not None:
+            self.call_from_thread(self._set_update_notice, notice)
+
+    def _set_update_notice(self, notice: UpdateNotice) -> None:
+        self.update_notice = notice
+        if self.is_mounted:
+            self.query_one("#message-log", RichLog).write(
+                self._render_update_notice(notice),
+                scroll_end=True,
+            )
+
+    @staticmethod
+    def _render_update_notice(notice: UpdateNotice) -> Text:
+        text = Text()
+        text.append("⬆ MeshPi-oppdatering tilgjengeleg", style="bold yellow")
+        text.append(
+            f"  {notice.current_version} → {notice.latest_version}\n",
+            style="yellow",
+        )
+        text.append("Køyr i terminalen – ikkje send som melding:\n", style="dim")
+        text.append(notice.command, style="bold cyan")
+        text.append("\n" + "─" * 72, style="#725f24")
+        return text
 
     def _update_status_bar(self) -> None:
         if not self.is_mounted:
@@ -891,6 +934,11 @@ class MeshPiTUI(App[None]):
         log.clear()
         for message in messages:
             log.write(self._render_message(message), scroll_end=False)
+        if self.update_notice is not None:
+            log.write(
+                self._render_update_notice(self.update_notice),
+                scroll_end=False,
+            )
         log.scroll_end(animate=False)
         self._show_node(node)
         if node:

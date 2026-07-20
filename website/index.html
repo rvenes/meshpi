@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="nn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MeshPi er ein terminalklient for Meshtastic på Linux, Raspberry Pi, macOS og Windows.">
+  <meta name="theme-color" content="#090d0e">
+  <title>MeshPi – Meshtastic i terminalen</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#installasjon">Gå til installasjon</a>
+
+  <header class="site-header">
+    <a class="brand" href="#" aria-label="MeshPi heim">
+      <span class="brand-mark" aria-hidden="true">◆</span>
+      <span>meshpi</span>
+    </a>
+    <nav aria-label="Hovudmeny">
+      <a href="#funksjonar">Funksjonar</a>
+      <a href="#installasjon">Installer</a>
+      <a href="#oppdatering">Oppdater</a>
+      <a href="https://github.com/rvenes/meshpi">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.4.0</div>
+        <h1>Meshtastic-chat.<br><span>Rett i terminalen.</span></h1>
+        <p class="lead">
+          MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
+          sanntid og gir deg public chat, DM, historikk og nodeliste i eit
+          raskt terminalgrensesnitt.
+        </p>
+        <div class="hero-actions">
+          <a class="button primary" href="#installasjon">Installer MeshPi</a>
+          <a class="button secondary" href="https://github.com/rvenes/meshpi">Sjå kjeldekoden</a>
+        </div>
+        <ul class="badges" aria-label="Teknisk informasjon">
+          <li>Linux</li>
+          <li>macOS</li>
+          <li>Windows</li>
+          <li>GPL-3.0</li>
+        </ul>
+      </div>
+
+      <div class="terminal" role="img" aria-label="Førehandsvising av MeshPi sitt terminalgrensesnitt">
+        <div class="terminal-bar">
+          <span></span><span></span><span></span>
+          <strong>meshpi</strong>
+        </div>
+        <div class="terminal-status">
+          <b>meshpi</b><i>●</i> Tilkopla
+          <span>TCP 10.0.0.152:4403</span>
+        </div>
+        <div class="terminal-grid">
+          <div class="terminal-list">
+            <h3>Samtalar</h3>
+            <div class="selected">● Public – kanal 0<small>17:38 Hei frå fjorden</small></div>
+            <div>◆ DM Venes Reserve<small>17:32 Det verkar!</small></div>
+            <div>◆ DM VenesSol-A<small>16:51 Takk</small></div>
+          </div>
+          <div class="terminal-chat">
+            <h3>Public – kanal 0</h3>
+            <p><time>17:35</time> <b>Venes Reserve [65c8]</b> <em>RF</em><br>Hei frå Fardal 👋</p>
+            <p><time>17:38</time> <b>kb24 [9980]</b> <em>MQTT</em><br>Alt ser fint ut her.</p>
+            <div class="terminal-input">Skriv melding og trykk Enter</div>
+          </div>
+          <div class="terminal-nodes">
+            <h3>Nodedetaljar</h3>
+            <dl>
+              <dt>Langt namn</dt><dd>Venes Reserve</dd>
+              <dt>Node-ID</dt><dd>!710365c8</dd>
+              <dt>Batteri</dt><dd>75%</dd>
+              <dt>Hopp</dt><dd>0</dd>
+            </dl>
+            <h3>Nodar · 27</h3>
+            <div>◆ Lokal node [40a0]</div>
+            <div class="selected">● Venes Reserve [65c8]</div>
+            <div>● VenesSol-A [9c48]</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="funksjonar" class="section">
+      <div class="section-heading">
+        <span>Det viktigaste</span>
+        <h2>Bygd for å stå på heile tida</h2>
+        <p>Daemonen eig sambandet. Terminalgrensesnittet kan opnast og lukkast utan at meldingar går tapt.</p>
+      </div>
+      <div class="feature-grid">
+        <article>
+          <span class="feature-number">01</span>
+          <h3>Sanntidschat</h3>
+          <p>Public kanal 0 og direkte meldingar dukkar opp automatisk, med RF/MQTT, SNR, RSSI og ACK når data finst.</p>
+        </article>
+        <article>
+          <span class="feature-number">02</span>
+          <h3>Heile nodelista</h3>
+          <p>Naviger med Tab og piltastar, sjå detaljar og trykk Enter for å opne DM med ein node.</p>
+        </article>
+        <article>
+          <span class="feature-number">03</span>
+          <h3>TCP og USB</h3>
+          <p>Byt mellom lagra eller oppdaga Meshtastic-nodar utan å starte bakgrunnstenesta på nytt.</p>
+        </article>
+        <article>
+          <span class="feature-number">04</span>
+          <h3>Lokal historikk</h3>
+          <p>Meldingar, ulest-status og nodeinformasjon blir lagra lokalt i SQLite. Arkivering slettar ingenting.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="installasjon" class="section install-section">
+      <div class="section-heading">
+        <span>Kom i gang</span>
+        <h2>Éin kommando</h2>
+        <p>Vel operativsystem. Installeren kontrollerer SHA-256 før pakken blir installert.</p>
+      </div>
+
+      <div class="platform-tabs" role="tablist" aria-label="Vel operativsystem">
+        <button role="tab" data-platform-tab="linux" aria-selected="true">Linux / Pi</button>
+        <button role="tab" data-platform-tab="macos" aria-selected="false">macOS</button>
+        <button role="tab" data-platform-tab="windows" aria-selected="false">Windows</button>
+      </div>
+
+      <div class="platform-panel active" data-platform-panel="linux">
+        <div>
+          <h3>Linux og Raspberry Pi OS</h3>
+          <p>Installerer under <code>/opt/meshpi</code> og set opp ei avgrensa systemd-teneste.</p>
+        </div>
+        <div class="command-box">
+          <code id="install-linux-command">curl -fsSL https://venes.org/meshpi/install-linux.sh | sudo bash</code>
+          <button data-copy-target="install-linux-command">Kopier</button>
+        </div>
+      </div>
+
+      <div class="platform-panel" data-platform-panel="macos" hidden>
+        <div>
+          <h3>macOS</h3>
+          <p>Installerer for gjeldande brukar og held daemonen i gang med launchd.</p>
+        </div>
+        <div class="command-box">
+          <code id="install-macos-command">curl -fsSL https://venes.org/meshpi/install-macos.sh | bash</code>
+          <button data-copy-target="install-macos-command">Kopier</button>
+        </div>
+      </div>
+
+      <div class="platform-panel" data-platform-panel="windows" hidden>
+        <div>
+          <h3>Windows PowerShell</h3>
+          <p>Installerer for gjeldande brukar og startar daemonen skjult ved innlogging.</p>
+        </div>
+        <div class="command-box">
+          <code id="install-windows-command">powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://venes.org/meshpi/install-windows.ps1 | iex"</code>
+          <button data-copy-target="install-windows-command">Kopier</button>
+        </div>
+      </div>
+
+      <div class="after-install">
+        <h3>Etter installasjon</h3>
+        <ol>
+          <li>Opne ein ny terminal.</li>
+          <li>Køyr <code>meshpi new</code> og vel TCP-node eller USB-port.</li>
+          <li>Køyr <code>meshpi</code> for å opne terminalgrensesnittet.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="oppdatering" class="section split-section">
+      <div>
+        <span class="section-kicker">Oppdatering</span>
+        <h2>Same kommando. Ingen datatap.</h2>
+        <p>
+          Køyr installasjonskommandoen på nytt. Eksisterande konfigurasjon,
+          tilkoplingsprofilar og SQLite-historikk blir tekne vare på.
+        </p>
+        <p>
+          MeshPi sjekkar <a href="version.json">version.json</a> ved oppstart.
+          Når ein ny versjon finst, blir rett kommando vist som ei lokal
+          systemmelding i chatloggen. Han blir aldri sendt til mesh-nettet.
+        </p>
+      </div>
+      <div class="info-card">
+        <h3>Trygg nedlasting</h3>
+        <ul>
+          <li>Manifest og installasjon over HTTPS</li>
+          <li>SHA-256 blir kontrollert før installasjon</li>
+          <li>Ingen automatisk køyring av oppdateringar</li>
+          <li>Ingen telemetri eller konto</li>
+        </ul>
+        <a href="version.json">Opne versjonsmanifestet →</a>
+      </div>
+    </section>
+
+    <section class="section shortcuts">
+      <div class="section-heading">
+        <span>Tastatur</span>
+        <h2>Alt utan mus</h2>
+      </div>
+      <div class="shortcut-grid">
+        <div><kbd>Tab</kbd><span>Neste felt</span></div>
+        <div><kbd>Shift</kbd> + <kbd>Tab</kbd><span>Førre felt</span></div>
+        <div><kbd>Enter</kbd><span>Opne eller send</span></div>
+        <div><kbd>Delete</kbd><span>Arkiver DM</span></div>
+        <div><kbd>F2</kbd><span>Samtalar</span></div>
+        <div><kbd>F3</kbd><span>Nodar</span></div>
+      </div>
+    </section>
+
+    <section id="release-0.4.0" class="section release-section">
+      <div class="section-heading">
+        <span>Siste versjon</span>
+        <h2>MeshPi 0.4.0</h2>
+      </div>
+      <div class="release-card">
+        <ul>
+          <li>Installasjonsskript for Linux, macOS og Windows</li>
+          <li>Trygg oppdateringssjekk med lokal TUI-melding</li>
+          <li>Stabil nodeliste utan unødvendig blinking</li>
+          <li>Tab-navigasjon og arkivering av samtalar</li>
+          <li>TCP- og USB/serielle tilkoplingsprofilar</li>
+        </ul>
+        <div class="release-links">
+          <a href="downloads/meshpi-0.4.0-py3-none-any.whl">Last ned Python-pakken</a>
+          <a href="https://github.com/rvenes/meshpi">Kjeldekode på GitHub</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div>
+      <span class="brand"><span class="brand-mark">◆</span> meshpi</span>
+      <p>Fri programvare under GPL-3.0-only.</p>
+    </div>
+    <div>
+      <a href="https://github.com/rvenes/meshpi">GitHub</a>
+      <a href="version.json">version.json</a>
+      <a href="LICENSE.txt">Lisens</a>
+    </div>
+    <small id="manifest-status">Kontrollerer siste versjon …</small>
+  </footer>
+</body>
+</html>

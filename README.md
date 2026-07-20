@@ -40,15 +40,45 @@ berre eitt program om gongen bruker TCP-sambandet til radioen.
 
 ## Krav
 
+- Linux med systemd, macOS eller Windows 10/11
 - Python 3.11 eller nyare
-- Debian, Ubuntu eller Raspberry Pi OS for anbefalt systemd-drift
-- ein Meshtastic-node med TCP aktivert
+- ein Meshtastic-node via TCP eller USB/seriell
 
 Standard utviklingsnode er:
 
 ```text
 10.0.0.152:4403
 ```
+
+## Rask installasjon
+
+Linux, inkludert Raspberry Pi OS:
+
+```bash
+curl -fsSL https://venes.org/meshpi/install-linux.sh | sudo bash
+```
+
+macOS:
+
+```bash
+curl -fsSL https://venes.org/meshpi/install-macos.sh | bash
+```
+
+Windows PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://venes.org/meshpi/install-windows.ps1 | iex"
+```
+
+Installasjonsskripta lastar ned versjonsmanifest og Python-pakke over HTTPS,
+kontrollerer SHA-256 før installasjon og tek vare på eksisterande konfigurasjon
+ved oppdatering. Linux bruker `systemd`, macOS bruker ein `launchd`-agent, og
+Windows startar daemonen skjult ved innlogging.
+
+Køyr den same kommandoen på nytt for å oppdatere. TUI-en sjekkar
+`https://venes.org/meshpi/version.json` ved oppstart. Dersom ein ny versjon
+finst, viser chatloggen ei lokal systemmelding med rett kommando. Kommandoen
+blir aldri lagd i sendefeltet eller sendt over Meshtastic.
 
 ## Lokal utvikling
 
@@ -273,6 +303,8 @@ DISCOVERY_SUBNET=10.0.0.0/24
 IPC_HOST=127.0.0.1
 IPC_PORT=8765
 LOG_LEVEL=INFO
+UPDATE_URL=https://venes.org/meshpi/version.json
+UPDATE_TIMEOUT=3
 ```
 
 `IPC_HOST` godtek berre `127.0.0.1`, `::1` eller `localhost`. IPC-tenesta har
@@ -282,6 +314,9 @@ betrodde brukarar.
 `DISCOVERY_SUBNET` avgrensar TCP-søket i `meshpi new`. Nettet kan maksimalt
 vere `/22`. Seriell oppdaging brukar systemet si portliste og føretrekkjer
 stabile stiar under `/dev/serial/by-id`.
+
+Set `UPDATE_URL` til tom verdi dersom automatisk oppdateringssjekk skal vere
+av. Nettverksfeil under sjekken blir ignorerte og hindrar aldri oppstart.
 
 ## Anbefalt installasjon med systemd
 

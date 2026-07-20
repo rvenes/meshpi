@@ -11,6 +11,7 @@ from meshpi.tui import (
     NodePickerItem,
     NodeSidebarItem,
 )
+from meshpi.update import UpdateNotice
 
 
 class FakeBackend:
@@ -138,7 +139,9 @@ def run_scenario(scenario):
 def test_tui_uses_enter_to_activate_and_tab_to_move_between_panes():
     async def scenario():
         backend = FakeBackend()
-        app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
         async with app.run_test(size=(160, 48)) as pilot:
             await pilot.pause(0.3)
             assert len(app.conversations) == 2
@@ -164,7 +167,9 @@ def test_tui_uses_enter_to_activate_and_tab_to_move_between_panes():
 def test_tui_sends_to_selected_dm():
     async def scenario():
         backend = FakeBackend()
-        app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
         async with app.run_test(size=(160, 48)) as pilot:
             await pilot.pause(0.3)
             await pilot.press("f2", "down", "enter", "tab")
@@ -183,7 +188,9 @@ def test_tui_sends_to_selected_dm():
 def test_live_message_is_appended_to_active_dm():
     async def scenario():
         backend = FakeBackend()
-        app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
         async with app.run_test(size=(160, 48)) as pilot:
             await pilot.pause(0.3)
             await pilot.press("f2", "down", "enter")
@@ -218,7 +225,9 @@ def test_live_message_is_appended_to_active_dm():
 def test_refresh_updates_existing_list_items_without_rebuilding():
     async def scenario():
         backend = FakeBackend()
-        app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
         async with app.run_test(size=(160, 48)) as pilot:
             await pilot.pause(0.3)
             conversation_item = list(app.query(ConversationItem))[1]
@@ -236,10 +245,42 @@ def test_refresh_updates_existing_list_items_without_rebuilding():
     run_scenario(scenario)
 
 
+def test_update_notice_is_local_and_never_fills_or_sends_message_input():
+    async def scenario():
+        backend = FakeBackend()
+        notice = UpdateNotice(
+            current_version="0.3.2",
+            latest_version="0.4.0",
+            command="curl -fsSL https://venes.org/meshpi/install-linux.sh | sudo bash",
+        )
+        app = MeshPiTUI(
+            Settings(),
+            requester=backend.request,
+            watcher=None,
+            update_checker=lambda _settings: notice,
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            message_input = app.query_one("#message-input", Input)
+            log = app.query_one("#message-log", RichLog)
+            rendered = "\n".join(line.text for line in log.lines)
+
+            assert message_input.value == ""
+            assert notice.command in rendered
+            assert "ikkje send som melding" in rendered
+            assert not any(
+                call["command"] in {"send_public", "send_dm"} for call in backend.calls
+            )
+
+    run_scenario(scenario)
+
+
 def test_delete_archives_selected_dm_without_deleting_messages():
     async def scenario():
         backend = FakeBackend()
-        app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
         async with app.run_test(size=(160, 48)) as pilot:
             await pilot.pause(0.3)
             await pilot.press("f2", "down", "enter", "delete")
@@ -258,7 +299,9 @@ def test_delete_archives_selected_dm_without_deleting_messages():
 def test_tui_hides_node_panel_in_narrow_terminal():
     async def scenario():
         backend = FakeBackend()
-        app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
         async with app.run_test(size=(100, 36)) as pilot:
             await pilot.pause(0.3)
             assert app.query_one("#node-panel").display is False
@@ -270,7 +313,9 @@ def test_tui_hides_node_panel_in_narrow_terminal():
 def test_sidebar_lists_nodes_and_opens_selected_node_as_dm():
     async def scenario():
         backend = FakeBackend()
-        app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
         async with app.run_test(size=(160, 48)) as pilot:
             await pilot.pause(0.3)
             items = list(app.query(NodeSidebarItem))
@@ -294,7 +339,9 @@ def test_sidebar_lists_nodes_and_opens_selected_node_as_dm():
 def test_new_dm_picker_lists_and_filters_remote_nodes():
     async def scenario():
         backend = FakeBackend()
-        app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
         async with app.run_test(size=(160, 48)) as pilot:
             await pilot.pause(0.3)
             await pilot.press("ctrl+d")
@@ -326,7 +373,9 @@ def test_tui_closes_socket_safely_if_watch_worker_clears_reference():
 
     async def scenario():
         backend = FakeBackend()
-        app = MeshPiTUI(Settings(), requester=backend.request, watcher=None)
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
         racing_socket = RacingSocket(app)
         async with app.run_test(size=(120, 36)) as pilot:
             await pilot.pause(0.2)

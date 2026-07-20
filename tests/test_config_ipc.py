@@ -41,6 +41,8 @@ def test_settings_load_env_file(tmp_path, monkeypatch):
         "IPC_HOST",
         "IPC_PORT",
         "LOG_LEVEL",
+        "UPDATE_URL",
+        "UPDATE_TIMEOUT",
     ):
         monkeypatch.delenv(name, raising=False)
     path = tmp_path / ".env"
@@ -52,6 +54,8 @@ def test_settings_load_env_file(tmp_path, monkeypatch):
     assert settings.meshtastic_host == "10.0.0.152"
     assert settings.meshtastic_port == 4403
     assert settings.connections_path == settings.database_path.with_name("connections.json")
+    assert settings.update_url == "https://venes.org/meshpi/version.json"
+    assert settings.update_timeout == 3
 
 
 def test_settings_reject_non_loopback_ipc(monkeypatch):

@@ -31,6 +31,17 @@ def _env_int(name: str, default: int, minimum: int, maximum: int) -> int:
     return value
 
 
+def _env_float(name: str, default: float, minimum: float, maximum: float) -> float:
+    raw = os.environ.get(name, str(default))
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} må vere eit tal") from exc
+    if not minimum <= value <= maximum:
+        raise ValueError(f"{name} må vere mellom {minimum} og {maximum}")
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     meshtastic_host: str = "10.0.0.152"
@@ -41,6 +52,8 @@ class Settings:
     ipc_host: str = "127.0.0.1"
     ipc_port: int = 8765
     log_level: str = "INFO"
+    update_url: str = "https://venes.org/meshpi/version.json"
+    update_timeout: float = 3.0
 
     @classmethod
     def load(cls, env_file: str | Path = ".env") -> Settings:
@@ -73,4 +86,8 @@ class Settings:
             ipc_host=ipc_host,
             ipc_port=_env_int("IPC_PORT", 8765, 1, 65535),
             log_level=level,
+            update_url=os.environ.get(
+                "UPDATE_URL", "https://venes.org/meshpi/version.json"
+            ).strip(),
+            update_timeout=_env_float("UPDATE_TIMEOUT", 3, 0.5, 30),
         )
