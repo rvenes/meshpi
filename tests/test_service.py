@@ -119,7 +119,11 @@ def test_traceroute_is_started_asynchronously_and_publishes_result(service):
         started_event = events.get(timeout=1)
 
         assert started["status"] == "started"
+        assert started["cooldown_seconds"] == 30
         assert started_event["type"] == "node_action"
+        availability = value.node_action_availability("traceroute", "!11112222")
+        assert availability["available"] is False
+        assert availability["cooldown_seconds"] == 30
         _, kwargs = interface.data_calls[0]
         assert kwargs["destinationId"] == "!11112222"
         assert kwargs["portNum"] == 70
@@ -145,14 +149,14 @@ def test_traceroute_is_started_asynchronously_and_publishes_result(service):
     assert value.node_action_status(started["action_id"])["status"] == "completed"
 
 
-def test_traceroute_rejects_local_node_and_parallel_request(service):
+def test_traceroute_rejects_local_node_and_request_during_cooldown(service):
     value, interface, _ = service
 
     with pytest.raises(ValueError, match="lokale noden"):
         value.start_node_action("traceroute", "!710365c8")
 
     value.start_node_action("traceroute", "!11112222")
-    with pytest.raises(RuntimeError, match="allereie i gang"):
+    with pytest.raises(RuntimeError, match="sendast igjen om 30 sekund"):
         value.start_node_action("traceroute", "!33334444")
     interface.data_calls[0][1]["onResponse"](
         {
@@ -162,6 +166,34 @@ def test_traceroute_rejects_local_node_and_parallel_request(service):
             }
         }
     )
+
+
+def test_traceroute_availability_counts_down_from_last_send(service, monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr("meshpi.service.time.monotonic", lambda: clock[0])
+    value, interface, _ = service
+
+    value.start_node_action("traceroute", "!11112222")
+    availability = value.node_action_availability("traceroute", "!33334444")
+    assert availability["cooldown_seconds"] == 30
+
+    clock[0] += 12.2
+    availability = value.node_action_availability("traceroute", "!33334444")
+    assert availability["available"] is False
+    assert availability["cooldown_seconds"] == 18
+
+    interface.data_calls[0][1]["onResponse"](
+        {
+            "decoded": {
+                "portnum": "ROUTING_APP",
+                "routing": {"errorReason": "NO_RESPONSE"},
+            }
+        }
+    )
+    clock[0] += 18
+    availability = value.node_action_availability("traceroute", "!33334444")
+    assert availability["available"] is True
+    assert availability["cooldown_seconds"] == 0
 
 
 def test_traceroute_routing_failure_is_published(service):

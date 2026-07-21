@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.5.7",
-  "published_at": "2026-07-21T08:24:20Z",
+  "latest_version": "0.5.8",
+  "published_at": "2026-07-21T09:27:58Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.5.7",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.5.8",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.7-py3-none-any.whl",
-    "filename": "meshpi-0.5.7-py3-none-any.whl",
-    "sha256": "3e2a84bbac19b19c7f9e0e4645130aaa4fdf8f0404b200195bbd548b0eea7c6c",
-    "size": 72982,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.8-py3-none-any.whl",
+    "filename": "meshpi-0.5.8-py3-none-any.whl",
+    "sha256": "fa7251a69aefc2c8f5733bf7b2a00f531bbc37bef2bbc5ebbc937cde4e9797de",
+    "size": 74748,
     "format": "wheel"
   },
   "locks": {
@@ -55,15 +55,15 @@
     }
   },
   "release_notes": [
-    "Høgreklikk eller Shift+F10 opnar handlingar for den markerte noden.",
-    "Traceroute blir sendt asynkront utan at terminalgrensesnittet frys.",
-    "Resultatet viser rute fram, eventuell returrute og SNR per hopp.",
-    "Tydelege feil for timeout, manglande rute og nodar som ikkje svarar.",
-    "Nodehandlingsmenyen er klar for fleire handlingar i seinare versjonar."
+    "Traceroute-status og resultat blir viste i ei eiga ramme i DM-samtalen.",
+    "MeshPi kan brukast som vanleg medan traceroute ventar på svar.",
+    "Nodehandlingsmenyen tel ned den obligatoriske pausen på 30 sekund.",
+    "Høgreklikk etterlet ikkje lenger ei utilsikta blå tekstmarkering.",
+    "Meldingstekst kan markerast og kopierast med venstre museknapp."
   ],
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "ii0yt+9o2MBi+l/4qf5M5aawhacVLf5pqLpqxzCACF9WbS62U+POadJZcaxZ/90OVEe8rZ9N5Zs1W/6q6RPzAJfiOgXbOUDeIHpoHwCTO7VjyNSZKmW60oZyUZv3EgZa4pzkqfFzMz7lQ2y5DmP0Um6VwMDGGOEZ0AM747wSEVoHdXSTb7e6tB9QE0Qrfi7SZMNOIV2w9UzEV34dlZU1fRzgusaa4eMBVrK1u1dfzgJM5vnU27W/v+KB+o3OTmElyHfj8hSlJoMWUXqXiTO9MqfPbAK5/2zIWtHbFmFYVdra+Xy5tisNtHy1fXuT1cCMvwpF5B+3X3iHMrCW2YE4eOm0Pmn3r17mMMk3TMCCzcjZJ0pQCJfwyymdB23yhDJbZYLuWRFSdv1VjjJZu9deeELXc09ICT9kAHfGm6uRLQjMTGiRNQsQ+NhQi77O9e1czSOUkltpVoTqL31hwlvOtdvGpjp05e1tjHE2uSKzVDKQXp9+xn0iiLbnaPEGTC4I"
+    "value": "E97R6WgtFHHGO4nykw+ea8ThM33DF7ES+iMep1C8//DH4pX7nfNpSl9M+IXjdCv9YQfRYQUS0WtSD+f9zk9iyAhv84q2guZm4iuD3jClaCF9mz14tzUnY+P0V6veLZb4m8GLM92d99GblDhaDzrvOD9e8P5otqLQ67G9MKOmg7gJ7ahB98Fx5FH+Zggq+WFuVp0+49Dbd1QJXDH8n5fgW8FyRN63d5fOwwr77xwc8obX4or2iDpOCki9xx5/V5wuTvFj1A8NWwN9DllpeRugzEZDxPkqBJkcEkKTRwnhluky55bdA6Y/ZEsixW8lhgbtjn1WkvBXLj85I5GqM0VsPM221NkwjSE/hxAD8Ud/KmkXVEvd/FAlIeXsSNkAOz9NvzpbeT3o5Ol8Gx93pVyY+sOadajtO7I7x6U8v3XAKGjMM6BMht3979Hicyn/rVB7yH+TDB8J8g8Miy8k81dbe/NhXXEyPXbtA8YeQsZdf+TR0os3qWwUQxoi2Tiz3j9p"
   }
 }

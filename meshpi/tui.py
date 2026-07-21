@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import socket
 import threading
 import time
@@ -9,6 +10,8 @@ from contextlib import suppress
 from datetime import datetime
 from typing import Any, BinaryIO
 
+from rich import box
+from rich.panel import Panel
 from rich.text import Text
 from textual import events, on
 from textual.app import App, ComposeResult
@@ -18,6 +21,8 @@ from textual.css.query import NoMatches
 from textual.events import Resize
 from textual.message import Message as TextualMessage
 from textual.screen import ModalScreen
+from textual.selection import Selection
+from textual.strip import Strip
 from textual.widgets import Button, Input, Label, ListItem, ListView, RichLog, Static
 
 from meshpi import __version__
@@ -29,6 +34,43 @@ from meshpi.update import UpdateNotice, check_for_update
 Requester = Callable[[Settings, dict[str, Any]], dict[str, Any]]
 Watcher = Callable[[Settings, str], tuple[socket.socket, BinaryIO]]
 UpdateChecker = Callable[[Settings], UpdateNotice | None]
+
+
+class SelectableRichLog(RichLog):
+    """Rich log with Textual's drag-to-select metadata and copy support."""
+
+    def render_line(self, y: int) -> Strip:
+        scroll_x, scroll_y = self.scroll_offset
+        content_y = scroll_y + y
+        strip = super().render_line(y)
+        selection = self.text_selection
+        if selection is not None:
+            span = selection.get_span(content_y)
+            if span is not None:
+                start, end = span
+                visible_start = max(0, start - scroll_x)
+                visible_end = (
+                    strip.cell_length if end == -1 else max(0, end - scroll_x)
+                )
+                visible_end = min(strip.cell_length, visible_end)
+                if visible_start < visible_end:
+                    selection_style = self.screen.get_component_rich_style(
+                        "screen--selection"
+                    )
+                    strip = Strip.join(
+                        [
+                            strip.crop(0, visible_start),
+                            strip.crop(visible_start, visible_end).apply_style(
+                                selection_style
+                            ),
+                            strip.crop(visible_end),
+                        ]
+                    )
+        return strip.apply_offsets(scroll_x, content_y)
+
+    def get_selection(self, selection: Selection) -> tuple[str, str] | None:
+        text = "\n".join(line.text.rstrip() for line in self.lines)
+        return selection.extract(text), "\n"
 
 
 def _time(value: str | int | None, seconds: bool = False) -> str:
@@ -178,7 +220,7 @@ class NodeSidebarItem(ListItem):
         text.append("  •  ".join(details), style="dim")
         return text
 
-    def on_mouse_down(self, event: events.MouseDown) -> None:
+    def on_mouse_up(self, event: events.MouseUp) -> None:
         if event.button != 3:
             return
         event.stop()
@@ -294,9 +336,17 @@ class NodeActionScreen(ModalScreen[str | None]):
         Binding("escape", "cancel", "Avbryt", priority=True),
     ]
 
-    def __init__(self, node: dict[str, Any]):
+    def __init__(self, node: dict[str, Any], availability: dict[str, Any]):
         super().__init__()
         self.node = node
+        self.availability = availability
+        cooldown = int(availability.get("cooldown_seconds") or 0)
+        self._cooldown_deadline = time.monotonic() + cooldown
+        self._blocked_reason = (
+            str(availability.get("reason") or "")
+            if not availability.get("available") and cooldown == 0
+            else ""
+        )
 
     def compose(self) -> ComposeResult:
         node_id = str(self.node.get("node_id") or "")
@@ -313,9 +363,9 @@ class NodeActionScreen(ModalScreen[str | None]):
                 disabled=local,
             )
             yield Button(
-                "Traceroute  [T]",
+                self._traceroute_label(),
                 id="node-action-traceroute",
-                disabled=local,
+                disabled=local or not bool(self.availability.get("available")),
             )
             yield Button("Lukk", id="node-action-cancel")
             yield Static(
@@ -326,6 +376,24 @@ class NodeActionScreen(ModalScreen[str | None]):
     def on_mount(self) -> None:
         target = "#node-action-cancel" if self.node.get("is_local") else "#node-action-open-dm"
         self.query_one(target, Button).focus()
+        self.set_interval(1, self._update_traceroute_button)
+
+    def _cooldown_remaining(self) -> int:
+        return max(0, math.ceil(self._cooldown_deadline - time.monotonic()))
+
+    def _traceroute_label(self) -> str:
+        remaining = self._cooldown_remaining()
+        suffix = f"  ·  vent {remaining} s" if remaining else ""
+        return f"Traceroute  [T]{suffix}"
+
+    def _update_traceroute_button(self) -> None:
+        button = self.query_one("#node-action-traceroute", Button)
+        button.label = self._traceroute_label()
+        button.disabled = bool(
+            self.node.get("is_local")
+            or self._blocked_reason
+            or self._cooldown_remaining()
+        )
 
     @on(Button.Pressed)
     def choose(self, event: Button.Pressed) -> None:
@@ -354,73 +422,19 @@ class NodeActionScreen(ModalScreen[str | None]):
         self._move_choice(-1)
 
     def action_traceroute(self) -> None:
+        remaining = self._cooldown_remaining()
         if self.node.get("is_local"):
-            self.notify("Kan ikkje køyre traceroute til den lokale noden", severity="warning")
+            reason = "Kan ikkje køyre traceroute til den lokale noden"
+        elif remaining:
+            reason = f"Traceroute kan sendast igjen om {remaining} sekund"
+        else:
+            reason = self._blocked_reason
+        if reason:
+            self.notify(reason, severity="warning")
             return
         self.dismiss("traceroute")
 
     def action_cancel(self) -> None:
-        self.dismiss(None)
-
-
-class TracerouteResultScreen(ModalScreen[None]):
-    BINDINGS = [
-        Binding("enter", "close", "Lukk", priority=True),
-        Binding("escape", "close", "Lukk", priority=True),
-    ]
-
-    def __init__(self, action: dict[str, Any], nodes: dict[str, dict[str, Any]]):
-        super().__init__()
-        self.action = action
-        self.nodes = nodes
-
-    def compose(self) -> ComposeResult:
-        with Container(id="traceroute-result-dialog"):
-            yield Label("Traceroute-resultat", id="traceroute-result-title")
-            yield Static(self._render_result(), id="traceroute-result-text")
-            yield Button("Lukk", id="traceroute-result-close")
-
-    def on_mount(self) -> None:
-        self.query_one("#traceroute-result-close", Button).focus()
-
-    def _node_label(self, node_id: str) -> str:
-        node = self.nodes.get(node_id, {})
-        name = sanitize_terminal_text(
-            node.get("long_name") or node.get("short_name") or node_id
-        )
-        return f"{name} [{node_id[-4:]}]"
-
-    def _render_path(self, title: str, path: Any) -> Text:
-        text = Text()
-        text.append(f"{title}:\n", style="bold cyan")
-        if not isinstance(path, list) or not path:
-            text.append("  Ikkje rapportert\n", style="dim")
-            return text
-        for index, hop in enumerate(path):
-            if not isinstance(hop, dict):
-                continue
-            if index:
-                snr = hop.get("snr")
-                snr_text = "ukjend SNR" if snr is None else f"SNR {snr:g} dB"
-                text.append(f"  ↓ {snr_text}\n", style="dim")
-            text.append(f"  {self._node_label(str(hop.get('node_id') or ''))}\n")
-        return text
-
-    def _render_result(self) -> Text:
-        result = self.action.get("result")
-        if not isinstance(result, dict):
-            return Text("Traceroute-resultatet manglar rutedata.", style="yellow")
-        text = self._render_path("Fram", result.get("forward"))
-        text.append("\n")
-        text.append_text(self._render_path("Tilbake", result.get("return")))
-        return text
-
-    @on(Button.Pressed, "#traceroute-result-close")
-    def close_button(self, event: Button.Pressed) -> None:
-        del event
-        self.dismiss(None)
-
-    def action_close(self) -> None:
         self.dismiss(None)
 
 
@@ -737,7 +751,7 @@ class MeshPiTUI(App[str | None]):
         color: #8d9699;
     }
 
-    NodeActionScreen, TracerouteResultScreen {
+    NodeActionScreen {
         align: center middle;
         background: rgba(0, 0, 0, 0.72);
     }
@@ -751,7 +765,7 @@ class MeshPiTUI(App[str | None]):
         background: $panel;
     }
 
-    #node-action-title, #traceroute-result-title {
+    #node-action-title {
         height: 2;
         color: $accent;
         text-style: bold;
@@ -771,28 +785,6 @@ class MeshPiTUI(App[str | None]):
         height: 2;
         color: #8d9699;
         content-align: center middle;
-    }
-
-    #traceroute-result-dialog {
-        width: 76;
-        max-width: 96%;
-        height: 34;
-        max-height: 92%;
-        padding: 1 2;
-        border: round $accent;
-        background: $panel;
-    }
-
-    #traceroute-result-text {
-        height: 1fr;
-        padding: 1;
-        border: round #394245;
-        overflow-y: auto;
-    }
-
-    #traceroute-result-close {
-        width: 1fr;
-        margin-top: 1;
     }
 
     QuitScreen {
@@ -912,7 +904,8 @@ class MeshPiTUI(App[str | None]):
         self._rebuilding_list = False
         self._rebuilding_nodes = False
         self.selected_node_id: str | None = None
-        self._handled_node_action_ids: set[str] = set()
+        self._right_click_node_id: str | None = None
+        self.node_action_entries: dict[str, dict[str, Any]] = {}
         self.update_notice: UpdateNotice | None = None
 
     def compose(self) -> ComposeResult:
@@ -923,7 +916,7 @@ class MeshPiTUI(App[str | None]):
                 yield ListView(id="conversation-list")
             with Vertical(id="message-panel"):
                 yield Static("Public – kanal 0", id="conversation-title", classes="panel-title")
-                yield RichLog(
+                yield SelectableRichLog(
                     id="message-log",
                     wrap=True,
                     highlight=False,
@@ -1243,6 +1236,9 @@ class MeshPiTUI(App[str | None]):
     def node_selected(self, event: ListView.Selected) -> None:
         if not isinstance(event.item, NodeSidebarItem):
             return
+        if self._right_click_node_id == event.item.node_id:
+            self._right_click_node_id = None
+            return
         if isinstance(self.screen, NodeActionScreen):
             return
         if event.item.node.get("is_local"):
@@ -1252,6 +1248,7 @@ class MeshPiTUI(App[str | None]):
 
     @on(NodeActionRequested)
     def node_action_requested(self, message: NodeActionRequested) -> None:
+        self._right_click_node_id = message.node_id
         self._select_sidebar_node(message.node_id)
         self.query_one("#node-list", ListView).focus()
         self._open_node_actions(message.node_id)
@@ -1324,8 +1321,30 @@ class MeshPiTUI(App[str | None]):
             return
         log = self.query_one("#message-log", RichLog)
         log.clear()
-        for message in messages:
-            log.write(self._render_message(message), scroll_end=False)
+        timeline: list[tuple[str, int, str, dict[str, Any]]] = [
+            (str(message.get("timestamp") or ""), 0, "message", message)
+            for message in messages
+        ]
+        if conversation != "public":
+            timeline.extend(
+                (
+                    str(action.get("started_at") or ""),
+                    1,
+                    "node_action",
+                    action,
+                )
+                for action in self.node_action_entries.values()
+                if action.get("node_id") == conversation
+            )
+        for _, _, entry_type, entry in sorted(
+            timeline, key=lambda item: (item[0], item[1])
+        ):
+            renderable = (
+                self._render_message(entry)
+                if entry_type == "message"
+                else self._render_node_action(entry)
+            )
+            log.write(renderable, scroll_end=False)
         if self.update_notice is not None:
             log.write(
                 self._render_update_notice(self.update_notice),
@@ -1381,6 +1400,69 @@ class MeshPiTUI(App[str | None]):
         text.append(sanitize_terminal_text(message.get("text") or ""))
         text.append("\n" + "─" * 72, style="#394245")
         return text
+
+    def _node_action_label(self, node_id: str) -> str:
+        node = self.nodes.get(node_id, {})
+        name = sanitize_terminal_text(
+            node.get("long_name") or node.get("short_name") or node_id or "Ukjend"
+        )
+        return f"{name} [{node_id[-4:] if node_id else '????'}]"
+
+    def _append_traceroute_path(self, text: Text, title: str, path: Any) -> None:
+        text.append(f"{title}:\n", style="bold cyan")
+        if not isinstance(path, list) or not path:
+            text.append("  Ikkje rapportert\n", style="dim")
+            return
+        for index, hop in enumerate(path):
+            if not isinstance(hop, dict):
+                continue
+            if index:
+                snr = hop.get("snr")
+                snr_text = "ukjend SNR" if snr is None else f"SNR {snr:g} dB"
+                text.append(f"  ↓ {snr_text}\n", style="dim")
+            text.append(
+                f"  {self._node_action_label(str(hop.get('node_id') or ''))}\n"
+            )
+
+    def _render_node_action(self, action: dict[str, Any]) -> Panel:
+        status = str(action.get("status") or "started")
+        target = self._node_action_label(str(action.get("node_id") or ""))
+        text = Text()
+        text.append(f"Mål: {target}\n")
+        if status == "started":
+            text.append("Førespurnaden er sendt. Ventar på svar.\n", style="yellow")
+            text.append(
+                "Du kan halda fram med å bruke MeshPi medan traceroute går.",
+                style="dim",
+            )
+            title = "TRACEROUTE · VENTAR"
+            border_style = "yellow"
+        elif status == "failed":
+            text.append(
+                sanitize_terminal_text(action.get("error") or "Ukjend feil"),
+                style="bold red",
+            )
+            title = "TRACEROUTE · FEILA"
+            border_style = "red"
+        else:
+            result = action.get("result")
+            if isinstance(result, dict):
+                self._append_traceroute_path(text, "Fram", result.get("forward"))
+                text.append("\n")
+                self._append_traceroute_path(text, "Tilbake", result.get("return"))
+            else:
+                text.append("Resultatet manglar rutedata.", style="yellow")
+            title = "TRACEROUTE · FERDIG"
+            border_style = "cyan"
+        return Panel(
+            text,
+            title=title,
+            title_align="left",
+            border_style=border_style,
+            box=box.SQUARE,
+            padding=(0, 1),
+            expand=True,
+        )
 
     def _show_node(self, node: dict[str, Any] | None) -> None:
         panel = self.query_one("#node-details", Static)
@@ -1603,8 +1685,46 @@ class MeshPiTUI(App[str | None]):
         if node is None:
             self.notify("Fann ikkje den markerte noden", severity="error")
             return
+        self.run_worker(
+            lambda: self._node_action_availability_worker(node_id),
+            name="node-action-availability",
+            group="node-action-menu",
+            thread=True,
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    def _node_action_availability_worker(self, node_id: str) -> None:
+        try:
+            availability = self._call(
+                {
+                    "command": "node_action_availability",
+                    "action": "traceroute",
+                    "node_id": node_id,
+                }
+            )["data"]
+        except Exception as exc:
+            availability = {
+                "available": False,
+                "cooldown_seconds": 0,
+                "reason": f"Klarte ikkje kontrollere traceroute: {exc}",
+            }
+        self.call_from_thread(
+            self._show_node_action_screen,
+            node_id,
+            availability,
+        )
+
+    def _show_node_action_screen(
+        self,
+        node_id: str,
+        availability: dict[str, Any],
+    ) -> None:
+        node = self.nodes.get(node_id)
+        if node is None:
+            return
         self.push_screen(
-            NodeActionScreen(node),
+            NodeActionScreen(node, availability),
             lambda action: self._node_action_chosen(node_id, action),
         )
 
@@ -1612,6 +1732,7 @@ class MeshPiTUI(App[str | None]):
         if action == "open_dm":
             self._open_node_dm(node_id, focus_input=False)
         elif action == "traceroute":
+            self._open_node_dm(node_id, focus_input=False)
             self.run_worker(
                 lambda: self._start_node_action_worker(node_id, action),
                 name=f"node-action-{action}",
@@ -1638,22 +1759,33 @@ class MeshPiTUI(App[str | None]):
                 timeout=8,
             )
             return
-        if data.get("status") == "started":
-            self.call_from_thread(
-                self.notify,
-                f"Traceroute til {node_id} er sendt",
-                timeout=5,
-            )
-        else:
-            self.call_from_thread(self._handle_node_action, data)
+        self.call_from_thread(self._handle_node_action, data)
 
     def _handle_node_action(self, action: dict[str, Any]) -> None:
-        status = action.get("status")
+        if action.get("action") != "traceroute":
+            return
         action_id = str(action.get("action_id") or "")
-        if status in {"completed", "failed"} and action_id:
-            if action_id in self._handled_node_action_ids:
+        if not action_id:
+            return
+        status = str(action.get("status") or "started")
+        previous = self.node_action_entries.get(action_id)
+        rank = {"started": 0, "completed": 1, "failed": 1}
+        if previous is not None:
+            previous_status = str(previous.get("status") or "started")
+            if rank.get(previous_status, 0) > rank.get(status, 0):
                 return
-            self._handled_node_action_ids.add(action_id)
+            if previous == action:
+                return
+        self.node_action_entries[action_id] = dict(action)
+        node_id = str(action.get("node_id") or "")
+        if node_id == self.current_conversation:
+            self.select_conversation(node_id)
+        if status == "started":
+            self.notify(
+                f"Traceroute til {self._node_action_label(node_id)} er sendt",
+                timeout=5,
+            )
+            return
         if status == "failed":
             self.notify(
                 f"Traceroute feila: {action.get('error', 'ukjend feil')}",
@@ -1661,8 +1793,11 @@ class MeshPiTUI(App[str | None]):
                 timeout=10,
             )
             return
-        if status == "completed" and action.get("action") == "traceroute":
-            self.push_screen(TracerouteResultScreen(action, dict(self.nodes)))
+        if node_id != self.current_conversation:
+            self.notify(
+                f"Traceroute til {self._node_action_label(node_id)} er ferdig",
+                timeout=7,
+            )
 
     def action_new_dm(self) -> None:
         self.push_screen(NewDMScreen(list(self.nodes.values())), self._open_new_dm)

@@ -32,6 +32,15 @@ class FakeService:
     def node_action_status(self, action_id):
         return {"action_id": action_id, "status": "completed"}
 
+    def node_action_availability(self, action, node_id):
+        return {
+            "action": action,
+            "node_id": node_id,
+            "available": True,
+            "cooldown_seconds": 0,
+            "reason": None,
+        }
+
     def list_connections(self):
         return {"active_profile_id": "tcp-test", "profiles": []}
 
@@ -140,6 +149,13 @@ def test_ipc_dispatch_and_validation(tmp_path):
     assert app.dispatch(
         {"command": "node_action_status", "action_id": "trace-1"}
     )["data"]["status"] == "completed"
+    assert app.dispatch(
+        {
+            "command": "node_action_availability",
+            "action": "traceroute",
+            "node_id": "!11112222",
+        }
+    )["data"]["available"] is True
     database.upsert_node(Node(node_id="!11112222", long_name="Test"))
     assert (
         app.dispatch({"command": "node", "node_id": "!11112222"})["data"]["long_name"]

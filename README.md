@@ -243,8 +243,11 @@ DM som kjem til ei anna samtale, gir eit synleg varsel. Marker ein node i
 høgrepanelet for å vise detaljane, og trykk Enter for å opne DM. «Ny DM» viser
 òg heile nodelista og kan filtrerast på namn eller node-ID. Høgreklikk på
 ein node, eller marker han og trykk `Shift+F10`, for å opne nodehandlingane.
-Her kan du mellom anna sende traceroute. Resultatet viser ruta fram, eventuell
-returrute og SNR per hopp når nodane rapporterer dette.
+Her kan du mellom anna sende traceroute. Status og resultat kjem som ei tydeleg
+ramme i DM-samtalen med noden, slik at resten av appen kan brukast medan du
+ventar. Resultatet viser ruta fram, eventuell returrute og SNR per hopp når
+nodane rapporterer dette. Fastvaren tillèt éin traceroute kvart 30. sekund;
+nodehandlinga er sperra og viser ei nedteljing til neste forsøk kan sendast.
 
 Piltastane flyttar den blå markeringa i ei liste. Trykk Enter for å gjere den
 markerte samtalen eller noden aktiv i chatten. Tastane i grensesnittet er:

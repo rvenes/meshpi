@@ -135,6 +135,14 @@ class IPCApplication:
                     str(request.get("action_id", ""))
                 ),
             }
+        if command == "node_action_availability":
+            return {
+                "ok": True,
+                "data": self.service.node_action_availability(
+                    str(request.get("action", "")),
+                    str(request.get("node_id", "")),
+                ),
+            }
         raise ValueError("Ukjend kommando")
 
 

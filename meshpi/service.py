@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import logging
+import math
 import socket
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from typing import Any, Protocol
@@ -34,6 +36,7 @@ from meshpi.packet import node_from_registry, parse_text_packet
 LOG = logging.getLogger(__name__)
 RECONNECT_DELAYS = (2, 5, 10, 30)
 TRACEROUTE_TIMEOUT_SECONDS = 120
+TRACEROUTE_COOLDOWN_SECONDS = 30
 MAX_NODE_ACTIONS = 50
 
 
@@ -128,7 +131,7 @@ class MeshtasticService:
         self._local_node_id: str | None = None
         self._node_actions: dict[str, dict[str, Any]] = {}
         self._node_action_timers: dict[str, threading.Timer] = {}
-        self._active_traceroute_id: str | None = None
+        self._traceroute_cooldown_until = 0.0
         profile_status = self._profile_status(self._profile) if self._profile else {
             "connection_id": None,
             "connection_name": None,
@@ -459,6 +462,30 @@ class MeshtasticService:
                 raise ValueError("Fann ikkje nodehandlinga")
             return dict(action)
 
+    def node_action_availability(self, action: str, node_id: str) -> dict[str, Any]:
+        normalized_action = action.strip().lower()
+        if normalized_action != "traceroute":
+            raise ValueError(f"Ukjend nodehandling: {action}")
+        normalized_node_id = normalize_node_id(node_id)
+        with self._lock:
+            remaining = self._traceroute_cooldown_remaining()
+            connected = self._interface is not None and self.status()["state"] == "tilkopla"
+            local = normalized_node_id == self._local_node_id
+        reason = None
+        if not connected:
+            reason = "Meshtastic-noden er ikkje tilkopla"
+        elif local:
+            reason = "Kan ikkje køyre traceroute til den lokale noden"
+        elif remaining:
+            reason = f"Traceroute kan sendast igjen om {remaining} sekund"
+        return {
+            "action": normalized_action,
+            "node_id": normalized_node_id,
+            "available": reason is None,
+            "cooldown_seconds": remaining,
+            "reason": reason,
+        }
+
     def _start_traceroute(self, node_id: str) -> dict[str, Any]:
         from meshtastic.protobuf import mesh_pb2, portnums_pb2
 
@@ -472,8 +499,11 @@ class MeshtasticService:
                 raise RuntimeError("Lokal node-ID er ikkje kjend enno")
             if node_id == local_node_id:
                 raise ValueError("Kan ikkje køyre traceroute til den lokale noden")
-            if self._active_traceroute_id is not None:
-                raise RuntimeError("Ein traceroute er allereie i gang")
+            cooldown = self._traceroute_cooldown_remaining()
+            if cooldown:
+                raise RuntimeError(
+                    f"Traceroute kan sendast igjen om {cooldown} sekund"
+                )
 
             action_id = uuid.uuid4().hex
             action = {
@@ -485,10 +515,7 @@ class MeshtasticService:
                 "packet_id": None,
             }
             self._node_actions[action_id] = action
-            self._active_traceroute_id = action_id
             self._trim_node_actions()
-
-        self.events.publish({"type": "node_action", "data": dict(action)})
 
         def on_response(packet: dict[str, Any]) -> None:
             try:
@@ -534,10 +561,17 @@ class MeshtasticService:
             current = self._node_actions.get(action_id)
             if current is not None:
                 current["packet_id"] = packet_id
+                current["cooldown_seconds"] = TRACEROUTE_COOLDOWN_SECONDS
+                self._traceroute_cooldown_until = (
+                    time.monotonic() + TRACEROUTE_COOLDOWN_SECONDS
+                )
             if current is not None and current.get("status") == "started":
                 self._node_action_timers[action_id] = timer
                 timer.start()
-            return dict(current or action)
+            snapshot = dict(current or action)
+        if snapshot.get("status") == "started":
+            self.events.publish({"type": "node_action", "data": snapshot})
+        return snapshot
 
     @staticmethod
     def _traceroute_hop_limit(interface: Interface) -> int | None:
@@ -556,6 +590,9 @@ class MeshtasticService:
         handlers = getattr(interface, "responseHandlers", None)
         if packet_id is not None and isinstance(handlers, dict):
             handlers.pop(packet_id, None)
+
+    def _traceroute_cooldown_remaining(self) -> int:
+        return max(0, math.ceil(self._traceroute_cooldown_until - time.monotonic()))
 
     def _finish_node_action(
         self,
@@ -577,8 +614,6 @@ class MeshtasticService:
                 action["error"] = error
             else:
                 action["result"] = result or {}
-            if self._active_traceroute_id == action_id:
-                self._active_traceroute_id = None
             snapshot = dict(action)
         self.events.publish({"type": "node_action", "data": snapshot})
 

@@ -1,6 +1,7 @@
 import asyncio
+import time
 
-from textual.widgets import Input, ListView, RichLog, Static
+from textual.widgets import Button, Input, ListView, RichLog, Static
 
 from meshpi.config import Settings
 from meshpi.tui import (
@@ -13,7 +14,6 @@ from meshpi.tui import (
     NodePickerItem,
     NodeSidebarItem,
     QuitScreen,
-    TracerouteResultScreen,
 )
 from meshpi.update import UpdateNotice
 
@@ -22,6 +22,7 @@ class FakeBackend:
     def __init__(self):
         self.calls = []
         self.archived = set()
+        self.traceroute_cooldown = 0
         self.status = {
             "state": "tilkopla",
             "host": "192.0.2.42",
@@ -137,6 +138,20 @@ class FakeBackend:
                 "action": payload["action"],
                 "node_id": payload["node_id"],
                 "status": "started",
+                "started_at": "2026-07-20T12:02:00+00:00",
+                "cooldown_seconds": 30,
+            }
+        elif command == "node_action_availability":
+            data = {
+                "action": payload["action"],
+                "node_id": payload["node_id"],
+                "available": self.traceroute_cooldown == 0,
+                "cooldown_seconds": self.traceroute_cooldown,
+                "reason": (
+                    None
+                    if self.traceroute_cooldown == 0
+                    else f"Vent {self.traceroute_cooldown} sekund"
+                ),
             }
         else:
             raise RuntimeError(command)
@@ -185,7 +200,7 @@ def test_status_bar_shows_current_meshpi_version():
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.5.7" in text
+            assert "MeshPi 0.5.8" in text
 
     run_scenario(scenario)
 
@@ -472,17 +487,20 @@ def test_keyboard_opens_node_action_menu_and_starts_traceroute():
         async with app.run_test(size=(160, 48)) as pilot:
             await pilot.pause(0.3)
             await pilot.press("f3", "up", "down", "shift+f10")
-            await pilot.pause(0.1)
+            await pilot.pause(0.3)
             assert isinstance(app.screen, NodeActionScreen)
             assert app.screen.node["node_id"] == "!710365c8"
 
             await pilot.press("t")
             await pilot.pause(0.3)
+            assert app.current_conversation == "!710365c8"
             assert {
                 "command": "node_action",
                 "action": "traceroute",
                 "node_id": "!710365c8",
             } in backend.calls
+            message_log = app.query_one("#message-log", RichLog)
+            assert "TRACEROUTE" in "\n".join(line.text for line in message_log.lines)
 
     run_scenario(scenario)
 
@@ -495,25 +513,30 @@ def test_right_click_selects_node_and_opens_node_action_menu():
         )
         async with app.run_test(size=(160, 48)) as pilot:
             await pilot.pause(0.3)
+            main_screen = app.screen
             target = list(app.query(NodeSidebarItem))[2]
             await pilot.click(target, offset=(2, 1), button=3)
-            await pilot.pause(0.2)
+            await pilot.pause(0.3)
 
             assert app.selected_node_id == "!2f779c48"
             assert app.current_conversation == "public"
             assert isinstance(app.screen, NodeActionScreen)
             assert app.screen.node["node_id"] == "!2f779c48"
+            assert main_screen._selecting is False
+            assert not main_screen.selections
 
     run_scenario(scenario)
 
 
-def test_completed_traceroute_opens_readable_result_dialog():
+def test_completed_traceroute_is_rendered_in_dm_without_blocking_the_app():
     async def scenario():
         backend = FakeBackend()
         app = MeshPiTUI(
             Settings(), requester=backend.request, watcher=None, update_checker=None
         )
         async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            app._open_node_dm("!710365c8", focus_input=True)
             await pilot.pause(0.3)
             app.post_message(
                 LiveEvent(
@@ -524,6 +547,7 @@ def test_completed_traceroute_opens_readable_result_dialog():
                             "action": "traceroute",
                             "node_id": "!710365c8",
                             "status": "completed",
+                            "started_at": "2026-07-20T12:02:00+00:00",
                             "result": {
                                 "forward": [
                                     {"node_id": "!040840a0", "snr": None},
@@ -538,12 +562,63 @@ def test_completed_traceroute_opens_readable_result_dialog():
             )
             await pilot.pause(0.2)
 
-            assert isinstance(app.screen, TracerouteResultScreen)
-            rendered = app.screen.query_one("#traceroute-result-text", Static).render()
-            text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
+            assert not isinstance(app.screen, NodeActionScreen)
+            assert app.current_conversation == "!710365c8"
+            assert app.query_one("#message-input", Input).has_focus
+            message_log = app.query_one("#message-log", RichLog)
+            text = "\n".join(line.text for line in message_log.lines)
+            assert "TRACEROUTE · FERDIG" in text
             assert "VenesSol-A 9c48" in text
             assert "SNR 7.5 dB" in text
             assert "Tilbake" in text
+
+    run_scenario(scenario)
+
+
+def test_message_text_can_still_be_selected_with_left_mouse_drag():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            message_log = app.query_one("#message-log", RichLog)
+
+            await pilot.mouse_down(message_log, offset=(2, 1))
+            await pilot.hover(message_log, offset=(35, 1))
+            await pilot.mouse_up(message_log, offset=(35, 1))
+            await pilot.pause(0.1)
+
+            selected = app.screen.get_selected_text()
+            assert selected is not None
+            assert "Public test" in selected
+
+    run_scenario(scenario)
+
+
+def test_node_action_menu_counts_down_traceroute_cooldown():
+    async def scenario():
+        backend = FakeBackend()
+        backend.traceroute_cooldown = 30
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("f3", "up", "down", "shift+f10")
+            await pilot.pause(0.3)
+
+            screen = app.screen
+            assert isinstance(screen, NodeActionScreen)
+            button = screen.query_one("#node-action-traceroute", Button)
+            assert button.disabled is True
+            assert "vent 30 s" in str(button.label)
+
+            screen._cooldown_deadline = time.monotonic() - 1
+            screen._update_traceroute_button()
+            assert button.disabled is False
+            assert "vent" not in str(button.label)
 
     run_scenario(scenario)
 
