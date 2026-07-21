@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$BaseUrl = "https://venes.org/meshpi",
     [ValidateSet("Always", "Session")]
     [string]$Mode = "Always",
@@ -13,6 +13,11 @@ if ($SkipAutostart) {
 }
 $modeValue = $Mode.ToLowerInvariant()
 $ipcPort = if ($env:MESHPI_IPC_PORT) { $env:MESHPI_IPC_PORT } else { "8765" }
+
+function Write-InstallStep {
+    param([int]$Number, [string]$Message)
+    Write-Host ("[{0}/8] {1}" -f $Number, $Message) -ForegroundColor Cyan
+}
 
 function Test-PythonCommand {
     param([string]$Executable, [string[]]$Prefix)
@@ -121,6 +126,7 @@ function Set-CurrentRelease {
     Move-Item -LiteralPath $temporary -Destination $CurrentFile -Force
 }
 
+Write-InstallStep 1 "Kontrollerer Python 3.11 eller nyare …"
 $python = Find-MeshPiPython
 if (-not $python) {
     $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
@@ -169,6 +175,7 @@ New-Item -ItemType Directory -Force -Path @(
 ) | Out-Null
 
 try {
+    Write-InstallStep 2 "Hentar og kontrollerer signert versjonsinformasjon …"
     if ($env:MESHPI_MANIFEST_FILE) {
         Copy-Item -LiteralPath $env:MESHPI_MANIFEST_FILE -Destination $manifestFile
     } else {
@@ -215,6 +222,7 @@ if len(raw) != size or pad < 8 or not hmac.compare_digest(actual, expected):
         throw "Ugyldig låsefil-hash i version.json."
     }
     $wheelFile = Join-Path $tempDir "meshpi-$version-py3-none-any.whl"
+    Write-InstallStep 3 "Lastar ned MeshPi $version og låste avhengigheiter …"
     if ($env:MESHPI_PACKAGE_FILE) {
         Copy-Item -LiteralPath $env:MESHPI_PACKAGE_FILE -Destination $wheelFile
     } else {
@@ -225,6 +233,7 @@ if len(raw) != size or pad < 8 or not hmac.compare_digest(actual, expected):
     } else {
         Invoke-WebRequest $lockUrl -OutFile $lockFile
     }
+    Write-InstallStep 4 "Kontrollerer SHA-256 for alle nedlasta filer …"
     $actualHash = (Get-FileHash -Algorithm SHA256 $wheelFile).Hash.ToLowerInvariant()
     if ($actualHash -ne $expectedHash) {
         throw "SHA-256 stemmer ikkje. Installasjonen er avbroten."
@@ -273,6 +282,10 @@ BACKGROUND_MODE=$modeValue
         ""
     }
     if ($release -ne $oldRelease) {
+        Write-InstallStep 5 (
+            "Opprettar programmiljø og installerer avhengigheiter. " +
+            "Dette kan ta nokre minutt …"
+        )
         if (Test-Path -LiteralPath $release) {
             Remove-Item -LiteralPath $release -Recurse -Force
         }
@@ -285,7 +298,10 @@ BACKGROUND_MODE=$modeValue
         Invoke-NativeChecked $venvPython @(
             "-m", "pip", "install", "-q", "--no-deps", $wheelFile
         ) "Klarte ikkje installere MeshPi-pakken."
+    } else {
+        Write-InstallStep 5 "MeshPi $version er alt installert; bruker programfilene på nytt …"
     }
+    Write-InstallStep 6 "Kontrollerer installert versjon og køyrer sjølvtest …"
     $releaseMeshPi = Join-Path $release "venv\Scripts\meshpi.exe"
     $installedVersion = (& $releaseMeshPi --version | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or $installedVersion -ne "MeshPi $version") {
@@ -295,6 +311,7 @@ BACKGROUND_MODE=$modeValue
         "--env-file", $configFile, "doctor", "--offline"
     ) "MeshPi-sjølvtesten feila."
 
+    Write-InstallStep 7 "Aktiverer MeshPi og konfigurerer bakgrunnstenesta …"
     Stop-MeshPiProcesses $installRoot
     $legacyVenv = Join-Path $installRoot "venv"
     if (-not $oldRelease -and (Test-Path -LiteralPath $legacyVenv)) {
@@ -386,7 +403,13 @@ if (`$Action -eq "enable") {
         Remove-Item -LiteralPath $oldStartup -Force -ErrorAction SilentlyContinue
         & $powerShellExe -NoProfile -ExecutionPolicy Bypass `
             -File $managerFile disable
-        & schtasks.exe /Delete /TN $taskName /F *> $null
+        $savedErrorActionPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "SilentlyContinue"
+            & schtasks.exe /Delete /TN $taskName /F *> $null
+        } finally {
+            $ErrorActionPreference = $savedErrorActionPreference
+        }
     }
 
     if (
@@ -423,6 +446,7 @@ if (`$Action -eq "enable") {
         }
     }
 
+    Write-InstallStep 8 "Installasjonen er ferdig."
     Write-Host "MeshPi $version er installert i $modeValue-modus." -ForegroundColor Green
     Write-Host "Opne eit nytt terminalvindauge og start med: meshpi"
 } finally {

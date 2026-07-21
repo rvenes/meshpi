@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.5.8",
-  "published_at": "2026-07-21T09:27:58Z",
+  "latest_version": "0.5.9",
+  "published_at": "2026-07-21T10:41:21Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.5.8",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.5.9",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.8-py3-none-any.whl",
-    "filename": "meshpi-0.5.8-py3-none-any.whl",
-    "sha256": "fa7251a69aefc2c8f5733bf7b2a00f531bbc37bef2bbc5ebbc937cde4e9797de",
-    "size": 74748,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.9-py3-none-any.whl",
+    "filename": "meshpi-0.5.9-py3-none-any.whl",
+    "sha256": "db120f85fdf1c2af335132f4e7ce326810c9d7179e1a357814f5c3d81ce1d27e",
+    "size": 74750,
     "format": "wheel"
   },
   "locks": {
@@ -49,21 +49,21 @@
     },
     "windows": {
       "url": "https://venes.org/meshpi/install-windows.ps1",
-      "sha256": "2f3bd176c301d7fb0376ff547202762779c48ada58bbba6dde3af1e593aedc62",
-      "size": 17325,
+      "sha256": "2454be892fbc61641ad031327d7acf96243c359d4b1dcdb42ff4178b9fc45d2b",
+      "size": 18491,
       "update_command": "Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; .\\install-windows.ps1"
     }
   },
   "release_notes": [
-    "Traceroute-status og resultat blir viste i ei eiga ramme i DM-samtalen.",
-    "MeshPi kan brukast som vanleg medan traceroute ventar på svar.",
-    "Nodehandlingsmenyen tel ned den obligatoriske pausen på 30 sekund.",
-    "Høgreklikk etterlet ikkje lenger ei utilsikta blå tekstmarkering.",
-    "Meldingstekst kan markerast og kopierast med venstre museknapp."
+    "Windows-installasjonen feilar ikkje når ei gammal planlagd oppgåve manglar.",
+    "Åtte tydelege steg viser kva installatøren arbeider med.",
+    "Trege steg varslar at installasjon av avhengigheiter kan ta nokre minutt.",
+    "Nynorske framdrifts- og feilmeldingar blir viste rett i Windows PowerShell 5.1.",
+    "Nyinstallasjon og gjenteken installasjon er testa i eit reint Windows-miljø."
   ],
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "E97R6WgtFHHGO4nykw+ea8ThM33DF7ES+iMep1C8//DH4pX7nfNpSl9M+IXjdCv9YQfRYQUS0WtSD+f9zk9iyAhv84q2guZm4iuD3jClaCF9mz14tzUnY+P0V6veLZb4m8GLM92d99GblDhaDzrvOD9e8P5otqLQ67G9MKOmg7gJ7ahB98Fx5FH+Zggq+WFuVp0+49Dbd1QJXDH8n5fgW8FyRN63d5fOwwr77xwc8obX4or2iDpOCki9xx5/V5wuTvFj1A8NWwN9DllpeRugzEZDxPkqBJkcEkKTRwnhluky55bdA6Y/ZEsixW8lhgbtjn1WkvBXLj85I5GqM0VsPM221NkwjSE/hxAD8Ud/KmkXVEvd/FAlIeXsSNkAOz9NvzpbeT3o5Ol8Gx93pVyY+sOadajtO7I7x6U8v3XAKGjMM6BMht3979Hicyn/rVB7yH+TDB8J8g8Miy8k81dbe/NhXXEyPXbtA8YeQsZdf+TR0os3qWwUQxoi2Tiz3j9p"
+    "value": "Q7lT1Ir5GRbcpvzplDiU3+QiB8dm3hOP+1IbVlChW9gVfCCt4aeIiFkyHu8wAhXw49HY4zFvRmRQJHocGs8hLv1Mbs2K+nguTrutYyg+TVc/sGG5OmT1RE4+voweQxFve3x4fw/qW4pdgiHHfoh6uV2eIWSjQHemgzVdKo/fgf3n5u9WHiNKz2DNS7WcBQ6u3YIuwXaWP/YeDdMrZ6au4aB206F4dNKwxxHDoiZ64NXflxgGtyNthFL6wmqrzoyPDwIJvUfcdXLG0bwtxFqGFlQh3r7ow4RLY/KSuRxuj2JTYqCuNr07bDIUpJ8TGdFoPQQQgPgwImdU3sYikFEk6Iinew9PWXWe3QS464Oo9vMwD6/cUVQfTjSQsjSUf0QZ42QRCgnsUuy/jcqmvXFtlJuwHbV7r2dy989V0MQ43/KUZDaXCBZaiyecVsOTNb3BDjbVsOAik9n3JsDf9Xa8FXzmJC0DumThvqeVbDHFVJvF4oR6mnZc3+Iu6p22Jgzq"
   }
 }

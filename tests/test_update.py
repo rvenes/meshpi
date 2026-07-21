@@ -19,7 +19,7 @@ def test_update_manifest_selects_platform_command():
         platform_name="win32",
     )
     assert notice is not None
-    assert notice.latest_version == "0.5.8"
+    assert notice.latest_version == "0.5.9"
     assert notice.command.endswith(".\\install-windows.ps1")
 
 
@@ -27,7 +27,7 @@ def test_update_manifest_returns_none_for_current_or_newer_version():
     assert (
         parse_update_manifest(
             manifest(),
-            current_version="0.5.8",
+            current_version="0.5.9",
             platform_name="linux",
         )
         is None
@@ -35,7 +35,7 @@ def test_update_manifest_returns_none_for_current_or_newer_version():
     assert (
         parse_update_manifest(
             manifest(),
-            current_version="0.5.9",
+            current_version="0.5.10",
             platform_name="linux",
         )
         is None

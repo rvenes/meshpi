@@ -78,3 +78,18 @@ def test_installers_do_not_ship_a_preselected_meshtastic_node() -> None:
         assert "MESHTASTIC_HOST=" in source
         development_address = ".".join(("10", "0", "0", "152"))
         assert development_address not in source
+
+
+def test_windows_installer_reports_progress_and_ignores_missing_legacy_task() -> None:
+    windows = _text("install-windows.ps1")
+
+    assert (ROOT / "installers" / "install-windows.ps1").read_bytes().startswith(
+        b"\xef\xbb\xbf"
+    )
+    for step in range(1, 9):
+        assert f"Write-InstallStep {step} " in windows
+    assert "Dette kan ta nokre minutt" in windows
+    assert '$savedErrorActionPreference = $ErrorActionPreference' in windows
+    assert '$ErrorActionPreference = "SilentlyContinue"' in windows
+    assert '$ErrorActionPreference = $savedErrorActionPreference' in windows
+    assert '& schtasks.exe /Delete /TN $taskName /F *> $null' in windows
