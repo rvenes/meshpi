@@ -15,9 +15,9 @@ def discovery_data():
                 "profile_id": "tcp-main",
                 "name": "Fast node",
                 "transport": "tcp",
-                "host": "10.0.0.152",
+                "host": "192.0.2.42",
                 "port": 4403,
-                "endpoint": "10.0.0.152:4403",
+                "endpoint": "192.0.2.42:4403",
             }
         ],
         "serial": [
@@ -30,10 +30,10 @@ def discovery_data():
         ],
         "tcp": [
             {
-                "name": "10.0.0.152",
+                "name": "192.0.2.42",
                 "transport": "tcp",
-                "target": "10.0.0.152:4403",
-                "host": "10.0.0.152",
+                "target": "192.0.2.42:4403",
+                "host": "192.0.2.42",
                 "port": 4403,
             },
             {

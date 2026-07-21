@@ -34,7 +34,11 @@ class FakeInterface:
 def service(tmp_path):
     database = Database(tmp_path / "db.sqlite")
     database.initialize()
-    value = MeshtasticService(Settings(database_path=database.path), database, EventHub())
+    value = MeshtasticService(
+        Settings(meshtastic_host="192.0.2.42", database_path=database.path),
+        database,
+        EventHub(),
+    )
     interface = FakeInterface()
     value._interface = interface
     value._local_node_id = "!710365c8"
@@ -130,7 +134,7 @@ def test_service_retries_after_connection_failure(tmp_path, monkeypatch):
         return FakeInterface()
 
     value = MeshtasticService(
-        Settings(database_path=database.path),
+        Settings(meshtastic_host="192.0.2.42", database_path=database.path),
         database,
         EventHub(),
         interface_factory=factory,
@@ -143,7 +147,7 @@ def test_service_retries_after_connection_failure(tmp_path, monkeypatch):
     value.stop()
     assert len(attempts) == 2
     assert attempts[0].transport == "tcp"
-    assert attempts[0].endpoint == "10.0.0.152:4403"
+    assert attempts[0].endpoint == "192.0.2.42:4403"
 
 
 def test_running_service_switches_from_tcp_to_serial_without_backoff(
@@ -162,7 +166,7 @@ def test_running_service_switches_from_tcp_to_serial_without_backoff(
         return interface
 
     value = MeshtasticService(
-        Settings(database_path=database.path),
+        Settings(meshtastic_host="192.0.2.42", database_path=database.path),
         database,
         EventHub(),
         interface_factory=factory,
@@ -181,3 +185,33 @@ def test_running_service_switches_from_tcp_to_serial_without_backoff(
     assert [profile.transport for profile in attempts[:2]] == ["tcp", "serial"]
     assert attempts[1].endpoint == "/dev/ttyACM0"
     assert interfaces[0].closed is True
+
+
+def test_service_waits_without_connecting_when_no_profile_exists(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    attempts = []
+
+    def factory(profile):
+        attempts.append(profile)
+        return FakeInterface()
+
+    value = MeshtasticService(
+        Settings(database_path=database.path),
+        database,
+        EventHub(),
+        interface_factory=factory,
+    )
+    value.start()
+    time.sleep(0.05)
+
+    assert attempts == []
+    assert value.status()["state"] == "ingen node"
+    assert value.list_connections()["profiles"] == []
+
+    value.connect(target="192.0.2.42")
+    deadline = time.monotonic() + 2
+    while not attempts and time.monotonic() < deadline:
+        time.sleep(0.01)
+    value.stop()
+    assert attempts[0].endpoint == "192.0.2.42:4403"

@@ -48,11 +48,11 @@ def test_settings_load_env_file(tmp_path, monkeypatch):
         monkeypatch.delenv(name, raising=False)
     path = tmp_path / ".env"
     path.write_text(
-        "MESHTASTIC_HOST=10.0.0.152\nMESHTASTIC_PORT=4403\nIPC_HOST=127.0.0.1\n",
+        "MESHTASTIC_HOST=192.0.2.42\nMESHTASTIC_PORT=4403\nIPC_HOST=127.0.0.1\n",
         encoding="utf-8",
     )
     settings = Settings.load(path)
-    assert settings.meshtastic_host == "10.0.0.152"
+    assert settings.meshtastic_host == "192.0.2.42"
     assert settings.meshtastic_port == 4403
     assert settings.connections_path == settings.database_path.with_name("connections.json")
     assert settings.update_url == "https://venes.org/meshpi/version.json"
@@ -64,6 +64,16 @@ def test_settings_reject_non_loopback_ipc(monkeypatch):
     monkeypatch.setenv("IPC_HOST", "0.0.0.0")
     with pytest.raises(ValueError):
         Settings.load("missing")
+
+
+def test_settings_have_no_default_meshtastic_node(tmp_path, monkeypatch):
+    monkeypatch.delenv("MESHTASTIC_HOST", raising=False)
+    monkeypatch.delenv("DISCOVERY_SUBNET", raising=False)
+
+    settings = Settings.load(tmp_path / "missing.env")
+
+    assert settings.meshtastic_host == ""
+    assert settings.discovery_subnet == ""
 
 
 def test_settings_reject_unknown_background_mode(monkeypatch):

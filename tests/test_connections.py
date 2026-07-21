@@ -37,7 +37,7 @@ def test_parse_connection_target_rejects_invalid_port():
 
 def test_connection_store_persists_profiles_and_active_choice(tmp_path):
     path = tmp_path / "connections.json"
-    default = ConnectionProfile.tcp("10.0.0.152")
+    default = ConnectionProfile.tcp("192.0.2.42")
     store = ConnectionStore(path, default)
     serial = ConnectionProfile.serial("/dev/ttyACM0", name="USB-node")
 
@@ -48,6 +48,16 @@ def test_connection_store_persists_profiles_and_active_choice(tmp_path):
     assert {item.transport for item in reloaded.list_profiles()} == {"tcp", "serial"}
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["active_profile_id"] == serial.profile_id
+
+
+def test_connection_store_starts_empty_without_default_profile(tmp_path):
+    path = tmp_path / "connections.json"
+    store = ConnectionStore(path)
+
+    assert store.active_profile() is None
+    assert store.list_profiles() == []
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved == {"version": 1, "active_profile_id": None, "profiles": []}
 
 
 def test_connection_profile_rejects_unknown_transport():

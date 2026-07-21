@@ -45,11 +45,9 @@ berre eitt program om gongen bruker TCP-sambandet til radioen.
 - Python 3.11 eller nyare
 - ein Meshtastic-node via TCP eller USB/seriell
 
-Standard utviklingsnode er:
-
-```text
-10.0.0.152:4403
-```
+Ei ny installering har ingen førehandsvald node. Første gong du køyrer
+`meshpi`, opnar nodeveljaren automatisk og viser oppdaga TCP- og USB-einingar.
+Du kan òg skrive IP, vertsnamn, COM-port eller seriellsti manuelt.
 
 ## Installere
 
@@ -350,11 +348,11 @@ MeshPi les `.env` frå arbeidskatalogen dersom fila finst. Eksisterande
 miljøvariablar har prioritet.
 
 ```dotenv
-MESHTASTIC_HOST=10.0.0.152
+MESHTASTIC_HOST=
 MESHTASTIC_PORT=4403
 DATABASE_PATH=./data/meshtastic.db
 CONNECTIONS_PATH=./data/connections.json
-DISCOVERY_SUBNET=10.0.0.0/24
+DISCOVERY_SUBNET=
 IPC_HOST=127.0.0.1
 IPC_PORT=8765
 LOG_LEVEL=INFO
@@ -367,9 +365,10 @@ BACKGROUND_MODE=always
 ikkje eiga innlogging og skal derfor berre vere tilgjengeleg for lokale,
 betrodde brukarar.
 
-`DISCOVERY_SUBNET` avgrensar TCP-søket i `meshpi new`. Nettet kan maksimalt
-vere `/22`. Seriell oppdaging brukar systemet si portliste og føretrekkjer
-stabile stiar under `/dev/serial/by-id`.
+Når `DISCOVERY_SUBNET` er tom, finn MeshPi det lokale IPv4-nettet automatisk
+og søkjer der. Set til dømes `DISCOVERY_SUBNET=192.168.1.0/24` for å avgrense
+TCP-søket manuelt. Nettet kan maksimalt vere `/22`. Seriell oppdaging brukar
+systemet si portliste og føretrekkjer stabile stiar under `/dev/serial/by-id`.
 
 Set `UPDATE_URL` til tom verdi dersom automatisk oppdateringssjekk skal vere
 av. Nettverksfeil under sjekken blir ignorerte og hindrar aldri oppstart.

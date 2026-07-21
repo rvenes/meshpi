@@ -426,8 +426,15 @@ def build_parser() -> argparse.ArgumentParser:
 def run(args: argparse.Namespace, settings: Settings) -> str | None:
     command = args.command
     if command == "tui":
+        from meshpi.connect_tui import choose_connection
         from meshpi.tui import run_tui
 
+        connections = _request(settings, {"command": "connections"})["data"]
+        if not connections.get("profiles"):
+            selection = choose_connection(settings)
+            if selection is None:
+                return None
+            _request(settings, {"command": "connect"} | selection)
         return run_tui(settings)
     elif command == "new":
         from meshpi.connect_tui import choose_connection

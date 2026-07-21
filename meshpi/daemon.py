@@ -47,10 +47,12 @@ def run_daemon(settings: Settings, parent_pid: int | None = None) -> None:
     configure_logging(settings.log_level)
     database = Database(settings.database_path)
     database.initialize()
-    connections = ConnectionStore(
-        settings.connections_path,
-        ConnectionProfile.tcp(settings.meshtastic_host, settings.meshtastic_port),
+    default_profile = (
+        ConnectionProfile.tcp(settings.meshtastic_host, settings.meshtastic_port)
+        if settings.meshtastic_host
+        else None
     )
+    connections = ConnectionStore(settings.connections_path, default_profile)
     events = EventHub()
     service = MeshtasticService(settings, database, events, connections=connections)
     stopping = threading.Event()

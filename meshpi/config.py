@@ -44,11 +44,11 @@ def _env_float(name: str, default: float, minimum: float, maximum: float) -> flo
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    meshtastic_host: str = "10.0.0.152"
+    meshtastic_host: str = ""
     meshtastic_port: int = 4403
     database_path: Path = Path("./data/meshtastic.db")
     connections_path: Path = Path("./data/connections.json")
-    discovery_subnet: str = "10.0.0.0/24"
+    discovery_subnet: str = ""
     ipc_host: str = "127.0.0.1"
     ipc_port: int = 8765
     log_level: str = "INFO"
@@ -59,10 +59,8 @@ class Settings:
     @classmethod
     def load(cls, env_file: str | Path = ".env") -> Settings:
         _load_env_file(Path(env_file))
-        host = os.environ.get("MESHTASTIC_HOST", "10.0.0.152").strip()
+        host = os.environ.get("MESHTASTIC_HOST", "").strip()
         ipc_host = os.environ.get("IPC_HOST", "127.0.0.1").strip()
-        if not host:
-            raise ValueError("MESHTASTIC_HOST kan ikkje vere tom")
         if ipc_host not in {"127.0.0.1", "::1", "localhost"}:
             raise ValueError("IPC_HOST må vere ei lokal loopback-adresse")
         level = os.environ.get("LOG_LEVEL", "INFO").strip().upper()
@@ -85,7 +83,7 @@ class Settings:
                 )
             ).expanduser(),
             discovery_subnet=os.environ.get(
-                "DISCOVERY_SUBNET", "10.0.0.0/24"
+                "DISCOVERY_SUBNET", ""
             ).strip(),
             ipc_host=ipc_host,
             ipc_port=_env_int("IPC_PORT", 8765, 1, 65535),

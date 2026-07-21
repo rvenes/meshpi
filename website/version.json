@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.5.1",
-  "published_at": "2026-07-20T22:23:35Z",
+  "latest_version": "0.5.2",
+  "published_at": "2026-07-21T01:42:51Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.5.1",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.5.2",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.1-py3-none-any.whl",
-    "filename": "meshpi-0.5.1-py3-none-any.whl",
-    "sha256": "a7e6af11711177a62ec25310b3348544f70cc5b554d5c6f0d58d2183e43d574f",
-    "size": 63973,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.2-py3-none-any.whl",
+    "filename": "meshpi-0.5.2-py3-none-any.whl",
+    "sha256": "99b25b7773ab5a9400a802c9bc77e0be463007f0c114e75b6c7524e548abcbc4",
+    "size": 64712,
     "format": "wheel"
   },
   "locks": {
@@ -49,6 +49,9 @@
     }
   },
   "release_notes": [
+    "Nye installasjonar har ingen førehandsvald Meshtastic-node.",
+    "Nodeveljaren opnar automatisk ved første oppstart.",
+    "TCP-oppdaging bruker det lokale nettet i staden for eit hardkoda utviklingsnett.",
     "Versjonsnummeret er alltid synleg først i topplinja.",
     "Global F1-dialog viser alle tastatursnarvegane.",
     "Always- og session-modus for bakgrunnsdaemonen.",

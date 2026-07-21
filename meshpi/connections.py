@@ -132,7 +132,11 @@ def parse_connection_target(target: str, name: str | None = None) -> ConnectionP
 
 
 class ConnectionStore:
-    def __init__(self, path: str | Path, default_profile: ConnectionProfile):
+    def __init__(
+        self,
+        path: str | Path,
+        default_profile: ConnectionProfile | None = None,
+    ):
         self.path = Path(path)
         self._lock = threading.RLock()
         self._default_profile = default_profile
@@ -146,8 +150,12 @@ class ConnectionStore:
             self._write(
                 {
                     "version": 1,
-                    "active_profile_id": self._default_profile.profile_id,
-                    "profiles": [self._default_profile.as_dict()],
+                    "active_profile_id": (
+                        self._default_profile.profile_id if self._default_profile else None
+                    ),
+                    "profiles": (
+                        [self._default_profile.as_dict()] if self._default_profile else []
+                    ),
                 }
             )
 
@@ -177,7 +185,7 @@ class ConnectionStore:
                 if isinstance(item, dict)
             ]
 
-    def active_profile(self) -> ConnectionProfile:
+    def active_profile(self) -> ConnectionProfile | None:
         with self._lock:
             data = self._read()
             active_id = str(data.get("active_profile_id", ""))
@@ -191,13 +199,14 @@ class ConnectionStore:
                     return profile
             if profiles:
                 return profiles[0]
-            self._write(
-                {
-                    "version": 1,
-                    "active_profile_id": self._default_profile.profile_id,
-                    "profiles": [self._default_profile.as_dict()],
-                }
-            )
+            if self._default_profile is not None:
+                self._write(
+                    {
+                        "version": 1,
+                        "active_profile_id": self._default_profile.profile_id,
+                        "profiles": [self._default_profile.as_dict()],
+                    }
+                )
             return self._default_profile
 
     def get(self, profile_id: str) -> ConnectionProfile:
@@ -291,3 +300,30 @@ def discover_tcp(subnet: str, port: int = DEFAULT_MESHTASTIC_PORT) -> list[dict[
         }
         for address in found
     ]
+
+
+def discover_local_subnets() -> list[str]:
+    """Finn relevante lokale IPv4-/24-nett utan ein installasjonsspesifikk standard."""
+    addresses: set[str] = set()
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("1.1.1.1", 80))
+            addresses.add(str(probe.getsockname()[0]))
+    except OSError:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            addresses.add(str(info[4][0]))
+    except OSError:
+        pass
+
+    networks: set[str] = set()
+    for address in addresses:
+        try:
+            parsed = ipaddress.ip_address(address)
+        except ValueError:
+            continue
+        if parsed.is_loopback or parsed.is_link_local or parsed.is_unspecified:
+            continue
+        networks.add(str(ipaddress.ip_network(f"{parsed}/24", strict=False)))
+    return sorted(networks)

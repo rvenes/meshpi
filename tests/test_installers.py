@@ -63,3 +63,11 @@ def test_linux_always_mode_has_restricted_permissions() -> None:
     assert 'chmod 0640 "$CONFIG_FILE"' in source
     assert 'chown -R meshpi:meshpi "$STATE_DIR"' in source
     assert 'chmod 0750 "$STATE_DIR"' in source
+
+
+def test_installers_do_not_ship_a_preselected_meshtastic_node() -> None:
+    for name in ("install-linux.sh", "install-macos.sh", "install-windows.ps1"):
+        source = _text(name)
+        assert "MESHTASTIC_HOST=" in source
+        development_address = ".".join(("10", "0", "0", "152"))
+        assert development_address not in source

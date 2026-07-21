@@ -10,6 +10,7 @@ from meshpi.config import Settings
 from meshpi.connections import (
     ConnectionProfile,
     ConnectionStore,
+    discover_local_subnets,
     discover_serial,
     discover_tcp,
     parse_connection_target,
@@ -101,8 +102,10 @@ class MeshtasticService:
         self.database = database
         self.events = events
         self.interface_factory = interface_factory
-        default_profile = ConnectionProfile.tcp(
-            settings.meshtastic_host, settings.meshtastic_port
+        default_profile = (
+            ConnectionProfile.tcp(settings.meshtastic_host, settings.meshtastic_port)
+            if settings.meshtastic_host
+            else None
         )
         self.connections = connections or ConnectionStore(
             settings.database_path.with_name("connections.json"),
@@ -117,8 +120,17 @@ class MeshtasticService:
         self._state_lock = threading.Lock()
         self._interface: Interface | None = None
         self._local_node_id: str | None = None
-        self._status: dict[str, Any] = self._profile_status(self._profile) | {
-            "state": "fråkopla",
+        profile_status = self._profile_status(self._profile) if self._profile else {
+            "connection_id": None,
+            "connection_name": None,
+            "transport": None,
+            "endpoint": None,
+            "host": None,
+            "port": None,
+            "device": None,
+        }
+        self._status: dict[str, Any] = profile_status | {
+            "state": "fråkopla" if self._profile else "ingen node",
             "error": None,
             "connected_since": None,
             "reconnect_attempt": 0,
@@ -166,7 +178,7 @@ class MeshtasticService:
 
     def list_connections(self) -> dict[str, Any]:
         with self._lock:
-            active_id = self._profile.profile_id
+            active_id = self._profile.profile_id if self._profile else None
         return {
             "active_profile_id": active_id,
             "profiles": [profile.as_dict() for profile in self.connections.list_profiles()],
@@ -175,15 +187,22 @@ class MeshtasticService:
     def discover_connections(self) -> dict[str, Any]:
         result = self.list_connections()
         result["serial"] = discover_serial()
-        try:
-            result["tcp"] = discover_tcp(
-                self.settings.discovery_subnet,
-                self.settings.meshtastic_port,
-            )
-            result["tcp_error"] = None
-        except Exception as exc:
-            result["tcp"] = []
-            result["tcp_error"] = str(exc)
+        subnets = (
+            [self.settings.discovery_subnet]
+            if self.settings.discovery_subnet
+            else discover_local_subnets()
+        )
+        tcp: dict[str, dict[str, Any]] = {}
+        errors: list[str] = []
+        for subnet in subnets:
+            try:
+                for item in discover_tcp(subnet, self.settings.meshtastic_port):
+                    tcp[str(item["target"])] = item
+            except Exception as exc:
+                errors.append(f"{subnet}: {exc}")
+        result["tcp"] = list(tcp.values())
+        result["tcp_error"] = "; ".join(errors) or None
+        result["scanned_subnets"] = subnets
         return result
 
     def connect(
@@ -254,6 +273,11 @@ class MeshtasticService:
                 self._lost.clear()
                 with self._lock:
                     profile = self._profile
+                if profile is None:
+                    self._set_status("ingen node", attempt=0)
+                    self._switch_requested.wait()
+                    self._switch_requested.clear()
+                    continue
                 with self._state_lock:
                     self._status.update(self._profile_status(profile))
                 self._set_status("koplar til", attempt=attempt)
@@ -416,7 +440,7 @@ class MeshtasticService:
             interface = self._interface
             profile = self._profile
             state = self.status()["state"]
-            if interface is None or state != "tilkopla":
+            if interface is None or profile is None or state != "tilkopla":
                 raise RuntimeError("Meshtastic-noden er ikkje tilkopla")
 
             pending_id: int | None = None

@@ -178,7 +178,7 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
                 id="picker-description",
             )
             yield Input(
-                placeholder="10.0.0.135, meshtastic.local eller /dev/serial/by-id/…",
+                placeholder="192.168.1.42, meshtastic.local eller /dev/serial/by-id/…",
                 id="connection-input",
             )
             yield Static("", id="choice-count")

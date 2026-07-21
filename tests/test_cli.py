@@ -1,4 +1,5 @@
-from meshpi.cli import _battery, _format_message, _normalize_argv, build_parser
+from meshpi.cli import _battery, _format_message, _normalize_argv, build_parser, run
+from meshpi.config import Settings
 
 
 def test_battery_display_handles_external_power():
@@ -53,3 +54,30 @@ def test_cli_accepts_connection_shortcuts():
 def test_cli_has_new_connection_dialog_command():
     args = build_parser().parse_args(["new"])
     assert args.command == "new"
+
+
+def test_tui_opens_connection_picker_when_no_profile_exists(monkeypatch):
+    calls = []
+
+    def fake_request(_settings, payload):
+        calls.append(payload)
+        if payload["command"] == "connections":
+            return {"ok": True, "data": {"active_profile_id": None, "profiles": []}}
+        if payload["command"] == "connect":
+            return {"ok": True, "data": {"state": "koplar til"}}
+        raise AssertionError(payload)
+
+    monkeypatch.setattr("meshpi.cli._request", fake_request)
+    monkeypatch.setattr(
+        "meshpi.connect_tui.choose_connection",
+        lambda _settings: {"target": "192.0.2.42"},
+    )
+    monkeypatch.setattr("meshpi.tui.run_tui", lambda _settings: "leave")
+
+    result = run(build_parser().parse_args([]), Settings())
+
+    assert result == "leave"
+    assert calls == [
+        {"command": "connections"},
+        {"command": "connect", "target": "192.0.2.42"},
+    ]

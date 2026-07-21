@@ -22,7 +22,7 @@ class FakeBackend:
         self.archived = set()
         self.status = {
             "state": "tilkopla",
-            "host": "10.0.0.152",
+            "host": "192.0.2.42",
             "port": 4403,
             "local_node_id": "!040840a0",
         }
@@ -176,7 +176,7 @@ def test_status_bar_shows_current_meshpi_version():
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.5.1" in text
+            assert "MeshPi 0.5.2" in text
 
     run_scenario(scenario)
 

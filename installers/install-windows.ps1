@@ -200,11 +200,11 @@ try {
 
     if (-not (Test-Path -LiteralPath $configFile)) {
         $configText = @"
-MESHTASTIC_HOST=10.0.0.152
+MESHTASTIC_HOST=
 MESHTASTIC_PORT=4403
 DATABASE_PATH=$dataDir\meshtastic.db
 CONNECTIONS_PATH=$dataDir\connections.json
-DISCOVERY_SUBNET=10.0.0.0/24
+DISCOVERY_SUBNET=
 IPC_HOST=127.0.0.1
 IPC_PORT=$ipcPort
 LOG_LEVEL=INFO
