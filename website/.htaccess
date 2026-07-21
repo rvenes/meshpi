@@ -6,7 +6,7 @@ Options -Indexes
   Header always set Referrer-Policy "no-referrer"
   Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
   Header always set Content-Security-Policy "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'"
-  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  Header always set Strict-Transport-Security "max-age=31536000"
 </IfModule>
 
 <FilesMatch "^(version\.json|install-.*|uninstall-.*|.*\.whl|.*\.txt)$">
