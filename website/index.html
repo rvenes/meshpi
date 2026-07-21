@@ -29,7 +29,7 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.5.3</div>
+        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.5.5</div>
         <h1>Meshtastic-chat.<br><span>Rett i terminalen.</span></h1>
         <p class="lead">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
@@ -54,7 +54,7 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.5.3</b><i>●</i> Tilkopla
+          <b>MeshPi 0.5.5</b><i>●</i> Tilkopla
           <span>TCP meshtastic.local:4403</span>
         </div>
         <div class="terminal-grid">
@@ -140,7 +140,7 @@
           <p>Installerer under <code>/opt/meshpi</code> og set opp ei avgrensa systemd-teneste (always).</p>
         </div>
         <div class="command-box">
-          <code id="install-linux-command">curl -fLO https://venes.org/meshpi/install-linux.sh &amp;&amp; less install-linux.sh &amp;&amp; sudo sh install-linux.sh</code>
+          <code id="install-linux-command">curl -fLO https://venes.org/meshpi/install-linux.sh &amp;&amp; sudo sh install-linux.sh</code>
           <button data-copy-target="install-linux-command">Kopier</button>
         </div>
         <p>Session (utan sudo): <code>sh install-linux.sh --mode=session</code></p>
@@ -152,7 +152,7 @@
           <p>Installerer for gjeldande brukar og held daemonen i gang med launchd (always).</p>
         </div>
         <div class="command-box">
-          <code id="install-macos-command">curl -fLO https://venes.org/meshpi/install-macos.sh &amp;&amp; less install-macos.sh &amp;&amp; sh install-macos.sh</code>
+          <code id="install-macos-command">curl -fLO https://venes.org/meshpi/install-macos.sh &amp;&amp; sh install-macos.sh</code>
           <button data-copy-target="install-macos-command">Kopier</button>
         </div>
         <p>Session: <code>sh install-macos.sh --mode=session</code></p>
@@ -164,7 +164,7 @@
           <p>Installerer per brukar og bruker ein prosessvakt som startar daemonen ved innlogging og etter krasj.</p>
         </div>
         <div class="command-box">
-          <code id="install-windows-command">Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; Get-Content .\install-windows.ps1; .\install-windows.ps1</code>
+          <code id="install-windows-command">Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; .\install-windows.ps1</code>
           <button data-copy-target="install-windows-command">Kopier</button>
         </div>
       </div>
@@ -191,6 +191,7 @@
           då. Du kan i staden laste ned skriptet, lese det og køyre den lokale
           fila:
         </p>
+        <p><code>less</code> viser berre fila. Bla med piltastane og trykk <code>q</code> for å lukke visaren før du køyrer neste linje.</p>
         <p><code>curl -fLO https://venes.org/meshpi/install-linux.sh</code><br>
           <code>less install-linux.sh</code><br>
           <code>sudo sh install-linux.sh</code></p>
@@ -277,13 +278,17 @@
       </div>
     </section>
 
-    <section id="release-0.5.3" class="section release-section">
+    <section id="release-0.5.5" class="section release-section">
       <div class="section-heading">
         <span>Siste versjon</span>
-        <h2>MeshPi 0.5.3</h2>
+        <h2>MeshPi 0.5.5</h2>
       </div>
       <div class="release-card">
         <ul>
+          <li>Avsluttingsdialogen kan styrast med piltastar og Enter</li>
+          <li>Ctrl+U kopierer oppdateringskommandoen frå versjonsmeldinga</li>
+          <li>Alle tre vala, inkludert Avbryt, er synlege i dialogen</li>
+          <li>Enklare installasjonskommandoar utan ein overraskande filvisar</li>
           <li>Signerte versjonsmanifest og hashfesta installatørar</li>
           <li>Tilfeldig IPC-nøkkel vernar lokal historikk og sendekommandoar</li>
           <li>Avgrensa IPC-klientar, førespurnadsstorleik og tidsavbrot</li>
@@ -295,7 +300,7 @@
           <li>Docker-biletet og nettstaden har fått strengare forsyningskjede- og nettvern</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.5.3-py3-none-any.whl">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.5.5-py3-none-any.whl">Last ned Python-pakken</a>
           <a href="https://github.com/rvenes/meshpi">Kjeldekode på GitHub</a>
         </div>
       </div>

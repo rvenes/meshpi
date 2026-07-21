@@ -176,7 +176,7 @@ def test_status_bar_shows_current_meshpi_version():
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.5.3" in text
+            assert "MeshPi 0.5.5" in text
 
     run_scenario(scenario)
 
@@ -312,6 +312,10 @@ def test_update_notice_is_local_and_never_fills_or_sends_message_input():
             assert message_input.value == ""
             assert notice.command in rendered
             assert "ikkje send som melding" in rendered
+            assert "Ctrl+U" in rendered
+            await pilot.press("ctrl+u")
+            assert app._clipboard == notice.command
+            assert message_input.value == ""
             assert not any(
                 call["command"] in {"send_public", "send_dm"} for call in backend.calls
             )
@@ -337,6 +341,32 @@ def test_quit_dialog_defaults_to_leave_service_in_always_mode():
             await pilot.press("enter")
             await pilot.pause(0.1)
             assert app.return_value == "leave"
+
+    run_scenario(scenario)
+
+
+def test_quit_dialog_supports_arrow_navigation_and_enter():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(
+            Settings(background_mode="always"),
+            requester=backend.request,
+            watcher=None,
+            update_checker=None,
+        )
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.press("ctrl+q")
+            await pilot.pause(0.1)
+            assert app.screen.query_one("#quit-leave").has_focus
+            await pilot.press("down")
+            assert app.screen.query_one("#quit-stop").has_focus
+            await pilot.press("down")
+            assert app.screen.query_one("#quit-cancel").has_focus
+            await pilot.press("up")
+            assert app.screen.query_one("#quit-stop").has_focus
+            await pilot.press("enter")
+            await pilot.pause(0.1)
+            assert app.return_value == "stop"
 
     run_scenario(scenario)
 

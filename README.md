@@ -58,7 +58,6 @@ Linux, inkludert Raspberry Pi OS:
 
 ```bash
 curl -fLO https://venes.org/meshpi/install-linux.sh
-less install-linux.sh
 sudo sh install-linux.sh
 ```
 
@@ -66,7 +65,6 @@ macOS:
 
 ```bash
 curl -fLO https://venes.org/meshpi/install-macos.sh
-less install-macos.sh
 sh install-macos.sh
 ```
 
@@ -74,7 +72,6 @@ Windows PowerShell:
 
 ```powershell
 Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1
-Get-Content .\install-windows.ps1
 Set-ExecutionPolicy -Scope Process Bypass
 .\install-windows.ps1
 ```
@@ -103,6 +100,9 @@ bevarte.
 Direkte piping til `bash`, `sudo bash` eller `iex` betyr at du stoler på
 innhaldet webserveren leverer akkurat då. Eit meir transparent alternativ er å
 laste ned og lese skriptet først:
+
+`less` er berre ein filvisar. Bla med piltastane og trykk `q` for å lukke han
+før du køyrer installasjonskommandoen på neste linje.
 
 ```bash
 # Linux

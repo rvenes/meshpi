@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.5.3",
-  "published_at": "2026-07-21T02:51:03Z",
+  "latest_version": "0.5.5",
+  "published_at": "2026-07-21T03:41:30Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.5.3",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.5.5",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.3-py3-none-any.whl",
-    "filename": "meshpi-0.5.3-py3-none-any.whl",
-    "sha256": "bb05892f4426ef2e5685ec6855523acf3c36e5c931a11b58db76384e850e77ab",
-    "size": 68002,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.5-py3-none-any.whl",
+    "filename": "meshpi-0.5.5-py3-none-any.whl",
+    "sha256": "4c4a0c1a25d18273a6b6d7b7ca1542af95deb67fb0028848cb778178bcb3c91f",
+    "size": 68388,
     "format": "wheel"
   },
   "locks": {
@@ -55,6 +55,10 @@
     }
   },
   "release_notes": [
+    "Ctrl+U kopierer oppdateringskommandoen frå den lokale versjonsmeldinga.",
+    "Avsluttingsdialogen kan styrast med piltastar og Enter.",
+    "Alle vala, inkludert Avbryt, er synlege i avsluttingsdialogen.",
+    "Installasjonsoppskrifta forklarer filvisaren og har enklare standardkommandoar.",
     "Digitalt signert versjonsmanifest og hashfesta utgjevingsfiler.",
     "Tilfeldig lokal IPC-nøkkel vernar historikk, tilkopling og sending.",
     "Terminalkontrollteikn blir filtrerte frå meldingar og nodenamn.",
@@ -65,6 +69,6 @@
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "dMhaSmBT0zvTurhsQ+nPkIIupD4ZOv835ES819Do7LEJzqchmZRRROdM43gAY19jZdcB9kDFePTagkkl1nzrdaygjrNa7l7tYGCketW5I7vm9Hove2k4KjVXsAoM1IZUlrNdHkeVgRVC1I6s/WNmnBb1Tq8WAuAI6Z+vSWzP11X4aGJg3ju3VRLlzJAJEXTOomJDnuozbxhcRqWBAAaSwUs64mYsvxfb6BJLHML48AkUMSaRJdQkQE3dml3Um1WNpdKrBSVb8TurQxQJ1yNwEkcldv70k8eFKECq/2lKKaQIokTmfx0hqNJ1hnRMqxMiK94KTLOPpGcKwZTNx7Bz5T6w/X48iOUoiTRwMGABD/xVQ+qQTlQI/pCaDHJi1r+N+ipTife4q4dFMUvdX8YXK8VvlRUpY2k8siSSSIt9IqPM+w3lbuk/RgAPKLwR0I494kNYKGj9Jom6edrypK8v9NnMXeDr7eVfytxuksUA9yuS/Li9edPkxZYKIZkowbGk"
+    "value": "Qh9RIrLAjHZBtADud5w3RZDbYRTougOsHghE8bcFmtIF6ph0OVEORIqord7irE7ZiwNxHAuysBkg4PyvdfmP5eE6z6OT3XbAzlSePuZcPFa59QbdDabkFCEpooMljQAKXEV+3rSBPuIaUUdFHUg5nRJ04izS/ofcdgm3ABf8rbznLq6uLiXMLOLNPK4CHTW8Bt1dx/mwlNi7RjabWFfTbw7BCxuc4HC697ZMxUMXRanM6gMBGdTBF0/C5PCSSwoNkjp7XWibxOTd7c+ZIkDEcINMbjmZ9WstQELXu+ddeJ9tiUIYx8fVVWIX3ZsHqyhJtex21xHVfuPj0+j8/lI2Vd7XxchF4b5ryQBY4ZZZb/HE+KIfJhKZSSLtyiA2Xq9OLALMUjx2m1Oqdk1T5qwN7/3l+fwv/bRWKUV8iQEOo6KCTLb0WBB8ycifV0VG9nbG+vjGuA7SjQHxOm5DxANtuWNJTI0Sjsl/BZyjrwmroa7aCk6eXDiH6g1Eg5Vs6S99"
   }
 }

@@ -275,7 +275,13 @@ class NewDMScreen(ModalScreen[str | None]):
 
 
 class QuitScreen(ModalScreen[str | None]):
-    BINDINGS = [Binding("escape", "cancel", "Avbryt", priority=True)]
+    BINDINGS = [
+        Binding("up", "previous_choice", "Førre val", priority=True),
+        Binding("left", "previous_choice", "Førre val", priority=True),
+        Binding("down", "next_choice", "Neste val", priority=True),
+        Binding("right", "next_choice", "Neste val", priority=True),
+        Binding("escape", "cancel", "Avbryt", priority=True),
+    ]
 
     def __init__(self, background_mode: str):
         super().__init__()
@@ -292,6 +298,7 @@ class QuitScreen(ModalScreen[str | None]):
             yield Button("Lukk appen – tenesta held fram", id="quit-leave")
             yield Button("Lukk appen og stopp tenesta", id="quit-stop")
             yield Button("Avbryt", id="quit-cancel")
+            yield Static("↑/↓: vel   Enter: stadfest   Esc: avbryt", id="quit-help")
 
     def on_mount(self) -> None:
         target = "#quit-stop" if self.background_mode == "session" else "#quit-leave"
@@ -308,6 +315,19 @@ class QuitScreen(ModalScreen[str | None]):
 
     def action_cancel(self) -> None:
         self.dismiss(None)
+
+    def _move_choice(self, direction: int) -> None:
+        buttons = list(self.query("#quit-dialog Button"))
+        if not buttons:
+            return
+        focused = next((index for index, button in enumerate(buttons) if button.has_focus), 0)
+        buttons[(focused + direction) % len(buttons)].focus()
+
+    def action_next_choice(self) -> None:
+        self._move_choice(1)
+
+    def action_previous_choice(self) -> None:
+        self._move_choice(-1)
 
 
 class HelpScreen(ModalScreen[None]):
@@ -327,6 +347,7 @@ class HelpScreen(ModalScreen[None]):
         ("F3", "Flytt markøren til nodelista"),
         ("Delete", "Lukk vald DM utan å slette historikken"),
         ("Ctrl+R", "Oppdater status, samtalar og nodar"),
+        ("Ctrl+U", "Kopier oppdateringskommandoen når ein ny versjon finst"),
         ("Ctrl+Q", "Avslutt MeshPi og vel kva som skjer med daemonen"),
         ("Esc", "Lukk dialogen som er open"),
     )
@@ -573,7 +594,7 @@ class MeshPiTUI(App[str | None]):
     #quit-dialog {
         width: 58;
         max-width: 94%;
-        height: 18;
+        height: 23;
         padding: 1 2;
         border: round $accent;
         background: $panel;
@@ -593,6 +614,12 @@ class MeshPiTUI(App[str | None]):
     #quit-dialog Button {
         width: 1fr;
         margin: 0 0 1 0;
+    }
+
+    #quit-help {
+        height: 2;
+        color: #8d9699;
+        content-align: center middle;
     }
 
     HelpScreen {
@@ -640,6 +667,7 @@ class MeshPiTUI(App[str | None]):
         Binding("f3", "focus_nodes", "Nodar"),
         Binding("delete", "archive_conversation", "Lukk DM"),
         Binding("ctrl+r", "refresh", "Oppdater"),
+        Binding("ctrl+u", "copy_update_command", "Kopier oppdatering", priority=True),
         Binding("ctrl+q", "quit", "Avslutt"),
     ]
 
@@ -706,7 +734,8 @@ class MeshPiTUI(App[str | None]):
                 yield ListView(id="node-list")
         yield Static(
             " F1 hjelp  Tab/Shift+Tab byter felt  Enter opnar  Del lukk DM  Ctrl+D ny DM  "
-            "F2 samtalar  F3 nodar  Ctrl+R oppdater  Ctrl+Q avslutt ",
+            "F2 samtalar  F3 nodar  Ctrl+R oppdater  Ctrl+U kopier oppdatering  "
+            "Ctrl+Q avslutt ",
             id="key-bar",
         )
 
@@ -840,6 +869,7 @@ class MeshPiTUI(App[str | None]):
         )
         text.append("Køyr i terminalen – ikkje send som melding:\n", style="dim")
         text.append(notice.command, style="bold cyan")
+        text.append("\nCtrl+U: kopier kommandoen", style="dim")
         text.append("\n" + "─" * 72, style="#725f24")
         return text
 
@@ -1416,6 +1446,13 @@ class MeshPiTUI(App[str | None]):
             exit_on_error=False,
         )
         self.select_conversation(self.current_conversation)
+
+    def action_copy_update_command(self) -> None:
+        if self.update_notice is None:
+            self.notify("Ingen oppdateringskommando er tilgjengeleg enno.")
+            return
+        self.copy_to_clipboard(self.update_notice.command)
+        self.notify("Oppdateringskommandoen er kopiert.")
 
     def action_show_help(self) -> None:
         if isinstance(self.screen, HelpScreen):
