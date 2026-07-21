@@ -9,9 +9,11 @@ from meshpi.tui import (
     LiveEvent,
     MeshPiTUI,
     NewDMScreen,
+    NodeActionScreen,
     NodePickerItem,
     NodeSidebarItem,
     QuitScreen,
+    TracerouteResultScreen,
 )
 from meshpi.update import UpdateNotice
 
@@ -129,6 +131,13 @@ class FakeBackend:
             data = {"node_id": payload["node_id"], "archived": False}
         elif command in {"send_public", "send_dm"}:
             data = {"packet_id": 123}
+        elif command == "node_action":
+            data = {
+                "action_id": "trace-1",
+                "action": payload["action"],
+                "node_id": payload["node_id"],
+                "status": "started",
+            }
         else:
             raise RuntimeError(command)
         return {"ok": True, "data": data}
@@ -176,7 +185,7 @@ def test_status_bar_shows_current_meshpi_version():
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.5.6" in text
+            assert "MeshPi 0.5.7" in text
 
     run_scenario(scenario)
 
@@ -450,6 +459,91 @@ def test_sidebar_lists_nodes_and_opens_selected_node_as_dm():
             await pilot.press("enter")
             await pilot.pause(0.3)
             assert app.current_conversation == "!2f779c48"
+
+    run_scenario(scenario)
+
+
+def test_keyboard_opens_node_action_menu_and_starts_traceroute():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("f3", "up", "down", "shift+f10")
+            await pilot.pause(0.1)
+            assert isinstance(app.screen, NodeActionScreen)
+            assert app.screen.node["node_id"] == "!710365c8"
+
+            await pilot.press("t")
+            await pilot.pause(0.3)
+            assert {
+                "command": "node_action",
+                "action": "traceroute",
+                "node_id": "!710365c8",
+            } in backend.calls
+
+    run_scenario(scenario)
+
+
+def test_right_click_selects_node_and_opens_node_action_menu():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            target = list(app.query(NodeSidebarItem))[2]
+            await pilot.click(target, offset=(2, 1), button=3)
+            await pilot.pause(0.2)
+
+            assert app.selected_node_id == "!2f779c48"
+            assert app.current_conversation == "public"
+            assert isinstance(app.screen, NodeActionScreen)
+            assert app.screen.node["node_id"] == "!2f779c48"
+
+    run_scenario(scenario)
+
+
+def test_completed_traceroute_opens_readable_result_dialog():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            app.post_message(
+                LiveEvent(
+                    {
+                        "type": "node_action",
+                        "data": {
+                            "action_id": "trace-result-1",
+                            "action": "traceroute",
+                            "node_id": "!710365c8",
+                            "status": "completed",
+                            "result": {
+                                "forward": [
+                                    {"node_id": "!040840a0", "snr": None},
+                                    {"node_id": "!2f779c48", "snr": 7.5},
+                                    {"node_id": "!710365c8", "snr": 6.0},
+                                ],
+                                "return": None,
+                            },
+                        },
+                    }
+                )
+            )
+            await pilot.pause(0.2)
+
+            assert isinstance(app.screen, TracerouteResultScreen)
+            rendered = app.screen.query_one("#traceroute-result-text", Static).render()
+            text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
+            assert "VenesSol-A 9c48" in text
+            assert "SNR 7.5 dB" in text
+            assert "Tilbake" in text
 
     run_scenario(scenario)
 

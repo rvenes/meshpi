@@ -120,6 +120,21 @@ class IPCApplication:
                     str(request.get("node_id", "")), str(request.get("text", ""))
                 ),
             }
+        if command == "node_action":
+            return {
+                "ok": True,
+                "data": self.service.start_node_action(
+                    str(request.get("action", "")),
+                    str(request.get("node_id", "")),
+                ),
+            }
+        if command == "node_action_status":
+            return {
+                "ok": True,
+                "data": self.service.node_action_status(
+                    str(request.get("action_id", ""))
+                ),
+            }
         raise ValueError("Ukjend kommando")
 
 

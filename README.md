@@ -241,7 +241,10 @@ nodedetaljar og ei rullbar nodeliste i same terminalvindauge. Nye meldingar kjem
 inn automatisk, og den aktive samtalen rullar ned til den nyaste meldinga. Ein
 DM som kjem til ei anna samtale, gir eit synleg varsel. Marker ein node i
 høgrepanelet for å vise detaljane, og trykk Enter for å opne DM. «Ny DM» viser
-òg heile nodelista og kan filtrerast på namn eller node-ID.
+òg heile nodelista og kan filtrerast på namn eller node-ID. Høgreklikk på
+ein node, eller marker han og trykk `Shift+F10`, for å opne nodehandlingane.
+Her kan du mellom anna sende traceroute. Resultatet viser ruta fram, eventuell
+returrute og SNR per hopp når nodane rapporterer dette.
 
 Piltastane flyttar den blå markeringa i ei liste. Trykk Enter for å gjere den
 markerte samtalen eller noden aktiv i chatten. Tastane i grensesnittet er:
@@ -255,6 +258,7 @@ Delete             lukk/arkiver markert DM frå samtalelista
 Ctrl+D             søk i nodelista og opne ein ny DM
 F2                 flytt markøren til samtalelista
 F3                 flytt markøren til nodelista
+Shift+F10          opne handlingar for markert node
 Ctrl+R             oppdater samtalar og nodar
 Ctrl+Q             avslutt
 ```

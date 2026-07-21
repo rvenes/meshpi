@@ -21,6 +21,17 @@ class FakeService:
     def send_dm(self, node_id, text):
         return {"text": text, "peer_node": node_id}
 
+    def start_node_action(self, action, node_id):
+        return {
+            "action_id": "trace-1",
+            "action": action,
+            "node_id": node_id,
+            "status": "started",
+        }
+
+    def node_action_status(self, action_id):
+        return {"action_id": action_id, "status": "completed"}
+
     def list_connections(self):
         return {"active_profile_id": "tcp-test", "profiles": []}
 
@@ -114,6 +125,21 @@ def test_ipc_dispatch_and_validation(tmp_path):
         )["data"]["peer_node"]
         == "!11112222"
     )
+    assert app.dispatch(
+        {
+            "command": "node_action",
+            "action": "traceroute",
+            "node_id": "!11112222",
+        }
+    )["data"] == {
+        "action_id": "trace-1",
+        "action": "traceroute",
+        "node_id": "!11112222",
+        "status": "started",
+    }
+    assert app.dispatch(
+        {"command": "node_action_status", "action_id": "trace-1"}
+    )["data"]["status"] == "completed"
     database.upsert_node(Node(node_id="!11112222", long_name="Test"))
     assert (
         app.dispatch({"command": "node", "node_id": "!11112222"})["data"]["long_name"]

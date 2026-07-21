@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any, BinaryIO
 
 from rich.text import Text
-from textual import on
+from textual import events, on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
@@ -141,6 +141,12 @@ class NodePickerItem(ListItem):
         return text
 
 
+class NodeActionRequested(TextualMessage):
+    def __init__(self, node_id: str):
+        self.node_id = node_id
+        super().__init__()
+
+
 class NodeSidebarItem(ListItem):
     def __init__(self, node: dict[str, Any]):
         self.node = node
@@ -171,6 +177,12 @@ class NodeSidebarItem(ListItem):
             details.append(str(transport))
         text.append("  •  ".join(details), style="dim")
         return text
+
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        if event.button != 3:
+            return
+        event.stop()
+        self.post_message(NodeActionRequested(self.node_id))
 
 
 class NewDMScreen(ModalScreen[str | None]):
@@ -274,6 +286,144 @@ class NewDMScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class NodeActionScreen(ModalScreen[str | None]):
+    BINDINGS = [
+        Binding("up", "previous_choice", "Førre val", priority=True),
+        Binding("down", "next_choice", "Neste val", priority=True),
+        Binding("t", "traceroute", "Traceroute", priority=True),
+        Binding("escape", "cancel", "Avbryt", priority=True),
+    ]
+
+    def __init__(self, node: dict[str, Any]):
+        super().__init__()
+        self.node = node
+
+    def compose(self) -> ComposeResult:
+        node_id = str(self.node.get("node_id") or "")
+        name = sanitize_terminal_text(
+            self.node.get("long_name") or self.node.get("short_name") or node_id
+        )
+        local = bool(self.node.get("is_local"))
+        with Container(id="node-action-dialog"):
+            yield Label("Handlingar for node", id="node-action-title")
+            yield Static(f"{name}  [{node_id[-4:]}]", id="node-action-node")
+            yield Button(
+                "Opne samtale",
+                id="node-action-open-dm",
+                disabled=local,
+            )
+            yield Button(
+                "Traceroute  [T]",
+                id="node-action-traceroute",
+                disabled=local,
+            )
+            yield Button("Lukk", id="node-action-cancel")
+            yield Static(
+                "↑/↓: vel   Enter: køyr   T: traceroute   Esc: lukk",
+                id="node-action-help",
+            )
+
+    def on_mount(self) -> None:
+        target = "#node-action-cancel" if self.node.get("is_local") else "#node-action-open-dm"
+        self.query_one(target, Button).focus()
+
+    @on(Button.Pressed)
+    def choose(self, event: Button.Pressed) -> None:
+        result = {
+            "node-action-open-dm": "open_dm",
+            "node-action-traceroute": "traceroute",
+            "node-action-cancel": None,
+        }.get(event.button.id)
+        self.dismiss(result)
+
+    def _move_choice(self, direction: int) -> None:
+        buttons = [
+            button
+            for button in self.query("#node-action-dialog Button")
+            if not button.disabled
+        ]
+        if not buttons:
+            return
+        focused = next((index for index, button in enumerate(buttons) if button.has_focus), 0)
+        buttons[(focused + direction) % len(buttons)].focus()
+
+    def action_next_choice(self) -> None:
+        self._move_choice(1)
+
+    def action_previous_choice(self) -> None:
+        self._move_choice(-1)
+
+    def action_traceroute(self) -> None:
+        if self.node.get("is_local"):
+            self.notify("Kan ikkje køyre traceroute til den lokale noden", severity="warning")
+            return
+        self.dismiss("traceroute")
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class TracerouteResultScreen(ModalScreen[None]):
+    BINDINGS = [
+        Binding("enter", "close", "Lukk", priority=True),
+        Binding("escape", "close", "Lukk", priority=True),
+    ]
+
+    def __init__(self, action: dict[str, Any], nodes: dict[str, dict[str, Any]]):
+        super().__init__()
+        self.action = action
+        self.nodes = nodes
+
+    def compose(self) -> ComposeResult:
+        with Container(id="traceroute-result-dialog"):
+            yield Label("Traceroute-resultat", id="traceroute-result-title")
+            yield Static(self._render_result(), id="traceroute-result-text")
+            yield Button("Lukk", id="traceroute-result-close")
+
+    def on_mount(self) -> None:
+        self.query_one("#traceroute-result-close", Button).focus()
+
+    def _node_label(self, node_id: str) -> str:
+        node = self.nodes.get(node_id, {})
+        name = sanitize_terminal_text(
+            node.get("long_name") or node.get("short_name") or node_id
+        )
+        return f"{name} [{node_id[-4:]}]"
+
+    def _render_path(self, title: str, path: Any) -> Text:
+        text = Text()
+        text.append(f"{title}:\n", style="bold cyan")
+        if not isinstance(path, list) or not path:
+            text.append("  Ikkje rapportert\n", style="dim")
+            return text
+        for index, hop in enumerate(path):
+            if not isinstance(hop, dict):
+                continue
+            if index:
+                snr = hop.get("snr")
+                snr_text = "ukjend SNR" if snr is None else f"SNR {snr:g} dB"
+                text.append(f"  ↓ {snr_text}\n", style="dim")
+            text.append(f"  {self._node_label(str(hop.get('node_id') or ''))}\n")
+        return text
+
+    def _render_result(self) -> Text:
+        result = self.action.get("result")
+        if not isinstance(result, dict):
+            return Text("Traceroute-resultatet manglar rutedata.", style="yellow")
+        text = self._render_path("Fram", result.get("forward"))
+        text.append("\n")
+        text.append_text(self._render_path("Tilbake", result.get("return")))
+        return text
+
+    @on(Button.Pressed, "#traceroute-result-close")
+    def close_button(self, event: Button.Pressed) -> None:
+        del event
+        self.dismiss(None)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class QuitScreen(ModalScreen[str | None]):
     BINDINGS = [
         Binding("up", "previous_choice", "Førre val", priority=True),
@@ -345,6 +495,7 @@ class HelpScreen(ModalScreen[None]):
         ("Ctrl+D", "Finn ein node og start ein ny DM"),
         ("F2", "Flytt markøren til samtalelista"),
         ("F3", "Flytt markøren til nodelista"),
+        ("Shift+F10", "Opne handlingar for markert node"),
         ("Delete", "Lukk vald DM utan å slette historikken"),
         ("Ctrl+R", "Oppdater status, samtalar og nodar"),
         ("Ctrl+U", "Kopier oppdateringskommandoen når ein ny versjon finst"),
@@ -586,6 +737,64 @@ class MeshPiTUI(App[str | None]):
         color: #8d9699;
     }
 
+    NodeActionScreen, TracerouteResultScreen {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.72);
+    }
+
+    #node-action-dialog {
+        width: 58;
+        max-width: 94%;
+        height: 25;
+        padding: 1 2;
+        border: round $accent;
+        background: $panel;
+    }
+
+    #node-action-title, #traceroute-result-title {
+        height: 2;
+        color: $accent;
+        text-style: bold;
+    }
+
+    #node-action-node {
+        height: 3;
+        color: $cyan;
+    }
+
+    #node-action-dialog Button {
+        width: 1fr;
+        margin: 0 0 1 0;
+    }
+
+    #node-action-help {
+        height: 2;
+        color: #8d9699;
+        content-align: center middle;
+    }
+
+    #traceroute-result-dialog {
+        width: 76;
+        max-width: 96%;
+        height: 34;
+        max-height: 92%;
+        padding: 1 2;
+        border: round $accent;
+        background: $panel;
+    }
+
+    #traceroute-result-text {
+        height: 1fr;
+        padding: 1;
+        border: round #394245;
+        overflow-y: auto;
+    }
+
+    #traceroute-result-close {
+        width: 1fr;
+        margin-top: 1;
+    }
+
     QuitScreen {
         align: center middle;
         background: rgba(0, 0, 0, 0.72);
@@ -665,6 +874,7 @@ class MeshPiTUI(App[str | None]):
         Binding("ctrl+d", "new_dm", "Ny DM"),
         Binding("f2", "focus_conversations", "Samtalar"),
         Binding("f3", "focus_nodes", "Nodar"),
+        Binding("shift+f10", "node_actions", "Nodehandlingar", priority=True),
         Binding("delete", "archive_conversation", "Lukk DM"),
         Binding("ctrl+r", "refresh", "Oppdater"),
         Binding("ctrl+u", "copy_update_command", "Kopier oppdatering", priority=True),
@@ -702,6 +912,7 @@ class MeshPiTUI(App[str | None]):
         self._rebuilding_list = False
         self._rebuilding_nodes = False
         self.selected_node_id: str | None = None
+        self._handled_node_action_ids: set[str] = set()
         self.update_notice: UpdateNotice | None = None
 
     def compose(self) -> ComposeResult:
@@ -734,7 +945,8 @@ class MeshPiTUI(App[str | None]):
                 yield ListView(id="node-list")
         yield Static(
             " F1 hjelp  Tab/Shift+Tab byter felt  Enter opnar  Del lukk DM  Ctrl+D ny DM  "
-            "F2 samtalar  F3 nodar  Ctrl+R oppdater  Ctrl+U kopier oppdatering  "
+            "F2 samtalar  F3 nodar  Shift+F10 nodehandlingar  Ctrl+R oppdater  "
+            "Ctrl+U kopier oppdatering  "
             "Ctrl+Q avslutt ",
             id="key-bar",
         )
@@ -1031,10 +1243,18 @@ class MeshPiTUI(App[str | None]):
     def node_selected(self, event: ListView.Selected) -> None:
         if not isinstance(event.item, NodeSidebarItem):
             return
+        if isinstance(self.screen, NodeActionScreen):
+            return
         if event.item.node.get("is_local"):
             self.notify("Dette er den lokale noden", timeout=3)
             return
         self._open_node_dm(event.item.node_id, focus_input=False)
+
+    @on(NodeActionRequested)
+    def node_action_requested(self, message: NodeActionRequested) -> None:
+        self._select_sidebar_node(message.node_id)
+        self.query_one("#node-list", ListView).focus()
+        self._open_node_actions(message.node_id)
 
     def select_conversation(self, conversation: str) -> None:
         self.current_conversation = conversation
@@ -1288,6 +1508,9 @@ class MeshPiTUI(App[str | None]):
                 exit_on_error=False,
             )
             return
+        if event_type == "node_action":
+            self._handle_node_action(event.get("data", {}))
+            return
         if event_type != "message":
             return
         data = event.get("data", {})
@@ -1363,6 +1586,83 @@ class MeshPiTUI(App[str | None]):
             self.action_new_dm()
             return
         self.query_one("#node-list", ListView).focus()
+
+    def action_node_actions(self) -> None:
+        node_list = self.query_one("#node-list", ListView)
+        if not node_list.has_focus:
+            self.notify("Trykk F3 og marker ein node først", timeout=3)
+            return
+        selected = node_list.highlighted_child
+        if not isinstance(selected, NodeSidebarItem):
+            self.notify("Ingen node er markert", timeout=3)
+            return
+        self._open_node_actions(selected.node_id)
+
+    def _open_node_actions(self, node_id: str) -> None:
+        node = self.nodes.get(node_id)
+        if node is None:
+            self.notify("Fann ikkje den markerte noden", severity="error")
+            return
+        self.push_screen(
+            NodeActionScreen(node),
+            lambda action: self._node_action_chosen(node_id, action),
+        )
+
+    def _node_action_chosen(self, node_id: str, action: str | None) -> None:
+        if action == "open_dm":
+            self._open_node_dm(node_id, focus_input=False)
+        elif action == "traceroute":
+            self.run_worker(
+                lambda: self._start_node_action_worker(node_id, action),
+                name=f"node-action-{action}",
+                group="node-action",
+                thread=True,
+                exclusive=False,
+                exit_on_error=False,
+            )
+
+    def _start_node_action_worker(self, node_id: str, action: str) -> None:
+        try:
+            data = self._call(
+                {
+                    "command": "node_action",
+                    "action": action,
+                    "node_id": node_id,
+                }
+            )["data"]
+        except Exception as exc:
+            self.call_from_thread(
+                self.notify,
+                f"Klarte ikkje starte traceroute: {exc}",
+                severity="error",
+                timeout=8,
+            )
+            return
+        if data.get("status") == "started":
+            self.call_from_thread(
+                self.notify,
+                f"Traceroute til {node_id} er sendt",
+                timeout=5,
+            )
+        else:
+            self.call_from_thread(self._handle_node_action, data)
+
+    def _handle_node_action(self, action: dict[str, Any]) -> None:
+        status = action.get("status")
+        action_id = str(action.get("action_id") or "")
+        if status in {"completed", "failed"} and action_id:
+            if action_id in self._handled_node_action_ids:
+                return
+            self._handled_node_action_ids.add(action_id)
+        if status == "failed":
+            self.notify(
+                f"Traceroute feila: {action.get('error', 'ukjend feil')}",
+                severity="error",
+                timeout=10,
+            )
+            return
+        if status == "completed" and action.get("action") == "traceroute":
+            self.push_screen(TracerouteResultScreen(action, dict(self.nodes)))
 
     def action_new_dm(self) -> None:
         self.push_screen(NewDMScreen(list(self.nodes.values())), self._open_new_dm)

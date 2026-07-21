@@ -1,3 +1,3 @@
 """MeshPi: ein stabil Meshtastic-klient for terminalen."""
 
-__version__ = "0.5.6"
+__version__ = "0.5.7"

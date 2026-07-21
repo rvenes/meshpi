@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import socket
 import threading
+import uuid
 from collections.abc import Callable
 from typing import Any, Protocol
 
@@ -27,10 +28,13 @@ from meshpi.models import (
     now_iso,
     validate_message_text,
 )
+from meshpi.node_actions import NodeActionError, parse_traceroute_response
 from meshpi.packet import node_from_registry, parse_text_packet
 
 LOG = logging.getLogger(__name__)
 RECONNECT_DELAYS = (2, 5, 10, 30)
+TRACEROUTE_TIMEOUT_SECONDS = 120
+MAX_NODE_ACTIONS = 50
 
 
 class Interface(Protocol):
@@ -38,6 +42,8 @@ class Interface(Protocol):
     isConnected: threading.Event
 
     def sendText(self, text: str, **kwargs: Any) -> Any: ...
+
+    def sendData(self, data: Any, **kwargs: Any) -> Any: ...
 
     def close(self) -> None: ...
 
@@ -120,6 +126,9 @@ class MeshtasticService:
         self._state_lock = threading.Lock()
         self._interface: Interface | None = None
         self._local_node_id: str | None = None
+        self._node_actions: dict[str, dict[str, Any]] = {}
+        self._node_action_timers: dict[str, threading.Timer] = {}
+        self._active_traceroute_id: str | None = None
         profile_status = self._profile_status(self._profile) if self._profile else {
             "connection_id": None,
             "connection_name": None,
@@ -160,6 +169,7 @@ class MeshtasticService:
         self._stop.set()
         self._lost.set()
         self._switch_requested.set()
+        self._fail_pending_node_actions("Meshtastic-sambandet blei stoppa")
         with self._lock:
             interface = self._interface
             self._interface = None
@@ -230,6 +240,7 @@ class MeshtasticService:
             self._local_node_id = None
             self._switch_requested.set()
             self._lost.set()
+        self._fail_pending_node_actions("Meshtastic-sambandet blei bytt")
         self.database.set_local_node(None)
         with self._state_lock:
             self._status.update(self._profile_status(profile))
@@ -310,6 +321,7 @@ class MeshtasticService:
                         LOG.error("Meshtastic-feil: %s", exc)
                         self._set_status("feil", error=str(exc), attempt=attempt + 1)
                 finally:
+                    self._fail_pending_node_actions("Meshtastic-sambandet blei brote")
                     with self._lock:
                         old_interface = self._interface
                         self._interface = None
@@ -353,6 +365,7 @@ class MeshtasticService:
             if interface is not self._interface:
                 return
         self._lost.set()
+        self._fail_pending_node_actions("Meshtastic-sambandet fall ut")
 
     def _discover_local_node(self, interface: Interface) -> None:
         local_id: str | None = None
@@ -432,6 +445,161 @@ class MeshtasticService:
 
     def send_dm(self, node_id: str, text: str) -> dict[str, Any]:
         return self._send(text, destination=normalize_node_id(node_id), public=False)
+
+    def start_node_action(self, action: str, node_id: str) -> dict[str, Any]:
+        normalized_action = action.strip().lower()
+        if normalized_action != "traceroute":
+            raise ValueError(f"Ukjend nodehandling: {action}")
+        return self._start_traceroute(normalize_node_id(node_id))
+
+    def node_action_status(self, action_id: str) -> dict[str, Any]:
+        with self._lock:
+            action = self._node_actions.get(action_id)
+            if action is None:
+                raise ValueError("Fann ikkje nodehandlinga")
+            return dict(action)
+
+    def _start_traceroute(self, node_id: str) -> dict[str, Any]:
+        from meshtastic.protobuf import mesh_pb2, portnums_pb2
+
+        with self._lock:
+            interface = self._interface
+            state = self.status()["state"]
+            if interface is None or state != "tilkopla":
+                raise RuntimeError("Meshtastic-noden er ikkje tilkopla")
+            local_node_id = self._local_node_id
+            if not local_node_id:
+                raise RuntimeError("Lokal node-ID er ikkje kjend enno")
+            if node_id == local_node_id:
+                raise ValueError("Kan ikkje køyre traceroute til den lokale noden")
+            if self._active_traceroute_id is not None:
+                raise RuntimeError("Ein traceroute er allereie i gang")
+
+            action_id = uuid.uuid4().hex
+            action = {
+                "action_id": action_id,
+                "action": "traceroute",
+                "node_id": node_id,
+                "status": "started",
+                "started_at": now_iso(),
+                "packet_id": None,
+            }
+            self._node_actions[action_id] = action
+            self._active_traceroute_id = action_id
+            self._trim_node_actions()
+
+        self.events.publish({"type": "node_action", "data": dict(action)})
+
+        def on_response(packet: dict[str, Any]) -> None:
+            try:
+                with self._lock:
+                    current_interface = self._interface
+                if interface is not current_interface:
+                    raise NodeActionError("Meshtastic-sambandet blei bytt")
+                result = parse_traceroute_response(
+                    packet,
+                    local_node_id=local_node_id,
+                    target_node_id=node_id,
+                )
+            except Exception as exc:
+                self._finish_node_action(action_id, error=str(exc))
+            else:
+                self._finish_node_action(action_id, result=result)
+
+        try:
+            sent = interface.sendData(
+                mesh_pb2.RouteDiscovery(),
+                destinationId=node_id,
+                portNum=portnums_pb2.PortNum.TRACEROUTE_APP,
+                wantResponse=True,
+                onResponse=on_response,
+                channelIndex=0,
+                hopLimit=self._traceroute_hop_limit(interface),
+            )
+        except Exception as exc:
+            self._finish_node_action(action_id, error=f"Klarte ikkje sende traceroute: {exc}")
+            raise RuntimeError(f"Klarte ikkje sende traceroute: {exc}") from exc
+
+        packet_id = _sent_packet_id(sent)
+        def on_timeout() -> None:
+            self._discard_response_handler(interface, packet_id)
+            self._finish_node_action(
+                action_id,
+                error="Traceroute fekk ikkje svar innan tidsfristen",
+            )
+
+        timer = threading.Timer(TRACEROUTE_TIMEOUT_SECONDS, on_timeout)
+        timer.daemon = True
+        with self._lock:
+            current = self._node_actions.get(action_id)
+            if current is not None:
+                current["packet_id"] = packet_id
+            if current is not None and current.get("status") == "started":
+                self._node_action_timers[action_id] = timer
+                timer.start()
+            return dict(current or action)
+
+    @staticmethod
+    def _traceroute_hop_limit(interface: Interface) -> int | None:
+        local_node = getattr(interface, "localNode", None)
+        local_config = getattr(local_node, "localConfig", None)
+        lora = getattr(local_config, "lora", None)
+        value = getattr(lora, "hop_limit", None)
+        try:
+            hop_limit = int(value)
+        except (TypeError, ValueError):
+            return None
+        return hop_limit if 0 < hop_limit <= 7 else None
+
+    @staticmethod
+    def _discard_response_handler(interface: Interface, packet_id: int | None) -> None:
+        handlers = getattr(interface, "responseHandlers", None)
+        if packet_id is not None and isinstance(handlers, dict):
+            handlers.pop(packet_id, None)
+
+    def _finish_node_action(
+        self,
+        action_id: str,
+        *,
+        result: dict[str, Any] | None = None,
+        error: str | None = None,
+    ) -> None:
+        with self._lock:
+            action = self._node_actions.get(action_id)
+            if action is None or action.get("status") != "started":
+                return
+            timer = self._node_action_timers.pop(action_id, None)
+            if timer is not None and timer is not threading.current_thread():
+                timer.cancel()
+            action["status"] = "failed" if error else "completed"
+            action["finished_at"] = now_iso()
+            if error:
+                action["error"] = error
+            else:
+                action["result"] = result or {}
+            if self._active_traceroute_id == action_id:
+                self._active_traceroute_id = None
+            snapshot = dict(action)
+        self.events.publish({"type": "node_action", "data": snapshot})
+
+    def _fail_pending_node_actions(self, error: str) -> None:
+        with self._lock:
+            pending = [
+                action_id
+                for action_id, action in self._node_actions.items()
+                if action.get("status") == "started"
+            ]
+        for action_id in pending:
+            self._finish_node_action(action_id, error=error)
+
+    def _trim_node_actions(self) -> None:
+        completed = [
+            action_id
+            for action_id, action in self._node_actions.items()
+            if action.get("status") != "started"
+        ]
+        while len(self._node_actions) > MAX_NODE_ACTIONS and completed:
+            self._node_actions.pop(completed.pop(0), None)
 
     def _send(self, text: str, destination: str, public: bool) -> dict[str, Any]:
         text = validate_message_text(text)

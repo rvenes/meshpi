@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.5.6",
-  "published_at": "2026-07-21T04:07:11Z",
+  "latest_version": "0.5.7",
+  "published_at": "2026-07-21T08:24:20Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.5.6",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.5.7",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.6-py3-none-any.whl",
-    "filename": "meshpi-0.5.6-py3-none-any.whl",
-    "sha256": "0bb2253c478d972aa60af00428e986bd9f75e39c0a24df63f2c67ccbf9c1e5cc",
-    "size": 68391,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.7-py3-none-any.whl",
+    "filename": "meshpi-0.5.7-py3-none-any.whl",
+    "sha256": "3e2a84bbac19b19c7f9e0e4645130aaa4fdf8f0404b200195bbd548b0eea7c6c",
+    "size": 72982,
     "format": "wheel"
   },
   "locks": {
@@ -55,21 +55,15 @@
     }
   },
   "release_notes": [
-    "Mac-installatøren byter current-symlenka atomisk utan at macOS følgjer den gamle symlenka.",
-    "Ctrl+U kopierer oppdateringskommandoen frå den lokale versjonsmeldinga.",
-    "Avsluttingsdialogen kan styrast med piltastar og Enter.",
-    "Alle vala, inkludert Avbryt, er synlege i avsluttingsdialogen.",
-    "Installasjonsoppskrifta forklarer filvisaren og har enklare standardkommandoar.",
-    "Digitalt signert versjonsmanifest og hashfesta utgjevingsfiler.",
-    "Tilfeldig lokal IPC-nøkkel vernar historikk, tilkopling og sending.",
-    "Terminalkontrollteikn blir filtrerte frå meldingar og nodenamn.",
-    "Isolert session-daemon, loggrotasjon og avgrensa meldingsdatabase.",
-    "Oppdaterte og hash-låste pip/setuptools på alle plattformer.",
-    "Herda Docker-bygg, installatørar og nettstad."
+    "Høgreklikk eller Shift+F10 opnar handlingar for den markerte noden.",
+    "Traceroute blir sendt asynkront utan at terminalgrensesnittet frys.",
+    "Resultatet viser rute fram, eventuell returrute og SNR per hopp.",
+    "Tydelege feil for timeout, manglande rute og nodar som ikkje svarar.",
+    "Nodehandlingsmenyen er klar for fleire handlingar i seinare versjonar."
   ],
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "PJCS6eNjv/zqnSxzaYNubLTNA8ejtK4KYJNOHCjHE1PTx+EVhI+RnqtSAri9xY7qAQ91SDF0VmIgSdfBjgVSEFERJ3CrKbudTp1jLdoT1VYjOfV7kX0vnXyW2T5a8+ZupNNze2TLRlxWzaCpdsxACpIt89gFK+WvB5gg56BfiPOFZSF5CfDUbB0VdyjdLFuriRA1KASE+TBhIqxiwGZGFvrlljvInEVbthvTIfvGOKS41jV9rn0kuJvpXSViVatRS5ixGiW5kiZrYnltQfAUAVzqanF6tVgpkMGJinxuAKfL21S6gHfNY2QblacsvXYu4yWnY+qADpheJogOQw9KZ27zSEHurctpTEeJFhPzMB+8g7+hkGcU+NaTFjIZJuMSnJfMi5Ei6ZVEz02ieMveXSdIh8k2QPcLRNgZIF6eV49Ppsi58UbUdoQ3AeYarPZBQYOTMVr/v5DYfp4i3sj+1O1ZwJMNwQrkKXX1Ua3peTAIhaYTI5H4G+pTa+kYqDrc"
+    "value": "ii0yt+9o2MBi+l/4qf5M5aawhacVLf5pqLpqxzCACF9WbS62U+POadJZcaxZ/90OVEe8rZ9N5Zs1W/6q6RPzAJfiOgXbOUDeIHpoHwCTO7VjyNSZKmW60oZyUZv3EgZa4pzkqfFzMz7lQ2y5DmP0Um6VwMDGGOEZ0AM747wSEVoHdXSTb7e6tB9QE0Qrfi7SZMNOIV2w9UzEV34dlZU1fRzgusaa4eMBVrK1u1dfzgJM5vnU27W/v+KB+o3OTmElyHfj8hSlJoMWUXqXiTO9MqfPbAK5/2zIWtHbFmFYVdra+Xy5tisNtHy1fXuT1cCMvwpF5B+3X3iHMrCW2YE4eOm0Pmn3r17mMMk3TMCCzcjZJ0pQCJfwyymdB23yhDJbZYLuWRFSdv1VjjJZu9deeELXc09ICT9kAHfGm6uRLQjMTGiRNQsQ+NhQi77O9e1czSOUkltpVoTqL31hwlvOtdvGpjp05e1tjHE2uSKzVDKQXp9+xn0iiLbnaPEGTC4I"
   }
 }

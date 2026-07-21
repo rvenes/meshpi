@@ -1,5 +1,6 @@
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -20,10 +21,19 @@ class FakeInterface:
         self.isConnected = threading.Event()
         self.isConnected.set()
         self.calls = []
+        self.data_calls = []
+        self.responseHandlers = {}
         self.closed = False
+        self.localNode = SimpleNamespace(
+            localConfig=SimpleNamespace(lora=SimpleNamespace(hop_limit=3))
+        )
 
     def sendText(self, text, **kwargs):
         self.calls.append((text, kwargs))
+        return SentPacket()
+
+    def sendData(self, data, **kwargs):
+        self.data_calls.append((data, kwargs))
         return SentPacket()
 
     def close(self):
@@ -100,6 +110,96 @@ def test_send_requires_connection(service):
     value._set_status("fråkopla")
     with pytest.raises(RuntimeError):
         value.send_public("hei")
+
+
+def test_traceroute_is_started_asynchronously_and_publishes_result(service):
+    value, interface, _ = service
+    with value.events.subscribe() as events:
+        started = value.start_node_action("traceroute", "!11112222")
+        started_event = events.get(timeout=1)
+
+        assert started["status"] == "started"
+        assert started_event["type"] == "node_action"
+        _, kwargs = interface.data_calls[0]
+        assert kwargs["destinationId"] == "!11112222"
+        assert kwargs["portNum"] == 70
+        assert kwargs["wantResponse"] is True
+        assert kwargs["channelIndex"] == 0
+        assert kwargs["hopLimit"] == 3
+
+        kwargs["onResponse"](
+            {
+                "decoded": {
+                    "portnum": "TRACEROUTE_APP",
+                    "traceroute": {"snrTowards": [24]},
+                }
+            }
+        )
+        completed = events.get(timeout=1)["data"]
+
+    assert completed["status"] == "completed"
+    assert completed["result"]["forward"][-1] == {
+        "node_id": "!11112222",
+        "snr": 6.0,
+    }
+    assert value.node_action_status(started["action_id"])["status"] == "completed"
+
+
+def test_traceroute_rejects_local_node_and_parallel_request(service):
+    value, interface, _ = service
+
+    with pytest.raises(ValueError, match="lokale noden"):
+        value.start_node_action("traceroute", "!710365c8")
+
+    value.start_node_action("traceroute", "!11112222")
+    with pytest.raises(RuntimeError, match="allereie i gang"):
+        value.start_node_action("traceroute", "!33334444")
+    interface.data_calls[0][1]["onResponse"](
+        {
+            "decoded": {
+                "portnum": "ROUTING_APP",
+                "routing": {"errorReason": "NO_RESPONSE"},
+            }
+        }
+    )
+
+
+def test_traceroute_routing_failure_is_published(service):
+    value, interface, _ = service
+    with value.events.subscribe() as events:
+        started = value.start_node_action("traceroute", "!11112222")
+        events.get(timeout=1)
+        interface.data_calls[0][1]["onResponse"](
+            {
+                "decoded": {
+                    "portnum": "ROUTING_APP",
+                    "routing": {"errorReason": "NO_ROUTE"},
+                }
+            }
+        )
+        failed = events.get(timeout=1)["data"]
+
+    assert failed["action_id"] == started["action_id"]
+    assert failed["status"] == "failed"
+    assert "NO_ROUTE" in failed["error"]
+
+
+def test_traceroute_timeout_fails_action_and_discards_response_handler(
+    service, monkeypatch
+):
+    monkeypatch.setattr("meshpi.service.TRACEROUTE_TIMEOUT_SECONDS", 0.01)
+    value, interface, _ = service
+    interface.responseHandlers[991] = object()
+
+    with value.events.subscribe() as events:
+        started = value.start_node_action("traceroute", "!11112222")
+        events.get(timeout=1)
+        failed = events.get(timeout=1)["data"]
+
+    assert failed["action_id"] == started["action_id"]
+    assert failed["status"] == "failed"
+    assert "tidsfristen" in failed["error"]
+    assert interface.responseHandlers == {}
 
 
 def test_service_switches_connection_profile_and_closes_old_interface(service):

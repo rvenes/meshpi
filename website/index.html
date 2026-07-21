@@ -29,7 +29,7 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.5.6</div>
+        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.5.7</div>
         <h1>Meshtastic-chat.<br><span>Rett i terminalen.</span></h1>
         <p class="lead">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
@@ -54,7 +54,7 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.5.6</b><i>●</i> Tilkopla
+          <b>MeshPi 0.5.7</b><i>●</i> Tilkopla
           <span>TCP meshtastic.local:4403</span>
         </div>
         <div class="terminal-grid">
@@ -275,33 +275,25 @@
         <div><kbd>Delete</kbd><span>Arkiver DM</span></div>
         <div><kbd>F2</kbd><span>Samtalar</span></div>
         <div><kbd>F3</kbd><span>Nodar</span></div>
+        <div><kbd>Shift</kbd> + <kbd>F10</kbd><span>Nodehandlingar</span></div>
       </div>
     </section>
 
-    <section id="release-0.5.6" class="section release-section">
+    <section id="release-0.5.7" class="section release-section">
       <div class="section-heading">
         <span>Siste versjon</span>
-        <h2>MeshPi 0.5.6</h2>
+        <h2>MeshPi 0.5.7</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li>Avsluttingsdialogen kan styrast med piltastar og Enter</li>
-          <li>Mac-oppdateringar byter no current-symlenka atomisk og korrekt</li>
-          <li>Ctrl+U kopierer oppdateringskommandoen frå versjonsmeldinga</li>
-          <li>Alle tre vala, inkludert Avbryt, er synlege i dialogen</li>
-          <li>Enklare installasjonskommandoar utan ein overraskande filvisar</li>
-          <li>Signerte versjonsmanifest og hashfesta installatørar</li>
-          <li>Tilfeldig IPC-nøkkel vernar lokal historikk og sendekommandoar</li>
-          <li>Avgrensa IPC-klientar, førespurnadsstorleik og tidsavbrot</li>
-          <li>Terminalkontrollteikn blir filtrerte frå meldingar og nodenamn</li>
-          <li>Konfigurasjonsfiler kan ikkje lenger injisere vilkårlege miljøvariablar</li>
-          <li>Session-daemonen startar isolert frå arbeidsmappa og roterer loggen</li>
-          <li>Meldingsdatabasen blir avgrensa til dei 50 000 nyaste meldingane</li>
-          <li>pip og setuptools er oppdaterte og hash-låste på alle plattformer</li>
-          <li>Docker-biletet og nettstaden har fått strengare forsyningskjede- og nettvern</li>
+          <li>Høgreklikk eller Shift+F10 opnar handlingar for den markerte noden</li>
+          <li>Traceroute blir sendt asynkront utan at terminalgrensesnittet frys</li>
+          <li>Resultatet viser rute fram, eventuell returrute og SNR per hopp</li>
+          <li>Tydelege feil for timeout, manglande rute og nodar som ikkje svarar</li>
+          <li>Nodehandlingsmenyen er klar for fleire handlingar i seinare versjonar</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.5.6-py3-none-any.whl">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.5.7-py3-none-any.whl">Last ned Python-pakken</a>
           <a href="https://github.com/rvenes/meshpi">Kjeldekode på GitHub</a>
         </div>
       </div>
@@ -316,7 +308,7 @@
     <div>
       <a href="https://github.com/rvenes/meshpi">GitHub</a>
       <a href="version.json">version.json</a>
-      <a href="LICENSE.txt">Lisens</a>
+      <a href="LICENSE">Lisens</a>
     </div>
     <small id="manifest-status">Kontrollerer siste versjon …</small>
   </footer>
