@@ -46,6 +46,13 @@ def test_installers_use_locked_dependencies_and_offline_selftest() -> None:
     assert "MESHPI_FORCE_HEALTH_FAILURE" in windows
 
 
+def test_macos_switches_current_symlink_without_following_it() -> None:
+    source = _text("install-macos.sh")
+    assert "os.replace(sys.argv[1], sys.argv[2])" in source
+    assert 'mv -f "$temporary" "$CURRENT_LINK"' not in source
+    assert 'while launchctl print "$DOMAIN/$LABEL"' in source
+
+
 def test_uninstallers_preserve_data_without_explicit_purge() -> None:
     linux = _text("uninstall-linux.sh")
     macos = _text("uninstall-macos.sh")

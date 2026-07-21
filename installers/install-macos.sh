@@ -210,6 +210,20 @@ INSTALLED_VERSION="$("$RELEASE/venv/bin/meshpi" --version)"
 DOMAIN="gui/$(id -u)"
 LABEL="org.venes.meshpi"
 launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
+
+# launchctl may return from bootout before the old job has been removed from
+# the GUI domain.  Bootstrapping the same label during that short window fails
+# with error 5 (Input/output error), so wait for removal to finish.
+i=0
+while launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; do
+    i=$((i + 1))
+    if [ "$i" -ge 50 ]; then
+        echo "MeshPi-tenesta kunne ikkje stoppast før oppdateringa." >&2
+        exit 1
+    fi
+    sleep 0.1
+done
+
 if [ -x "$BIN_DIR/meshpi" ]; then
     "$BIN_DIR/meshpi" service stop >/dev/null 2>&1 || true
 fi
@@ -230,7 +244,12 @@ switch_link() {
     temporary="$APP_ROOT/.current-$$"
     rm -f "$temporary"
     ln -s "$target" "$temporary"
-    mv -f "$temporary" "$CURRENT_LINK"
+    "$PYTHON" - "$temporary" "$CURRENT_LINK" <<'PY'
+import os
+import sys
+
+os.replace(sys.argv[1], sys.argv[2])
+PY
 }
 
 if [ -n "$OLD_RELEASE" ] && [ "$OLD_RELEASE" != "$RELEASE" ]; then

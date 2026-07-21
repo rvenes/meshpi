@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.5.5",
-  "published_at": "2026-07-21T03:41:30Z",
+  "latest_version": "0.5.6",
+  "published_at": "2026-07-21T04:07:11Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.5.5",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.5.6",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.5-py3-none-any.whl",
-    "filename": "meshpi-0.5.5-py3-none-any.whl",
-    "sha256": "4c4a0c1a25d18273a6b6d7b7ca1542af95deb67fb0028848cb778178bcb3c91f",
-    "size": 68388,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.6-py3-none-any.whl",
+    "filename": "meshpi-0.5.6-py3-none-any.whl",
+    "sha256": "0bb2253c478d972aa60af00428e986bd9f75e39c0a24df63f2c67ccbf9c1e5cc",
+    "size": 68391,
     "format": "wheel"
   },
   "locks": {
@@ -43,8 +43,8 @@
     },
     "macos": {
       "url": "https://venes.org/meshpi/install-macos.sh",
-      "sha256": "34cae9e67f80f44523eb15910ac3f329ade6c1c2ccd143c03fce00d5effa6e4b",
-      "size": 10977,
+      "sha256": "9d5ef04c7e7d91af9ae007077ba5145c37696233dddc26674af24f22263a9e1d",
+      "size": 11502,
       "update_command": "curl -fLO https://venes.org/meshpi/install-macos.sh && sh install-macos.sh"
     },
     "windows": {
@@ -55,6 +55,7 @@
     }
   },
   "release_notes": [
+    "Mac-installatøren byter current-symlenka atomisk utan at macOS følgjer den gamle symlenka.",
     "Ctrl+U kopierer oppdateringskommandoen frå den lokale versjonsmeldinga.",
     "Avsluttingsdialogen kan styrast med piltastar og Enter.",
     "Alle vala, inkludert Avbryt, er synlege i avsluttingsdialogen.",
@@ -69,6 +70,6 @@
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "Qh9RIrLAjHZBtADud5w3RZDbYRTougOsHghE8bcFmtIF6ph0OVEORIqord7irE7ZiwNxHAuysBkg4PyvdfmP5eE6z6OT3XbAzlSePuZcPFa59QbdDabkFCEpooMljQAKXEV+3rSBPuIaUUdFHUg5nRJ04izS/ofcdgm3ABf8rbznLq6uLiXMLOLNPK4CHTW8Bt1dx/mwlNi7RjabWFfTbw7BCxuc4HC697ZMxUMXRanM6gMBGdTBF0/C5PCSSwoNkjp7XWibxOTd7c+ZIkDEcINMbjmZ9WstQELXu+ddeJ9tiUIYx8fVVWIX3ZsHqyhJtex21xHVfuPj0+j8/lI2Vd7XxchF4b5ryQBY4ZZZb/HE+KIfJhKZSSLtyiA2Xq9OLALMUjx2m1Oqdk1T5qwN7/3l+fwv/bRWKUV8iQEOo6KCTLb0WBB8ycifV0VG9nbG+vjGuA7SjQHxOm5DxANtuWNJTI0Sjsl/BZyjrwmroa7aCk6eXDiH6g1Eg5Vs6S99"
+    "value": "PJCS6eNjv/zqnSxzaYNubLTNA8ejtK4KYJNOHCjHE1PTx+EVhI+RnqtSAri9xY7qAQ91SDF0VmIgSdfBjgVSEFERJ3CrKbudTp1jLdoT1VYjOfV7kX0vnXyW2T5a8+ZupNNze2TLRlxWzaCpdsxACpIt89gFK+WvB5gg56BfiPOFZSF5CfDUbB0VdyjdLFuriRA1KASE+TBhIqxiwGZGFvrlljvInEVbthvTIfvGOKS41jV9rn0kuJvpXSViVatRS5ixGiW5kiZrYnltQfAUAVzqanF6tVgpkMGJinxuAKfL21S6gHfNY2QblacsvXYu4yWnY+qADpheJogOQw9KZ27zSEHurctpTEeJFhPzMB+8g7+hkGcU+NaTFjIZJuMSnJfMi5Ei6ZVEz02ieMveXSdIh8k2QPcLRNgZIF6eV49Ppsi58UbUdoQ3AeYarPZBQYOTMVr/v5DYfp4i3sj+1O1ZwJMNwQrkKXX1Ua3peTAIhaYTI5H4G+pTa+kYqDrc"
   }
 }
