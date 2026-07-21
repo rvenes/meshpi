@@ -29,7 +29,7 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.5.2</div>
+        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.5.3</div>
         <h1>Meshtastic-chat.<br><span>Rett i terminalen.</span></h1>
         <p class="lead">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
@@ -54,7 +54,7 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.5.2</b><i>●</i> Tilkopla
+          <b>MeshPi 0.5.3</b><i>●</i> Tilkopla
           <span>TCP meshtastic.local:4403</span>
         </div>
         <div class="terminal-grid">
@@ -140,10 +140,10 @@
           <p>Installerer under <code>/opt/meshpi</code> og set opp ei avgrensa systemd-teneste (always).</p>
         </div>
         <div class="command-box">
-          <code id="install-linux-command">curl -fsSL https://venes.org/meshpi/install-linux.sh | sudo bash</code>
+          <code id="install-linux-command">curl -fLO https://venes.org/meshpi/install-linux.sh &amp;&amp; less install-linux.sh &amp;&amp; sudo sh install-linux.sh</code>
           <button data-copy-target="install-linux-command">Kopier</button>
         </div>
-        <p>Session: <code>curl -fsSL https://venes.org/meshpi/install-linux.sh | sudo bash -s -- --mode=session</code></p>
+        <p>Session (utan sudo): <code>sh install-linux.sh --mode=session</code></p>
       </div>
 
       <div class="platform-panel" data-platform-panel="macos" hidden>
@@ -152,10 +152,10 @@
           <p>Installerer for gjeldande brukar og held daemonen i gang med launchd (always).</p>
         </div>
         <div class="command-box">
-          <code id="install-macos-command">curl -fsSL https://venes.org/meshpi/install-macos.sh | bash</code>
+          <code id="install-macos-command">curl -fLO https://venes.org/meshpi/install-macos.sh &amp;&amp; less install-macos.sh &amp;&amp; sh install-macos.sh</code>
           <button data-copy-target="install-macos-command">Kopier</button>
         </div>
-        <p>Session: <code>curl -fsSL https://venes.org/meshpi/install-macos.sh | bash -s -- --mode=session</code></p>
+        <p>Session: <code>sh install-macos.sh --mode=session</code></p>
       </div>
 
       <div class="platform-panel" data-platform-panel="windows" hidden>
@@ -164,7 +164,7 @@
           <p>Installerer per brukar og bruker ein prosessvakt som startar daemonen ved innlogging og etter krasj.</p>
         </div>
         <div class="command-box">
-          <code id="install-windows-command">powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://venes.org/meshpi/install-windows.ps1 | iex"</code>
+          <code id="install-windows-command">Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; Get-Content .\install-windows.ps1; .\install-windows.ps1</code>
           <button data-copy-target="install-windows-command">Kopier</button>
         </div>
       </div>
@@ -228,9 +228,9 @@
           <li>Ingen telemetri eller konto</li>
         </ul>
         <p>
-          Manifest og filer kjem førebels frå same server og er ikkje digitalt
-          signerte. SHA-256 åleine vernar derfor ikkje dersom sjølve serveren
-          blir kompromittert.
+          Manifestet er digitalt signert med ein separat RSA-3072-nøkkel som er
+          festa i appen og alle installatørane. Endra eller usignerte manifest
+          blir avviste før pakkar blir installerte.
         </p>
         <a href="version.json">Opne versjonsmanifestet →</a>
       </div>
@@ -277,26 +277,25 @@
       </div>
     </section>
 
-    <section id="release-0.5.2" class="section release-section">
+    <section id="release-0.5.3" class="section release-section">
       <div class="section-heading">
         <span>Siste versjon</span>
-        <h2>MeshPi 0.5.2</h2>
+        <h2>MeshPi 0.5.3</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li>Ingen utviklarnode eller IP-adresse blir førehandsvald</li>
-          <li>Nodeveljaren opnar automatisk ved første oppstart</li>
-          <li>Lokalt TCP-nett blir oppdaga automatisk</li>
-          <li>Versjonsnummeret er alltid synleg først i topplinja</li>
-          <li>Global F1-dialog viser alle tastatursnarvegane</li>
-          <li>Always- og session-modus for bakgrunnsdaemonen</li>
-          <li>Val om å stoppe daemonen når TUI-en blir avslutta</li>
-          <li>Versjonert installasjon, offline sjølvtest og automatisk rollback</li>
-          <li>Hash-låste Python-avhengigheiter på alle tre plattformer</li>
-          <li>Robust per-brukar-autostart på Windows og ryddige avinstallerarar</li>
+          <li>Signerte versjonsmanifest og hashfesta installatørar</li>
+          <li>Tilfeldig IPC-nøkkel vernar lokal historikk og sendekommandoar</li>
+          <li>Avgrensa IPC-klientar, førespurnadsstorleik og tidsavbrot</li>
+          <li>Terminalkontrollteikn blir filtrerte frå meldingar og nodenamn</li>
+          <li>Konfigurasjonsfiler kan ikkje lenger injisere vilkårlege miljøvariablar</li>
+          <li>Session-daemonen startar isolert frå arbeidsmappa og roterer loggen</li>
+          <li>Meldingsdatabasen blir avgrensa til dei 50 000 nyaste meldingane</li>
+          <li>pip og setuptools er oppdaterte og hash-låste på alle plattformer</li>
+          <li>Docker-biletet og nettstaden har fått strengare forsyningskjede- og nettvern</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.5.2-py3-none-any.whl">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.5.3-py3-none-any.whl">Last ned Python-pakken</a>
           <a href="https://github.com/rvenes/meshpi">Kjeldekode på GitHub</a>
         </div>
       </div>

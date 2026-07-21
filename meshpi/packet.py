@@ -16,6 +16,7 @@ from meshpi.models import (
     Transport,
     node_num_to_id,
     now_iso,
+    sanitize_terminal_text,
 )
 
 
@@ -117,6 +118,9 @@ def parse_text_packet(packet: dict[str, Any], local_node_id: str | None) -> Mess
             return None
     if not text:
         return None
+    text = sanitize_terminal_text(text, max_bytes=237).strip()
+    if not text:
+        return None
 
     from_node = _node_id(packet, "fromId", "from")
     to_node = _node_id(packet, "toId", "to")
@@ -195,10 +199,10 @@ def node_from_registry(
     return Node(
         node_id=canonical,
         node_num=node_num,
-        long_name=user.get("longName"),
-        short_name=user.get("shortName"),
-        hw_model=user.get("hwModel"),
-        role=user.get("role"),
+        long_name=sanitize_terminal_text(user.get("longName"), 160) or None,
+        short_name=sanitize_terminal_text(user.get("shortName"), 80) or None,
+        hw_model=sanitize_terminal_text(user.get("hwModel"), 80) or None,
+        role=sanitize_terminal_text(user.get("role"), 80) or None,
         last_heard=data.get("lastHeard"),
         battery_level=metrics.get("batteryLevel"),
         voltage=metrics.get("voltage"),

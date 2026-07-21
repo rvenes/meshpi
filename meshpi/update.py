@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 
 from meshpi import __version__
 from meshpi.config import Settings
+from meshpi.signing import SignatureError, verify_manifest_signature
 
 MAX_MANIFEST_BYTES = 128 * 1024
 SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$")
@@ -49,6 +50,10 @@ def parse_update_manifest(
     current_version: str = __version__,
     platform_name: str | None = None,
 ) -> UpdateNotice | None:
+    try:
+        verify_manifest_signature(manifest)
+    except SignatureError as exc:
+        raise UpdateCheckError(str(exc)) from exc
     if manifest.get("schema_version") != 1:
         raise UpdateCheckError("Ustøtta versjonsmanifest")
     latest = str(manifest.get("latest_version", "")).strip()
@@ -88,7 +93,8 @@ def check_for_update(settings: Settings) -> UpdateNotice | None:
         },
     )
     try:
-        with urlopen(request, timeout=settings.update_timeout) as response:  # noqa: S310
+        # URL-en er eksplisitt kontrollert som HTTPS ovanfor.
+        with urlopen(request, timeout=settings.update_timeout) as response:  # nosec B310
             raw = response.read(MAX_MANIFEST_BYTES + 1)
     except OSError as exc:
         raise UpdateCheckError(f"Klarte ikkje sjekke oppdatering: {exc}") from exc

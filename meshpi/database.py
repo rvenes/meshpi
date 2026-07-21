@@ -67,13 +67,27 @@ CREATE TABLE IF NOT EXISTS nodes (
 
 
 class Database:
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, max_messages: int = 50_000):
         self.path = Path(path)
+        self.max_messages = max(1_000, max_messages)
+        self._inserts_since_prune = 0
 
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.executescript(SCHEMA)
+            self._prune_messages(connection)
+
+    def _prune_messages(self, connection: sqlite3.Connection) -> None:
+        connection.execute(
+            """
+            DELETE FROM messages
+            WHERE id NOT IN (
+                SELECT id FROM messages ORDER BY id DESC LIMIT ?
+            )
+            """,
+            (self.max_messages,),
+        )
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=10)
@@ -121,6 +135,11 @@ class Database:
                     "DELETE FROM archived_conversations WHERE peer_node = ?",
                     (message.peer_node,),
                 )
+            if inserted:
+                self._inserts_since_prune += 1
+                if self._inserts_since_prune >= 100:
+                    self._prune_messages(connection)
+                    self._inserts_since_prune = 0
             return inserted, cursor.lastrowid if inserted else None
 
     def update_message_status(self, packet_id: int, status: MessageStatus) -> bool:
@@ -142,8 +161,7 @@ class Database:
         where = "kind = ? AND channel = 0" if kind == "public" else "kind = ? AND peer_node = ?"
         params: tuple[Any, ...] = (kind,) if kind == "public" else (kind, peer_node)
         with self._connect() as connection:
-            rows = connection.execute(
-                f"""
+            query = f"""
                 SELECT recent.*, nodes.long_name AS from_long_name,
                        nodes.short_name AS from_short_name
                 FROM (
@@ -152,12 +170,11 @@ class Database:
                 ) AS recent
                 LEFT JOIN nodes ON nodes.node_id = recent.from_node
                 ORDER BY recent.timestamp, recent.id
-                """,
-                (*params, limit),
-            ).fetchall()
+                """  # nosec B608
+            rows = connection.execute(query, (*params, limit)).fetchall()
             if mark_read:
                 connection.execute(
-                    f"UPDATE messages SET is_read = 1 WHERE {where} AND direction = 'inn'",
+                    f"UPDATE messages SET is_read = 1 WHERE {where} AND direction = 'inn'",  # nosec B608
                     params,
                 )
         return [self._message_row(row) for row in rows]
@@ -272,16 +289,16 @@ class Database:
             raise ValueError("Sortering må vere name, seen eller id")
         pattern = f"%{search.strip()}%"
         with self._connect() as connection:
-            rows = connection.execute(
-                f"""
+            query = f"""
                 SELECT * FROM nodes
                 WHERE ? = '%%'
                    OR node_id LIKE ? COLLATE NOCASE
                    OR long_name LIKE ? COLLATE NOCASE
                    OR short_name LIKE ? COLLATE NOCASE
                 ORDER BY {order}
-                """,
-                (pattern, pattern, pattern, pattern),
+                """  # nosec B608
+            rows = connection.execute(
+                query, (pattern, pattern, pattern, pattern)
             ).fetchall()
         result = []
         for row in rows:

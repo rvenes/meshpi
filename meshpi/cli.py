@@ -17,7 +17,7 @@ from meshpi.config import Settings
 from meshpi.daemon import run_daemon
 from meshpi.doctor import offline_checks
 from meshpi.lifecycle import DaemonHandle, start_session_daemon, stop_daemon
-from meshpi.models import normalize_node_id
+from meshpi.models import normalize_node_id, sanitize_terminal_text
 from meshpi.platform_service import manage_service
 
 EXIT_ERROR = 1
@@ -62,7 +62,7 @@ def _local_time(value: str | int | None) -> str:
 
 
 def _trim(value: Any, width: int) -> str:
-    text = "–" if value in (None, "") else str(value)
+    text = "–" if value in (None, "") else sanitize_terminal_text(value)
     if len(text) <= width:
         return text
     return text[: max(1, width - 1)] + "…"
@@ -79,7 +79,7 @@ def _battery(value: Any) -> str:
 def _format_message(message: dict[str, Any]) -> str:
     timestamp = _local_time(message.get("timestamp"))
     timestamp = timestamp[5:] if len(timestamp) >= 19 else timestamp
-    name = (
+    name = sanitize_terminal_text(
         message.get("from_long_name")
         or message.get("from_short_name")
         or message.get("from_node")
@@ -102,7 +102,7 @@ def _format_message(message: dict[str, Any]) -> str:
     detail = f"  ({', '.join(quality)})" if quality else ""
     return (
         f"{timestamp}  {context} {direction} {_trim(name, 22):22} [{short_id}] "
-        f"{transport:6}  {message.get('text', '')}{status}{detail}"
+        f"{transport:6}  {sanitize_terminal_text(message.get('text', ''))}{status}{detail}"
     )
 
 
@@ -190,7 +190,8 @@ def _print_node(node: dict[str, Any]) -> None:
         ("Lokal node", "ja" if node.get("is_local") else "nei"),
     )
     for label, value in fields:
-        print(f"{label + ':':18} {value if value not in (None, '') else '–'}")
+        rendered = sanitize_terminal_text(value) if value not in (None, "") else "–"
+        print(f"{label + ':':18} {rendered}")
     if not node.get("is_local"):
         print(f"\nStart samtale: meshpi chat {node['node_id']}")
 

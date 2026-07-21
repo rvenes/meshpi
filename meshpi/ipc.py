@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -18,6 +19,8 @@ from meshpi.service import MeshtasticService
 
 LOG = logging.getLogger(__name__)
 MAX_REQUEST_BYTES = 1_000_000
+MAX_IPC_CLIENTS = 32
+IPC_READ_TIMEOUT = 5.0
 
 
 class IPCApplication:
@@ -34,6 +37,14 @@ class IPCApplication:
         self.service = service
         self.events = events
         self.shutdown_callback = shutdown_callback
+
+    def is_authenticated(self, request: dict[str, Any]) -> bool:
+        candidate = request.get("token")
+        return (
+            isinstance(candidate, str)
+            and bool(self.settings.ipc_token)
+            and hmac.compare_digest(candidate, self.settings.ipc_token)
+        )
 
     def dispatch(self, request: dict[str, Any]) -> dict[str, Any]:
         command = request.get("command")
@@ -118,7 +129,24 @@ class _IPCServer(socketserver.ThreadingTCPServer):
 
     def __init__(self, address: tuple[str, int], app: IPCApplication):
         self.app = app
+        self._client_slots = threading.BoundedSemaphore(MAX_IPC_CLIENTS)
         super().__init__(address, _IPCHandler)
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        if not self._client_slots.acquire(blocking=False):
+            request.close()
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._client_slots.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._client_slots.release()
 
 
 class _IPCHandler(socketserver.StreamRequestHandler):
@@ -131,6 +159,7 @@ class _IPCHandler(socketserver.StreamRequestHandler):
 
     def handle(self) -> None:
         try:
+            self.request.settimeout(IPC_READ_TIMEOUT)
             raw = self.rfile.readline(MAX_REQUEST_BYTES + 1)
             if not raw:
                 return
@@ -139,6 +168,8 @@ class _IPCHandler(socketserver.StreamRequestHandler):
             request = json.loads(raw)
             if not isinstance(request, dict):
                 raise ValueError("Førespurnaden må vere eit JSON-objekt")
+            if not self.server.app.is_authenticated(request):
+                raise PermissionError("IPC-autentisering feila")
             if request.get("command") == "watch":
                 self._watch(request)
                 return
@@ -176,6 +207,8 @@ class _IPCHandler(socketserver.StreamRequestHandler):
 
 class IPCServer:
     def __init__(self, settings: Settings, app: IPCApplication):
+        if len(settings.ipc_token) < 32:
+            raise ValueError("IPC_TOKEN må vere minst 32 teikn")
         self.settings = settings
         self._server = _IPCServer((settings.ipc_host, settings.ipc_port), app)
 

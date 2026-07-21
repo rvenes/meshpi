@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
-import subprocess
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 
@@ -11,7 +11,7 @@ from meshpi.lifecycle import daemon_status, start_session_daemon, stop_daemon
 
 
 def _run(command: list[str], hint: str | None = None) -> None:
-    result = subprocess.run(command, check=False)
+    result = subprocess.run(command, check=False)  # nosec B603
     if result.returncode != 0:
         suffix = f" Prøv: {hint}" if hint else ""
         raise RuntimeError(f"Kommandoen feila: {' '.join(command)}.{suffix}")

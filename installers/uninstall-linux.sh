@@ -17,8 +17,12 @@ done
     echo "Modus må vere «always» eller «session»." >&2
     exit 2
 }
-if [ "$(id -u)" -ne 0 ] && [ "$TEST_MODE" != "1" ]; then
+if [ "$MODE" = "always" ] && [ "$(id -u)" -ne 0 ] && [ "$TEST_MODE" != "1" ]; then
     echo "Køyr avinstalleringa som root." >&2
+    exit 1
+fi
+if [ "$MODE" = "session" ] && [ "$(id -u)" -eq 0 ] && [ "$TEST_MODE" != "1" ]; then
+    echo "Session-modus skal avinstallerast utan sudo." >&2
     exit 1
 fi
 

@@ -10,4 +10,7 @@ __pycache__
 htmlcov
 data
 tests
-
+build
+dist
+website/downloads
+*.egg-info

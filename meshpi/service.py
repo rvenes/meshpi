@@ -418,12 +418,11 @@ class MeshtasticService:
             self.events.publish(event)
             label = "CH0" if message.kind == ConversationKind.PUBLIC else "DM"
             LOG.info(
-                "%s  %s  %s [%s]: %s",
+                "Motteken %s via %s frå %s [%s]",
                 label,
                 message.transport,
                 message.from_node or "ukjend",
                 (message.from_node or "????")[-4:],
-                message.text,
             )
         except Exception:
             LOG.exception("Feil under handsaming av Meshtastic-pakke")
@@ -511,9 +510,9 @@ class MeshtasticService:
         if inserted:
             self.events.publish({"type": "message", "data": message.as_dict()})
         LOG.info(
-            "Sender %s til %s: %s",
+            "Sender %s til %s (%s byte)",
             "CH0" if public else "DM",
             destination,
-            text,
+            len(text.encode("utf-8")),
         )
         return message.as_dict()

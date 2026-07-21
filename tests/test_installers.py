@@ -21,7 +21,7 @@ def test_manifest_matches_all_dependency_locks() -> None:
     assert manifest["security"] == {
         "integrity": "sha256",
         "dependency_policy": "pip-require-hashes",
-        "manifest_signature": None,
+        "manifest_signature": "rsa-pkcs1v15-sha256",
     }
     for platform_name in ("linux", "macos", "windows"):
         lock = ROOT / "locks" / f"{platform_name}.txt"
@@ -59,7 +59,7 @@ def test_uninstallers_preserve_data_without_explicit_purge() -> None:
 
 def test_linux_always_mode_has_restricted_permissions() -> None:
     source = _text("install-linux.sh")
-    assert 'chown root:meshpi "$CONFIG_FILE"' in source
+    assert 'chown "$INSTALL_USER:meshpi" "$CONFIG_FILE"' in source
     assert 'chmod 0640 "$CONFIG_FILE"' in source
     assert 'chown -R meshpi:meshpi "$STATE_DIR"' in source
     assert 'chmod 0750 "$STATE_DIR"' in source

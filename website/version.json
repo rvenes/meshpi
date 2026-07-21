@@ -1,63 +1,70 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.5.2",
-  "published_at": "2026-07-21T01:42:51Z",
+  "latest_version": "0.5.3",
+  "published_at": "2026-07-21T02:51:03Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.5.2",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.5.3",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.2-py3-none-any.whl",
-    "filename": "meshpi-0.5.2-py3-none-any.whl",
-    "sha256": "99b25b7773ab5a9400a802c9bc77e0be463007f0c114e75b6c7524e548abcbc4",
-    "size": 64712,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.3-py3-none-any.whl",
+    "filename": "meshpi-0.5.3-py3-none-any.whl",
+    "sha256": "bb05892f4426ef2e5685ec6855523acf3c36e5c931a11b58db76384e850e77ab",
+    "size": 68002,
     "format": "wheel"
   },
   "locks": {
     "linux": {
       "url": "https://venes.org/meshpi/locks/linux.txt",
-      "sha256": "6aded801d934a1c33b225e32a6695f7a4afde1e995aa6f587010de1689bbe237",
-      "size": 25656
+      "sha256": "b136e5aed7655002e01ae5ac2d9ce5e5e51557c67a3f90bf10a99d7242f7e556",
+      "size": 26285
     },
     "macos": {
       "url": "https://venes.org/meshpi/locks/macos.txt",
-      "sha256": "3b7929fd710e799a8c6fec13852a682f6769d68b060b68f7a36d12997c8219b2",
-      "size": 23596
+      "sha256": "7ab50eef5fdcb278903f9e0a9895c5cda638a8e3b1b30252eead3ab1fb62b2e7",
+      "size": 24142
     },
     "windows": {
       "url": "https://venes.org/meshpi/locks/windows.txt",
-      "sha256": "9bbc34bf8a9d4469e62c766d8d0ef00701d8bd7247fe052640bbf296b702ad4b",
-      "size": 35246
+      "sha256": "d691038a915b7d113936c547149a7159d3cdde854dc567bf49b8b639eae1b693",
+      "size": 35776
     }
   },
   "security": {
     "integrity": "sha256",
     "dependency_policy": "pip-require-hashes",
-    "manifest_signature": null
+    "manifest_signature": "rsa-pkcs1v15-sha256"
   },
   "installers": {
     "linux": {
       "url": "https://venes.org/meshpi/install-linux.sh",
-      "update_command": "curl -fsSL https://venes.org/meshpi/install-linux.sh | sudo bash"
+      "sha256": "730aa4ff748945d02b8db0878b0ed910424363890c678c16bb814ab8c189f9b2",
+      "size": 12299,
+      "update_command": "curl -fLO https://venes.org/meshpi/install-linux.sh && sudo sh install-linux.sh"
     },
     "macos": {
       "url": "https://venes.org/meshpi/install-macos.sh",
-      "update_command": "curl -fsSL https://venes.org/meshpi/install-macos.sh | bash"
+      "sha256": "34cae9e67f80f44523eb15910ac3f329ade6c1c2ccd143c03fce00d5effa6e4b",
+      "size": 10977,
+      "update_command": "curl -fLO https://venes.org/meshpi/install-macos.sh && sh install-macos.sh"
     },
     "windows": {
       "url": "https://venes.org/meshpi/install-windows.ps1",
-      "update_command": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://venes.org/meshpi/install-windows.ps1 | iex\""
+      "sha256": "2f3bd176c301d7fb0376ff547202762779c48ada58bbba6dde3af1e593aedc62",
+      "size": 17325,
+      "update_command": "Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; .\\install-windows.ps1"
     }
   },
   "release_notes": [
-    "Nye installasjonar har ingen førehandsvald Meshtastic-node.",
-    "Nodeveljaren opnar automatisk ved første oppstart.",
-    "TCP-oppdaging bruker det lokale nettet i staden for eit hardkoda utviklingsnett.",
-    "Versjonsnummeret er alltid synleg først i topplinja.",
-    "Global F1-dialog viser alle tastatursnarvegane.",
-    "Always- og session-modus for bakgrunnsdaemonen.",
-    "Val om å stoppe daemonen når TUI-en blir avslutta.",
-    "Versjonert installasjon, offline sjølvtest og automatisk rollback.",
-    "Hash-låste Python-avhengigheiter på Windows, macOS og Linux.",
-    "Robust per-brukar-autostart på Windows og avinstallerarar for alle plattformer."
-  ]
+    "Digitalt signert versjonsmanifest og hashfesta utgjevingsfiler.",
+    "Tilfeldig lokal IPC-nøkkel vernar historikk, tilkopling og sending.",
+    "Terminalkontrollteikn blir filtrerte frå meldingar og nodenamn.",
+    "Isolert session-daemon, loggrotasjon og avgrensa meldingsdatabase.",
+    "Oppdaterte og hash-låste pip/setuptools på alle plattformer.",
+    "Herda Docker-bygg, installatørar og nettstad."
+  ],
+  "signature": {
+    "algorithm": "rsa-pkcs1v15-sha256",
+    "key_id": "meshpi-release-2026-01",
+    "value": "dMhaSmBT0zvTurhsQ+nPkIIupD4ZOv835ES819Do7LEJzqchmZRRROdM43gAY19jZdcB9kDFePTagkkl1nzrdaygjrNa7l7tYGCketW5I7vm9Hove2k4KjVXsAoM1IZUlrNdHkeVgRVC1I6s/WNmnBb1Tq8WAuAI6Z+vSWzP11X4aGJg3ju3VRLlzJAJEXTOomJDnuozbxhcRqWBAAaSwUs64mYsvxfb6BJLHML48AkUMSaRJdQkQE3dml3Um1WNpdKrBSVb8TurQxQJ1yNwEkcldv70k8eFKECq/2lKKaQIokTmfx0hqNJ1hnRMqxMiK94KTLOPpGcKwZTNx7Bz5T6w/X48iOUoiTRwMGABD/xVQ+qQTlQI/pCaDHJi1r+N+ipTife4q4dFMUvdX8YXK8VvlRUpY2k8siSSSIt9IqPM+w3lbuk/RgAPKLwR0I494kNYKGj9Jom6edrypK8v9NnMXeDr7eVfytxuksUA9yuS/Li9edPkxZYKIZkowbGk"
+  }
 }

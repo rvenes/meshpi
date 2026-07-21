@@ -6,6 +6,8 @@ from typing import Any, BinaryIO
 
 from meshpi.config import Settings
 
+MAX_RESPONSE_BYTES = 2_000_000
+
 
 class CLIError(RuntimeError):
     pass
@@ -19,12 +21,13 @@ def request(
             (settings.ipc_host, settings.ipc_port), timeout=timeout
         ) as sock:
             stream = sock.makefile("rwb")
+            authenticated = payload | {"token": settings.ipc_token}
             stream.write(
-                json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+                json.dumps(authenticated, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
                 + b"\n"
             )
             stream.flush()
-            raw = stream.readline()
+            raw = stream.readline(MAX_RESPONSE_BYTES + 1)
     except OSError as exc:
         raise CLIError(
             "Får ikkje kontakt med meshpi-tenesta. "
@@ -32,6 +35,8 @@ def request(
         ) from exc
     if not raw:
         raise CLIError("Meshpi-tenesta lukka sambandet utan svar")
+    if len(raw) > MAX_RESPONSE_BYTES:
+        raise CLIError("Svaret frå meshpi-tenesta er for stort")
     response = json.loads(raw)
     if not response.get("ok"):
         raise CLIError(str(response.get("error", "Ukjend feil")))
@@ -47,14 +52,21 @@ def open_watch(
         stream = sock.makefile("rwb")
         stream.write(
             json.dumps(
-                {"command": "watch", "conversation": conversation},
+                {
+                    "command": "watch",
+                    "conversation": conversation,
+                    "token": settings.ipc_token,
+                },
                 ensure_ascii=False,
                 separators=(",", ":"),
             ).encode("utf-8")
             + b"\n"
         )
         stream.flush()
-        response = json.loads(stream.readline())
+        raw = stream.readline(MAX_RESPONSE_BYTES + 1)
+        if not raw or len(raw) > MAX_RESPONSE_BYTES:
+            raise CLIError("Ugyldig svar frå meshpi-tenesta")
+        response = json.loads(raw)
         if not response.get("ok"):
             raise CLIError(str(response.get("error", "Klarte ikkje starte overvaking")))
         return sock, stream

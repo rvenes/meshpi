@@ -57,29 +57,36 @@ sjølv om TUI-en er lukka.
 Linux, inkludert Raspberry Pi OS:
 
 ```bash
-curl -fsSL https://venes.org/meshpi/install-linux.sh | sudo bash
+curl -fLO https://venes.org/meshpi/install-linux.sh
+less install-linux.sh
+sudo sh install-linux.sh
 ```
 
 macOS:
 
 ```bash
-curl -fsSL https://venes.org/meshpi/install-macos.sh | bash
+curl -fLO https://venes.org/meshpi/install-macos.sh
+less install-macos.sh
+sh install-macos.sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://venes.org/meshpi/install-windows.ps1 | iex"
+Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1
+Get-Content .\install-windows.ps1
+Set-ExecutionPolicy -Scope Process Bypass
+.\install-windows.ps1
 ```
 
 Vel `session` dersom daemonen berre skal leve medan MeshPi er i bruk:
 
 ```bash
 # Linux
-curl -fsSL https://venes.org/meshpi/install-linux.sh | sudo bash -s -- --mode=session
+sh install-linux.sh --mode=session
 
 # macOS
-curl -fsSL https://venes.org/meshpi/install-macos.sh | bash -s -- --mode=session
+sh install-macos.sh --mode=session
 ```
 
 På Windows lastar du ned skriptet som vist under og køyrer
@@ -117,11 +124,15 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\install-windows.ps1
 ```
 
-SHA-256 hindrar skadde eller uventa filer etter at manifestet er lasta ned,
-men manifest og filer kjem førebels frå same HTTPS-server. Ei kompromittering
-av serveren kan derfor byte begge. Utgivingane er enno ikkje digitalt signerte;
-den avgrensinga er medviten og dokumentert fram til ei enkel nøkkelrutine er på
-plass.
+Manifestet er signert med ein separat RSA-3072-utgjevingsnøkkel som er festa i
+programmet og installasjonsskripta. Installatøren avviser eit usignert eller
+endra manifest før han lastar ned pakken. SHA-256-hashar i det signerte
+manifestet bind dessutan MeshPi-pakken, installasjonsskripta og låsefilene til
+utgivinga.
+
+Meshtastic sitt vanlege TCP-grensesnitt på port 4403 er ukryptert. Bruk TCP
+berre på eit nett du stoler på, eller over VPN/SSH-tunnel. USB/seriell sender
+ikkje trafikken over lokalnettet.
 
 Køyr den same kommandoen på nytt for å oppdatere. TUI-en sjekkar
 `https://venes.org/meshpi/version.json` ved oppstart. Dersom ein ny versjon
@@ -451,6 +462,8 @@ verten:
 
 ```bash
 cp .env.example .env
+python -c "import secrets; print(secrets.token_hex(32))"
+# Lim resultatet inn som IPC_TOKEN i .env.
 docker compose up -d --build
 docker compose exec meshpi meshpi status
 docker compose exec meshpi meshpi chat public

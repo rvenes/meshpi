@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-import subprocess
+import subprocess  # nosec B404
 import sys
 import time
 from dataclasses import dataclass
@@ -27,6 +27,15 @@ def daemon_status(settings: Settings, timeout: float = 0.5) -> dict | None:
 def _session_log(settings: Settings) -> Path:
     path = settings.database_path.parent / "meshpi-session.log"
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_file() and path.stat().st_size >= 5 * 1024 * 1024:
+        for number in range(3, 0, -1):
+            source = path.with_name(f"{path.name}.{number}")
+            target = path.with_name(f"{path.name}.{number + 1}")
+            if number == 3:
+                target.unlink(missing_ok=True)
+            if source.exists():
+                source.replace(target)
+        path.replace(path.with_name(f"{path.name}.1"))
     return path
 
 
@@ -40,12 +49,14 @@ def start_session_daemon(
     if daemon_status(settings) is not None:
         return DaemonHandle()
 
+    env_path = Path(env_file).expanduser().resolve()
     command = [
         sys.executable,
+        "-I",
         "-m",
         "meshpi",
         "--env-file",
-        str(env_file),
+        str(env_path),
         "daemon",
     ]
     if follow_parent:
@@ -57,14 +68,24 @@ def start_session_daemon(
             | subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
         )
     log_path = _session_log(settings)
+    child_env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.upper().startswith("PYTHON")
+    }
+    child_env["PYTHONDONTWRITEBYTECODE"] = "1"
+    working_directory = settings.database_path.parent.resolve()
+    working_directory.mkdir(parents=True, exist_ok=True)
     with log_path.open("ab") as log:
-        process = subprocess.Popen(
+        process = subprocess.Popen(  # nosec B603
             command,
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=subprocess.STDOUT,
             creationflags=creationflags,
             start_new_session=os.name != "nt" and not follow_parent,
+            cwd=working_directory,
+            env=child_env,
         )
 
     deadline = time.monotonic() + timeout

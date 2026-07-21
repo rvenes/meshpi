@@ -40,6 +40,7 @@ def test_settings_load_env_file(tmp_path, monkeypatch):
         "DISCOVERY_SUBNET",
         "IPC_HOST",
         "IPC_PORT",
+        "IPC_TOKEN",
         "LOG_LEVEL",
         "UPDATE_URL",
         "UPDATE_TIMEOUT",
@@ -48,7 +49,8 @@ def test_settings_load_env_file(tmp_path, monkeypatch):
         monkeypatch.delenv(name, raising=False)
     path = tmp_path / ".env"
     path.write_text(
-        "MESHTASTIC_HOST=192.0.2.42\nMESHTASTIC_PORT=4403\nIPC_HOST=127.0.0.1\n",
+        "MESHTASTIC_HOST=192.0.2.42\nMESHTASTIC_PORT=4403\nIPC_HOST=127.0.0.1\n"
+        "PYTHONPATH=/tmp/evil\n",
         encoding="utf-8",
     )
     settings = Settings.load(path)
@@ -58,6 +60,7 @@ def test_settings_load_env_file(tmp_path, monkeypatch):
     assert settings.update_url == "https://venes.org/meshpi/version.json"
     assert settings.update_timeout == 3
     assert settings.background_mode == "always"
+    assert "PYTHONPATH" not in settings.__dataclass_fields__
 
 
 def test_settings_reject_non_loopback_ipc(monkeypatch):
@@ -125,7 +128,7 @@ def test_ipc_dispatch_and_validation(tmp_path):
 def test_ipc_socket_roundtrip(tmp_path):
     database = Database(tmp_path / "db.sqlite")
     database.initialize()
-    settings = Settings(database_path=database.path, ipc_port=0)
+    settings = Settings(database_path=database.path, ipc_port=0, ipc_token="a" * 64)
     stopped = threading.Event()
     app = IPCApplication(
         settings,
@@ -140,18 +143,37 @@ def test_ipc_socket_roundtrip(tmp_path):
     try:
         with socket.create_connection(server.address, timeout=2) as connection:
             stream = connection.makefile("rwb")
-            stream.write(b'{"command":"status"}\n')
+            stream.write(json.dumps({"command": "status", "token": "a" * 64}).encode() + b"\n")
             stream.flush()
             response = json.loads(stream.readline())
         assert response["ok"] is True
         assert response["data"]["state"] == "tilkopla"
         with socket.create_connection(server.address, timeout=2) as connection:
             stream = connection.makefile("rwb")
-            stream.write(b'{"command":"shutdown"}\n')
+            stream.write(json.dumps({"command": "shutdown", "token": "a" * 64}).encode() + b"\n")
             stream.flush()
             response = json.loads(stream.readline())
         assert response == {"ok": True, "data": {"stopping": True}}
         assert stopped.wait(1)
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+
+def test_ipc_rejects_missing_token(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    settings = Settings(database_path=database.path, ipc_port=0, ipc_token="b" * 64)
+    server = IPCServer(settings, IPCApplication(settings, database, FakeService(), EventHub()))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with socket.create_connection(server.address, timeout=2) as connection:
+            stream = connection.makefile("rwb")
+            stream.write(b'{"command":"status"}\n')
+            stream.flush()
+            response = json.loads(stream.readline())
+        assert response == {"ok": False, "error": "IPC-autentisering feila"}
     finally:
         server.shutdown()
         thread.join(timeout=2)

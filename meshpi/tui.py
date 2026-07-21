@@ -23,7 +23,7 @@ from textual.widgets import Button, Input, Label, ListItem, ListView, RichLog, S
 from meshpi import __version__
 from meshpi.client import CLIError, open_watch, request
 from meshpi.config import Settings
-from meshpi.models import normalize_node_id, validate_message_text
+from meshpi.models import normalize_node_id, sanitize_terminal_text, validate_message_text
 from meshpi.update import UpdateNotice, check_for_update
 
 Requester = Callable[[Settings, dict[str, Any]], dict[str, Any]]
@@ -60,7 +60,7 @@ def _conversation_title(item: dict[str, Any]) -> str:
     if item.get("kind") == "public":
         return "Public – kanal 0"
     node_id = str(item.get("conversation", ""))
-    name = item.get("long_name") or item.get("short_name") or node_id
+    name = sanitize_terminal_text(item.get("long_name") or item.get("short_name") or node_id)
     return f"DM {name} [{node_id[-4:]}]"
 
 
@@ -85,7 +85,9 @@ class ConversationItem(ListItem):
             text.append(f"  {unread}", style="bold cyan")
         text.append("\n")
         last_time = _time(self.conversation.get("last_timestamp"))
-        last_text = str(self.conversation.get("last_text") or "Ingen meldingar")
+        last_text = sanitize_terminal_text(
+            self.conversation.get("last_text") or "Ingen meldingar"
+        )
         if len(last_text) > 31:
             last_text = last_text[:30] + "…"
         text.append(f"  {last_time}  {last_text}", style="dim")
@@ -118,8 +120,10 @@ class NodePickerItem(ListItem):
         super().__init__(Static(self._render_label(), classes="node-picker-label"))
 
     def _render_label(self) -> Text:
-        name = self.node.get("long_name") or self.node.get("short_name") or "Ukjend node"
-        short_name = self.node.get("short_name")
+        name = sanitize_terminal_text(
+            self.node.get("long_name") or self.node.get("short_name") or "Ukjend node"
+        )
+        short_name = sanitize_terminal_text(self.node.get("short_name"))
         text = Text()
         text.append(str(name), style="bold")
         if short_name and short_name != name:
@@ -149,7 +153,9 @@ class NodeSidebarItem(ListItem):
         self.label_widget.update(self._render_label())
 
     def _render_label(self) -> Text:
-        name = self.node.get("long_name") or self.node.get("short_name") or "Ukjend node"
+        name = sanitize_terminal_text(
+            self.node.get("long_name") or self.node.get("short_name") or "Ukjend node"
+        )
         text = Text()
         text.append("◆ " if self.node.get("is_local") else "● ", style="green")
         text.append(str(name), style="bold")
@@ -1086,7 +1092,7 @@ class MeshPiTUI(App[str | None]):
     def _render_message(self, message: dict[str, Any]) -> Text:
         node_id = str(message.get("from_node") or "")
         node = self.nodes.get(node_id, {})
-        name = (
+        name = sanitize_terminal_text(
             message.get("from_long_name")
             or message.get("from_short_name")
             or node.get("long_name")
@@ -1122,7 +1128,7 @@ class MeshPiTUI(App[str | None]):
         if outgoing:
             text.append(f"  [{message.get('status', 'sendt')}]", style="dim")
         text.append("\n  ")
-        text.append(str(message.get("text") or ""))
+        text.append(sanitize_terminal_text(message.get("text") or ""))
         text.append("\n" + "─" * 72, style="#394245")
         return text
 
@@ -1156,7 +1162,8 @@ class MeshPiTUI(App[str | None]):
         text = Text()
         for label, value in rows:
             text.append(f"{label:16}", style="dim")
-            text.append(f"{value if value not in (None, '') else '–'}\n")
+            rendered = sanitize_terminal_text(value) if value not in (None, "") else "–"
+            text.append(f"{rendered}\n")
         panel.update(text)
 
     def _select_sidebar_node(self, node_id: str) -> None:
@@ -1206,7 +1213,8 @@ class MeshPiTUI(App[str | None]):
     def _watch_worker(self) -> None:
         while not self._watch_stop.is_set():
             try:
-                assert self.watcher is not None
+                if self.watcher is None:
+                    return
                 sock, stream = self.watcher(self.settings, "all")
                 self._watch_socket = sock
                 for raw in stream:

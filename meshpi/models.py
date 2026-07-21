@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -8,6 +9,24 @@ from typing import Any
 MAX_MESSAGE_BYTES = 237
 BROADCAST_NUM = 0xFFFFFFFF
 BROADCAST_IDS = {"^all", "!ffffffff", "ffffffff"}
+
+
+def sanitize_terminal_text(value: Any, max_bytes: int | None = None) -> str:
+    """Fjern terminal-, bidi- og andre usynlege kontrollteikn frå ekstern tekst."""
+    clean = "".join(
+        " " if unicodedata.category(char) in {"Cc", "Cf", "Cs"} else char
+        for char in str(value or "")
+    )
+    if max_bytes is None:
+        return clean
+    encoded = clean.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return clean
+    return encoded[:max_bytes].decode("utf-8", errors="ignore")
+
+
+def _contains_unsafe_control(value: str) -> bool:
+    return any(unicodedata.category(char) in {"Cc", "Cf", "Cs"} for char in value)
 
 
 class ValueEnum(str, Enum):
@@ -70,6 +89,8 @@ def validate_message_text(text: str) -> str:
     clean = text.strip()
     if not clean:
         raise ValueError("Meldinga kan ikkje vere tom")
+    if _contains_unsafe_control(clean):
+        raise ValueError("Meldinga kan ikkje innehalde kontrollteikn")
     length = len(clean.encode("utf-8"))
     if length > MAX_MESSAGE_BYTES:
         raise ValueError(
