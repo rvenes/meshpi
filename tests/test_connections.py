@@ -7,9 +7,11 @@ import pytest
 from meshpi.connections import (
     ConnectionProfile,
     ConnectionStore,
+    SerialIdentityMismatchError,
     discover_serial,
     discover_tcp,
     parse_connection_target,
+    resolve_serial_profile,
 )
 
 
@@ -70,6 +72,8 @@ def test_discover_serial_prefers_stable_by_id_path(monkeypatch):
         device="/dev/ttyACM0",
         description="Seeed XIAO",
         serial_number="ABC",
+        vid=0x239A,
+        pid=0x810B,
         hwid="USB test",
     )
     monkeypatch.setattr("serial.tools.list_ports.comports", lambda: [port])
@@ -79,6 +83,157 @@ def test_discover_serial_prefers_stable_by_id_path(monkeypatch):
     )
 
     assert discover_serial()[0]["target"] == "/dev/serial/by-id/xiao"
+
+
+def test_serial_profile_persists_usb_identity(tmp_path):
+    path = tmp_path / "connections.json"
+    profile = ConnectionProfile.serial(
+        "/dev/cu.usbmodem101",
+        name="XIAO-BOOT",
+        serial_number="ABC123",
+        vid=0x239A,
+        pid=0x810B,
+    )
+
+    ConnectionStore(path).save_and_activate(profile)
+
+    assert ConnectionStore(path).active_profile() == profile
+
+
+def test_resolve_serial_profile_enriches_current_device_identity():
+    profile = ConnectionProfile.serial("/dev/cu.usbmodem101", name="XIAO-BOOT")
+    devices = [
+        {
+            "device": "/dev/cu.usbmodem101",
+            "system_device": "/dev/cu.usbmodem101",
+            "serial_number": "ABC123",
+            "vid": 0x239A,
+            "pid": 0x810B,
+        }
+    ]
+
+    resolved = resolve_serial_profile(profile, devices)
+
+    assert resolved.device == profile.device
+    assert resolved.serial_number == "ABC123"
+    assert resolved.vid == 0x239A
+    assert resolved.pid == 0x810B
+
+
+def test_resolve_serial_profile_promotes_linux_device_to_stable_path():
+    profile = ConnectionProfile.serial("/dev/ttyACM0", name="XIAO-BOOT")
+    devices = [
+        {
+            "device": "/dev/serial/by-id/xiao",
+            "system_device": "/dev/ttyACM0",
+            "serial_number": "ABC123",
+            "vid": 0x239A,
+            "pid": 0x810B,
+        }
+    ]
+
+    resolved = resolve_serial_profile(profile, devices)
+
+    assert resolved.device == "/dev/serial/by-id/xiao"
+    assert resolved.serial_number == "ABC123"
+
+
+def test_resolve_serial_profile_rejects_unverifiable_reused_port():
+    profile = ConnectionProfile.serial(
+        "/dev/cu.usbmodem101",
+        serial_number="ABC123",
+        vid=0x239A,
+        pid=0x810B,
+    )
+    devices = [
+        {
+            "device": "/dev/cu.usbmodem101",
+            "system_device": "/dev/cu.usbmodem101",
+            "serial_number": None,
+            "vid": None,
+            "pid": None,
+        }
+    ]
+
+    with pytest.raises(SerialIdentityMismatchError, match="lagra USB-eininga"):
+        resolve_serial_profile(profile, devices)
+
+
+def test_resolve_serial_profile_rejects_port_reused_by_different_device():
+    profile = ConnectionProfile.serial(
+        "/dev/cu.usbmodem101",
+        serial_number="ABC123",
+        vid=0x239A,
+        pid=0x810B,
+    )
+    devices = [
+        {
+            "device": "/dev/cu.usbmodem101",
+            "system_device": "/dev/cu.usbmodem101",
+            "serial_number": "OTHER",
+            "vid": 0x239A,
+            "pid": 0x810B,
+        }
+    ]
+
+    with pytest.raises(SerialIdentityMismatchError, match="lagra USB-eininga"):
+        resolve_serial_profile(profile, devices)
+
+
+def test_resolve_serial_profile_moves_to_unique_matching_usb_device():
+    profile = ConnectionProfile.serial(
+        "/dev/cu.usbmodem101",
+        serial_number="ABC123",
+        vid=0x239A,
+        pid=0x810B,
+    )
+    devices = [
+        {
+            "device": "/dev/cu.usbmodem1101",
+            "serial_number": "ABC123",
+            "vid": 0x239A,
+            "pid": 0x810B,
+        }
+    ]
+
+    resolved = resolve_serial_profile(profile, devices)
+
+    assert resolved.device == "/dev/cu.usbmodem1101"
+    assert resolved.profile_id == profile.profile_id
+
+
+def test_resolve_serial_profile_does_not_guess_without_identity():
+    profile = ConnectionProfile.serial("/dev/cu.usbmodem101")
+    devices = [
+        {
+            "device": "/dev/cu.usbmodem1101",
+            "serial_number": "ABC123",
+            "vid": 0x239A,
+            "pid": 0x810B,
+        }
+    ]
+
+    assert resolve_serial_profile(profile, devices) == profile
+
+
+def test_resolve_serial_profile_does_not_choose_ambiguous_identity():
+    profile = ConnectionProfile.serial(
+        "/dev/cu.usbmodem101",
+        serial_number="DUPLICATE",
+        vid=0x239A,
+        pid=0x810B,
+    )
+    devices = [
+        {
+            "device": f"/dev/cu.usbmodem{number}",
+            "serial_number": "DUPLICATE",
+            "vid": 0x239A,
+            "pid": 0x810B,
+        }
+        for number in (1101, 1201)
+    ]
+
+    assert resolve_serial_profile(profile, devices) == profile
 
 
 def test_discover_tcp_returns_only_open_hosts(monkeypatch):

@@ -30,7 +30,7 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.5.11</div>
+        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.6.0</div>
         <h1>Meshtastic-chat.<br><span>Rett i terminalen.</span></h1>
         <p class="lead">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
@@ -55,7 +55,7 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.5.11</b><i>●</i> Tilkopla
+          <b>MeshPi 0.6.0</b><i>●</i> Tilkopla
           <span>TCP meshtastic.local:4403</span>
         </div>
         <div class="terminal-grid">
@@ -108,7 +108,7 @@
         <article>
           <span class="feature-number">03</span>
           <h3>TCP og USB</h3>
-          <p>Byt mellom lagra eller oppdaga Meshtastic-nodar utan å starte bakgrunnstenesta på nytt.</p>
+          <p>Byt mellom lagra eller oppdaga Meshtastic-nodar utan omstart. USB-einingar med serienummer blir kjende att sjølv om portnamnet endrar seg.</p>
         </article>
         <article>
           <span class="feature-number">04</span>
@@ -333,21 +333,20 @@
       </div>
     </section>
 
-    <section id="release-0.5.11" class="section release-section">
+    <section id="release-0.6.0" class="section release-section">
       <div class="section-heading">
         <span>Siste versjon</span>
-        <h2>MeshPi 0.5.11</h2>
+        <h2>MeshPi 0.6.0</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li>Ein stoppa bakgrunnsteneste startar automatisk ved neste <code>meshpi</code></li>
-          <li>TUI-en lukkar IPC-overvakinga reint og slepp terminalen raskare</li>
-          <li>Traceroute-resultat blir lagra og viste igjen i DM-historikken</li>
-          <li>CLI-en kan slette public-meldingar, DM-ar eller begge delar</li>
-          <li>Eldre meldingar viser dato i tillegg til klokkeslett</li>
+          <li>USB-einingar blir kjende att på serienummer når macOS eller Windows endrar portnamnet</li>
+          <li>Nye meldingar held mottaksrekkjefølgja sjølv om radionoden sender feil klokkeslett</li>
+          <li>Ulest-merket blir oppdatert med ein gong når den opne samtalen får ei melding</li>
+          <li>MeshPi startar ikkje ein ekstra daemon når IPC-sambandet blir brote etter tilkopling</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.5.11-py3-none-any.whl">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.6.0-py3-none-any.whl">Last ned Python-pakken</a>
           <a href="https://github.com/rvenes/meshpi">Kjeldekode på GitHub</a>
         </div>
       </div>

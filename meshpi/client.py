@@ -13,14 +13,25 @@ class CLIError(RuntimeError):
     pass
 
 
+class CLIUnavailableError(CLIError):
+    """IPC-tenesta lyttar ikkje, så ho kan trygt startast."""
+
+
 def request(
     settings: Settings, payload: dict[str, Any], timeout: float = 10
 ) -> dict[str, Any]:
     try:
-        with socket.create_connection(
+        sock = socket.create_connection(
             (settings.ipc_host, settings.ipc_port), timeout=timeout
-        ) as sock:
-            stream = sock.makefile("rwb")
+        )
+    except OSError as exc:
+        raise CLIUnavailableError(
+            "Får ikkje kontakt med meshpi-tenesta. "
+            "Kontroller med «meshpi service status»."
+        ) from exc
+
+    try:
+        with sock, sock.makefile("rwb") as stream:
             authenticated = payload | {"token": settings.ipc_token}
             stream.write(
                 json.dumps(authenticated, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -30,8 +41,8 @@ def request(
             raw = stream.readline(MAX_RESPONSE_BYTES + 1)
     except OSError as exc:
         raise CLIError(
-            "Får ikkje kontakt med meshpi-tenesta. "
-            "Kontroller med «meshpi service status»."
+            "Sambandet med meshpi-tenesta blei brote før ho svarte. "
+            "Tenesta blir ikkje starta på nytt automatisk."
         ) from exc
     if not raw:
         raise CLIError("Meshpi-tenesta lukka sambandet utan svar")

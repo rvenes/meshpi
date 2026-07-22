@@ -17,6 +17,7 @@ from meshpi.connections import (
     discover_serial,
     discover_tcp,
     parse_connection_target,
+    resolve_serial_profile,
 )
 from meshpi.database import Database
 from meshpi.events import EventHub
@@ -271,9 +272,10 @@ class MeshtasticService:
         if profile_id:
             profile = self.connections.activate(profile_id)
         elif target:
-            profile = self.connections.save_and_activate(
+            profile = self._resolve_serial_profile(
                 parse_connection_target(target, name=name)
             )
+            profile = self.connections.save_and_activate(profile)
         else:
             raise ValueError("Oppgi profil-ID eller tilkoplingsmål")
 
@@ -298,6 +300,36 @@ class MeshtasticService:
             except Exception:
                 LOG.debug("Feil ved profilbyte", exc_info=True)
         return self.status()
+
+    def _resolve_serial_profile(
+        self, profile: ConnectionProfile
+    ) -> ConnectionProfile:
+        if profile.transport != "serial":
+            return profile
+        try:
+            devices = discover_serial()
+        except Exception:
+            LOG.debug("Klarte ikkje kontrollere seriellportar", exc_info=True)
+            return profile
+        return resolve_serial_profile(profile, devices)
+
+    def _refresh_active_serial_profile(
+        self, profile: ConnectionProfile
+    ) -> ConnectionProfile:
+        resolved = self._resolve_serial_profile(profile)
+        if resolved == profile:
+            return profile
+        with self._lock:
+            if self._profile != profile:
+                return profile
+            self.connections.save_and_activate(resolved)
+            self._profile = resolved
+        if resolved.device != profile.device:
+            LOG.info(
+                "Fann att USB-noden på ny seriellsti: %s",
+                resolved.device,
+            )
+        return resolved
 
     def _set_status(
         self,
@@ -335,15 +367,16 @@ class MeshtasticService:
                     self._switch_requested.wait()
                     self._switch_requested.clear()
                     continue
-                with self._state_lock:
-                    self._status.update(self._profile_status(profile))
-                self._set_status("koplar til", attempt=attempt)
-                LOG.info(
-                    "Koplar til Meshtastic-node via %s %s",
-                    profile.transport,
-                    profile.endpoint,
-                )
                 try:
+                    profile = self._refresh_active_serial_profile(profile)
+                    with self._state_lock:
+                        self._status.update(self._profile_status(profile))
+                    self._set_status("koplar til", attempt=attempt)
+                    LOG.info(
+                        "Koplar til Meshtastic-node via %s %s",
+                        profile.transport,
+                        profile.endpoint,
+                    )
                     interface = self.interface_factory(profile)
                     with self._lock:
                         if profile != self._profile:

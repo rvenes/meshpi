@@ -195,8 +195,11 @@ meshpi meshtastic.local
 meshpi 10.0.0.135:4403
 ```
 
-USB/seriell fungerer på same måte. Bruk helst den stabile `by-id`-stien på
-Linux:
+USB/seriell fungerer på same måte. MeshPi lagrar USB-identiteten når eininga
+oppgir eit serienummer. Dersom macOS eller Windows seinare gir den same fysiske
+eininga ein ny seriellsti eller COM-port, flyttar MeshPi profilen automatisk
+berre når identiteten gir eitt eintydig treff. Ved tvil må du velje porten på
+nytt. Bruk helst den stabile `by-id`-stien på Linux:
 
 ```bash
 meshpi /dev/serial/by-id/usb-Seeed_Studio_XIAO-BOOT_...-if00

@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from meshpi.client import CLIError, request
+from meshpi.client import CLIUnavailableError, request
 from meshpi.config import Settings
 
 
@@ -20,7 +20,7 @@ class DaemonHandle:
 def daemon_status(settings: Settings, timeout: float = 0.5) -> dict | None:
     try:
         return request(settings, {"command": "status"}, timeout=timeout)["data"]
-    except CLIError:
+    except CLIUnavailableError:
         return None
 
 

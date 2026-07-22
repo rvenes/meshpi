@@ -219,10 +219,10 @@ class Database:
                        nodes.short_name AS from_short_name
                 FROM (
                     SELECT * FROM messages WHERE {where}
-                    ORDER BY timestamp DESC, id DESC LIMIT ?
+                    ORDER BY id DESC LIMIT ?
                 ) AS recent
                 LEFT JOIN nodes ON nodes.node_id = recent.from_node
-                ORDER BY recent.timestamp, recent.id
+                ORDER BY recent.id
                 """  # nosec B608
             rows = connection.execute(query, (*params, limit)).fetchall()
             if mark_read:
@@ -238,29 +238,23 @@ class Database:
             SELECT
                 CASE WHEN kind = 'public' THEN 'public' ELSE peer_node END AS conversation,
                 kind,
-                MAX(timestamp) AS last_timestamp,
+                MAX(id) AS last_message_id,
                 SUM(CASE WHEN direction = 'inn' AND is_read = 0 THEN 1 ELSE 0 END) AS unread
             FROM messages
-            WHERE kind = 'public'
-               OR NOT EXISTS (
+            WHERE (kind = 'public' AND channel = 0)
+               OR (kind = 'dm' AND NOT EXISTS (
                    SELECT 1 FROM archived_conversations
                    WHERE peer_node = messages.peer_node
-               )
+               ))
             GROUP BY kind, CASE WHEN kind = 'public' THEN 'public' ELSE peer_node END
         )
-        SELECT grouped.*, messages.text AS last_text, messages.from_node, messages.to_node,
+        SELECT grouped.conversation, grouped.kind, messages.timestamp AS last_timestamp,
+               grouped.unread, messages.text AS last_text, messages.from_node, messages.to_node,
                nodes.long_name, nodes.short_name
         FROM grouped
-        LEFT JOIN messages
-          ON messages.id = (
-              SELECT m2.id FROM messages m2
-              WHERE (grouped.kind = 'public' AND m2.kind = 'public' AND m2.channel = 0)
-                 OR (grouped.kind = 'dm' AND m2.kind = 'dm'
-                     AND m2.peer_node = grouped.conversation)
-              ORDER BY m2.timestamp DESC, m2.id DESC LIMIT 1
-          )
+        LEFT JOIN messages ON messages.id = grouped.last_message_id
         LEFT JOIN nodes ON nodes.node_id = grouped.conversation
-        ORDER BY grouped.last_timestamp DESC
+        ORDER BY grouped.last_message_id DESC
         """
         with self._connect() as connection:
             return [dict(row) for row in connection.execute(sql).fetchall()]

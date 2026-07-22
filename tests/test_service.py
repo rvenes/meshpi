@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from meshpi.config import Settings
+from meshpi.connections import ConnectionProfile
 from meshpi.database import Database
 from meshpi.events import EventHub
 from meshpi.models import MessageStatus
@@ -297,6 +298,63 @@ def test_service_switches_connection_profile_and_closes_old_interface(service):
     assert status["endpoint"] == "/dev/ttyACM0"
     assert value.connections.active_profile().name == "USB-node"
     assert not any(node["is_local"] for node in database.list_nodes())
+
+
+def test_service_saves_usb_identity_when_serial_profile_is_selected(
+    service, monkeypatch
+):
+    value, _, _ = service
+    monkeypatch.setattr(
+        "meshpi.service.discover_serial",
+        lambda: [
+            {
+                "device": "/dev/cu.usbmodem101",
+                "system_device": "/dev/cu.usbmodem101",
+                "serial_number": "ABC123",
+                "vid": 0x239A,
+                "pid": 0x810B,
+            }
+        ],
+    )
+
+    value.connect(target="/dev/cu.usbmodem101", name="XIAO-BOOT")
+
+    profile = value.connections.active_profile()
+    assert profile is not None
+    assert profile.serial_number == "ABC123"
+    assert profile.vid == 0x239A
+    assert profile.pid == 0x810B
+
+
+def test_service_persists_unique_serial_port_relocation(service, monkeypatch):
+    value, _, _ = service
+    profile = ConnectionProfile.serial(
+        "/dev/cu.usbmodem101",
+        name="XIAO-BOOT",
+        serial_number="ABC123",
+        vid=0x239A,
+        pid=0x810B,
+    )
+    value.connections.save_and_activate(profile)
+    value._profile = profile
+    monkeypatch.setattr(
+        "meshpi.service.discover_serial",
+        lambda: [
+            {
+                "device": "/dev/cu.usbmodem1101",
+                "system_device": "/dev/cu.usbmodem1101",
+                "serial_number": "ABC123",
+                "vid": 0x239A,
+                "pid": 0x810B,
+            }
+        ],
+    )
+
+    resolved = value._refresh_active_serial_profile(profile)
+
+    assert resolved.device == "/dev/cu.usbmodem1101"
+    assert resolved.profile_id == profile.profile_id
+    assert value.connections.active_profile() == resolved
 
 
 def test_reconnect_backoff_is_bounded():

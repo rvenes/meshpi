@@ -8,13 +8,17 @@ import re
 import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
 DEFAULT_MESHTASTIC_PORT = 4403
 SUPPORTED_TRANSPORTS = {"tcp", "serial"}
 WINDOWS_PORT = re.compile(r"^COM\d+$", re.IGNORECASE)
+
+
+class SerialIdentityMismatchError(RuntimeError):
+    pass
 
 
 def _profile_id(transport: str, endpoint: str) -> str:
@@ -30,6 +34,9 @@ class ConnectionProfile:
     host: str | None = None
     port: int | None = None
     device: str | None = None
+    serial_number: str | None = None
+    vid: int | None = None
+    pid: int | None = None
 
     @property
     def endpoint(self) -> str:
@@ -38,7 +45,11 @@ class ConnectionProfile:
         return str(self.device)
 
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self) | {"endpoint": self.endpoint}
+        data = asdict(self)
+        if self.transport != "serial":
+            for key in ("serial_number", "vid", "pid"):
+                data.pop(key)
+        return data | {"endpoint": self.endpoint}
 
     @classmethod
     def tcp(
@@ -62,7 +73,15 @@ class ConnectionProfile:
         )
 
     @classmethod
-    def serial(cls, device: str, name: str | None = None) -> ConnectionProfile:
+    def serial(
+        cls,
+        device: str,
+        name: str | None = None,
+        *,
+        serial_number: str | None = None,
+        vid: int | None = None,
+        pid: int | None = None,
+    ) -> ConnectionProfile:
         device = device.strip()
         if not device:
             raise ValueError("Seriellporten kan ikkje vere tom")
@@ -71,6 +90,9 @@ class ConnectionProfile:
             name=(name or Path(device).name or device).strip(),
             transport="serial",
             device=device,
+            serial_number=(serial_number or "").strip() or None,
+            vid=vid,
+            pid=pid,
         )
 
     @classmethod
@@ -86,6 +108,9 @@ class ConnectionProfile:
             profile = cls.serial(
                 str(data.get("device", "")),
                 str(data.get("name", "") or Path(str(data.get("device", ""))).name),
+                serial_number=str(data.get("serial_number", "") or "") or None,
+                vid=_optional_int(data.get("vid")),
+                pid=_optional_int(data.get("pid")),
             )
         else:
             raise ValueError(f"Ustøtta transport: {transport or 'tom'}")
@@ -98,8 +123,20 @@ class ConnectionProfile:
                 host=profile.host,
                 port=profile.port,
                 device=profile.device,
+                serial_number=profile.serial_number,
+                vid=profile.vid,
+                pid=profile.pid,
             )
         return profile
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def parse_connection_target(target: str, name: str | None = None) -> ConnectionProfile:
@@ -266,13 +303,75 @@ def discover_serial() -> list[dict[str, Any]]:
                 "transport": "serial",
                 "target": device,
                 "device": device,
+                "system_device": port.device,
                 "name": port.description or Path(device).name,
                 "description": port.description,
                 "serial_number": port.serial_number,
+                "vid": getattr(port, "vid", None),
+                "pid": getattr(port, "pid", None),
                 "hwid": port.hwid,
             }
         )
     return sorted(devices, key=lambda item: str(item["name"]).casefold())
+
+
+def resolve_serial_profile(
+    profile: ConnectionProfile,
+    devices: list[dict[str, Any]],
+) -> ConnectionProfile:
+    """Oppdater seriellsti berre når USB-identiteten gir eitt sikkert treff."""
+    if profile.transport != "serial":
+        return profile
+
+    current = [
+        item
+        for item in devices
+        if profile.device in {item.get("device"), item.get("system_device")}
+    ]
+    if not profile.serial_number and len(current) == 1:
+        item = current[0]
+        serial_number = str(item.get("serial_number") or "").strip() or None
+        vid = _optional_int(item.get("vid"))
+        pid = _optional_int(item.get("pid"))
+        return replace(
+            profile,
+            device=str(item.get("device") or profile.device),
+            serial_number=serial_number or profile.serial_number,
+            vid=vid if vid is not None else profile.vid,
+            pid=pid if pid is not None else profile.pid,
+        )
+
+    if not profile.serial_number:
+        return profile
+
+    matches = []
+    for item in devices:
+        if str(item.get("serial_number") or "").strip() != profile.serial_number:
+            continue
+        if profile.vid is not None and _optional_int(item.get("vid")) != profile.vid:
+            continue
+        if profile.pid is not None and _optional_int(item.get("pid")) != profile.pid:
+            continue
+        if not str(item.get("device") or "").strip():
+            continue
+        matches.append(item)
+
+    if len(matches) != 1:
+        if current and not any(item in matches for item in current):
+            raise SerialIdentityMismatchError(
+                f"Seriellporten {profile.device} høyrer ikkje lenger til "
+                "den lagra USB-eininga"
+            )
+        return profile
+
+    match = matches[0]
+    return replace(
+        profile,
+        device=str(match["device"]),
+        serial_number=str(match["serial_number"]).strip(),
+        vid=_optional_int(match.get("vid")),
+        pid=_optional_int(match.get("pid")),
+    )
 
 
 def discover_tcp(subnet: str, port: int = DEFAULT_MESHTASTIC_PORT) -> list[dict[str, Any]]:

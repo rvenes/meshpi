@@ -128,6 +128,10 @@ class FakeBackend:
             data = self.nodes
         elif command == "messages":
             data = self.messages[payload["conversation"]]
+            if payload.get("mark_read"):
+                for conversation in self.conversations:
+                    if conversation["conversation"] == payload["conversation"]:
+                        conversation["unread"] = 0
         elif command == "node":
             data = next(
                 node for node in self.nodes if node["node_id"] == payload["node_id"]
@@ -255,7 +259,7 @@ def test_status_bar_shows_current_meshpi_version():
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.5.11" in text
+            assert "MeshPi 0.6.0" in text
 
     run_scenario(scenario)
 
@@ -321,7 +325,7 @@ def test_live_message_is_appended_to_active_dm():
             log = app.query_one("#message-log", RichLog)
             before = len(log.lines)
             incoming = {
-                "timestamp": "2026-07-20T12:02:00+00:00",
+                "timestamp": "2026-06-04T02:58:00+00:00",
                 "kind": "dm",
                 "direction": "inn",
                 "from_node": "!710365c8",
@@ -331,6 +335,7 @@ def test_live_message_is_appended_to_active_dm():
             }
             # The real daemon commits a message before publishing its live event.
             backend.messages["!710365c8"].append(incoming)
+            backend.conversations[1]["unread"] = 1
             app.post_message(
                 LiveEvent(
                     {
@@ -341,6 +346,25 @@ def test_live_message_is_appended_to_active_dm():
             )
             await pilot.pause(0.2)
             assert len(log.lines) > before
+            active_item = next(
+                item
+                for item in app.query(ConversationItem)
+                if item.conversation_id == "!710365c8"
+            )
+            assert active_item.conversation["unread"] == 0
+
+            app.select_conversation("!2f779c48")
+            await pilot.pause(0.2)
+            app.select_conversation("!710365c8")
+            await pilot.pause(0.2)
+            rendered = "\n".join(line.text for line in log.lines)
+            assert rendered.index("Hei") < rendered.index("Ny melding")
+            conversation_item = next(
+                item
+                for item in app.query(ConversationItem)
+                if item.conversation_id == "!710365c8"
+            )
+            assert conversation_item.conversation["unread"] == 0
 
     run_scenario(scenario)
 

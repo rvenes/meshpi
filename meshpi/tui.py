@@ -1366,24 +1366,25 @@ class MeshPiTUI(App[str | None]):
             self.node_action_entries[action_id] = dict(action)
         log = self.query_one("#message-log", RichLog)
         log.clear()
-        timeline: list[tuple[str, int, str, dict[str, Any]]] = [
-            (str(message.get("timestamp") or ""), 0, "message", message)
-            for message in messages
+        timeline: list[tuple[str, dict[str, Any]]] = [
+            ("message", message) for message in messages
         ]
         if conversation != "public":
             timeline.extend(
                 (
-                    str(action.get("started_at") or ""),
-                    1,
                     "node_action",
                     action,
                 )
-                for action in self.node_action_entries.values()
+                for action in sorted(
+                    self.node_action_entries.values(),
+                    key=lambda item: (
+                        str(item.get("started_at") or ""),
+                        str(item.get("action_id") or ""),
+                    ),
+                )
                 if action.get("node_id") == conversation
             )
-        for _, _, entry_type, entry in sorted(
-            timeline, key=lambda item: (item[0], item[1])
-        ):
+        for entry_type, entry in timeline:
             renderable = (
                 self._render_message(entry)
                 if entry_type == "message"
@@ -1402,6 +1403,10 @@ class MeshPiTUI(App[str | None]):
         for item in self.conversations:
             if _conversation_id(item) == conversation:
                 item["unread"] = 0
+        for item in self.query(ConversationItem):
+            if item.conversation_id == conversation:
+                item.conversation["unread"] = 0
+                item.update_conversation(item.conversation)
 
     def _render_message(self, message: dict[str, Any]) -> Text:
         node_id = str(message.get("from_node") or "")
@@ -1676,6 +1681,15 @@ class MeshPiTUI(App[str | None]):
                 self._render_message(data),
                 scroll_end=True,
             )
+            if data.get("direction") == "inn":
+                self.run_worker(
+                    lambda: self._mark_conversation_read_worker(str(conversation)),
+                    name=f"mark-read-{conversation}",
+                    group="mark-read",
+                    thread=True,
+                    exclusive=True,
+                    exit_on_error=False,
+                )
         elif data.get("kind") == "dm" and data.get("direction") == "inn":
             node_id = str(data.get("from_node") or "")
             node = self.nodes.get(node_id, {})
@@ -1695,6 +1709,21 @@ class MeshPiTUI(App[str | None]):
             conversations = self._call({"command": "conversations"})["data"]
             nodes = self._call({"command": "nodes", "sort": "seen"})["data"]
             self.call_from_thread(self._apply_refresh, conversations, nodes)
+        except Exception:
+            return
+
+    def _mark_conversation_read_worker(self, conversation: str) -> None:
+        try:
+            self._call(
+                {
+                    "command": "messages",
+                    "conversation": conversation,
+                    "limit": 1,
+                    "mark_read": True,
+                }
+            )
+            conversations = self._call({"command": "conversations"})["data"]
+            self.call_from_thread(self._apply_conversations, conversations)
         except Exception:
             return
 

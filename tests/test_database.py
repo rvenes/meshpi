@@ -48,6 +48,27 @@ def test_mark_read_and_conversations(tmp_path):
     assert database.conversations()[0]["unread"] == 0
 
 
+def test_new_message_keeps_arrival_order_when_packet_time_is_old(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    peer = "!11112222"
+    first = message(1, ConversationKind.DM, peer)
+    first.timestamp = "2026-07-22T11:35:00+00:00"
+    first.text = "Første melding"
+    second = message(2, ConversationKind.DM, peer)
+    second.timestamp = "2026-06-04T02:58:00+00:00"
+    second.text = "Ny melding med gammal nodetid"
+    database.insert_message(first)
+    database.insert_message(second)
+
+    rows = database.list_messages("dm", peer)
+    conversation = database.conversations()[0]
+
+    assert [row["text"] for row in rows] == [first.text, second.text]
+    assert conversation["last_text"] == second.text
+    assert conversation["last_timestamp"] == second.timestamp
+
+
 def test_dm_storage_is_separate_per_peer(tmp_path):
     database = Database(tmp_path / "messages.db")
     database.initialize()

@@ -4,11 +4,12 @@ import threading
 
 import pytest
 
-from meshpi.client import CLIError, request
+from meshpi.client import CLIError, CLIUnavailableError, request
 from meshpi.config import Settings
 from meshpi.database import Database
 from meshpi.events import EventHub
 from meshpi.ipc import IPCApplication, IPCServer
+from meshpi.lifecycle import daemon_status
 from meshpi.models import Node
 
 
@@ -58,8 +59,60 @@ def test_client_connection_error_uses_cross_platform_service_hint(monkeypatch):
 
     monkeypatch.setattr("meshpi.client.socket.create_connection", fail_connection)
 
-    with pytest.raises(CLIError, match="meshpi service status"):
+    with pytest.raises(CLIUnavailableError, match="meshpi service status"):
         request(Settings(), {"command": "status"})
+
+
+def test_client_does_not_report_reset_connection_as_stopped_service(monkeypatch):
+    class ResetStream:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def write(self, _data):
+            pass
+
+        def flush(self):
+            pass
+
+        def readline(self, _limit):
+            raise ConnectionResetError("IPC-grensa er nådd")
+
+    class ConnectedSocket:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def makefile(self, _mode):
+            return ResetStream()
+
+    monkeypatch.setattr(
+        "meshpi.client.socket.create_connection",
+        lambda *_args, **_kwargs: ConnectedSocket(),
+    )
+
+    with pytest.raises(CLIError, match="ikkje starta på nytt") as error:
+        request(Settings(), {"command": "status"})
+    assert not isinstance(error.value, CLIUnavailableError)
+
+
+def test_daemon_status_only_suppresses_unavailable_service(monkeypatch):
+    def unavailable(*_args, **_kwargs):
+        raise CLIUnavailableError("stoppa")
+
+    monkeypatch.setattr("meshpi.lifecycle.request", unavailable)
+    assert daemon_status(Settings()) is None
+
+    def broken(*_args, **_kwargs):
+        raise CLIError("IPC-sambandet blei brote")
+
+    monkeypatch.setattr("meshpi.lifecycle.request", broken)
+    with pytest.raises(CLIError, match="blei brote"):
+        daemon_status(Settings())
 
 
 def test_settings_load_env_file(tmp_path, monkeypatch):
