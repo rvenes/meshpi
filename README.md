@@ -21,7 +21,7 @@ likevel skilde frå CLI-en, slik at eit webgrensesnitt kan leggjast til seinare.
 - kan byte mellom lagra, oppdaga eller manuelle TCP- og USB/serielle profilar
 - viser RF, MQTT eller «Ukjend» utan å gjette
 - viser RSSI, SNR og hoppinformasjon når ho finst
-- følgjer ACK/NAK for direkte meldingar når Meshtastic gir sikkert svar
+- skil vanleg/implisitt ACK frå ende-til-ende-ACK til DM-mottakaren
 - koplar automatisk til på nytt etter sambandsbrot
 - har fullskjerms TUI, vanlege kommandoar og enkel interaktiv chat
 - kan køyre kontinuerleg som systemd-teneste, LaunchAgent eller
@@ -268,6 +268,12 @@ Ctrl+Q             avslutt
 
 Grensesnittet tilpassar seg terminalbreidda. Nodedetaljane blir skjulte først
 dersom vindauget er smalt.
+
+Sendestatusen på ein DM går frå `[sendt]` til `[ACK]` når Meshtastic gir ein
+vanleg eller implisitt ACK. Det viser at pakken er teken vidare i nettet, men er
+ikkje eit leveringsbevis. Først ein routing-ACK frå den valde DM-mottakaren gir
+`[levert]`. Ein NAK gir `[feila]`. «transport ukjend» tyder at pakken ikkje har
+metadata som beviser om transporten var RF eller MQTT; MeshPi gjettar ikkje.
 
 Ein lukka DM blir berre skjult frå samtalelista; meldingane blir ikkje sletta.
 Opnar du noden frå nodelista, sender ei ny melding, eller får ein ny DM frå

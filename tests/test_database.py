@@ -93,7 +93,29 @@ def test_update_outgoing_status(tmp_path):
     outgoing.is_read = True
     database.insert_message(outgoing)
     assert database.update_message_status(42, MessageStatus.ACKNOWLEDGED)
-    assert database.list_messages("public")[0]["status"] == "stadfesta"
+    assert database.list_messages("public")[0]["status"] == "ACK"
+    assert database.update_message_status(42, MessageStatus.DELIVERED)
+    assert database.list_messages("public")[0]["status"] == "levert"
+    assert not database.update_message_status(42, MessageStatus.ACKNOWLEDGED)
+    assert database.list_messages("public")[0]["status"] == "levert"
+
+
+def test_initialize_migrates_old_confirmation_to_plain_ack(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    outgoing = message()
+    outgoing.direction = Direction.OUTGOING
+    outgoing.status = MessageStatus.QUEUED
+    outgoing.is_read = True
+    database.insert_message(outgoing)
+    with database._connect() as connection:
+        connection.execute(
+            "UPDATE messages SET status = 'stadfesta' WHERE packet_id = 42"
+        )
+
+    database.initialize()
+
+    assert database.list_messages("public")[0]["status"] == "ACK"
 
 
 def test_nodes_are_upserted_and_sorted(tmp_path):

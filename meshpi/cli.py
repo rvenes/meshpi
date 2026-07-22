@@ -86,10 +86,13 @@ def _format_message(message: dict[str, Any]) -> str:
         or "Ukjend"
     )
     short_id = (message.get("from_node") or "????")[-4:]
-    transport = message.get("transport", "Ukjend")
+    transport = message.get("transport") or "Ukjend"
+    transport = "transport ukjend" if transport == "Ukjend" else transport
     direction = "→" if message.get("direction") == "ut" else "←"
     context = "CH0" if message.get("kind") == "public" else "DM "
-    status = f" [{message['status']}]" if message.get("direction") == "ut" else ""
+    status_value = "ACK" if message.get("status") == "stadfesta" else message.get("status")
+    status_value = status_value or "sendt"
+    status = f" [{status_value}]" if message.get("direction") == "ut" else ""
     quality: list[str] = []
     if message.get("rssi") is not None:
         quality.append(f"RSSI {message['rssi']}")
@@ -102,15 +105,22 @@ def _format_message(message: dict[str, Any]) -> str:
     detail = f"  ({', '.join(quality)})" if quality else ""
     return (
         f"{timestamp}  {context} {direction} {_trim(name, 22):22} [{short_id}] "
-        f"{transport:6}  {sanitize_terminal_text(message.get('text', ''))}{status}{detail}"
+        f"{transport}  {sanitize_terminal_text(message.get('text', ''))}{status}{detail}"
     )
 
 
 def _print_status(data: dict[str, Any]) -> None:
     print(f"Status:       {data.get('state', 'ukjend')}")
-    transport = str(data.get("transport") or "tcp").upper()
-    endpoint = data.get("endpoint") or f"{data.get('host')}:{data.get('port')}"
-    print(f"Meshtastic:   {transport} {endpoint}")
+    endpoint = data.get("endpoint")
+    host = data.get("host")
+    port = data.get("port")
+    if not endpoint and host not in (None, "") and port not in (None, ""):
+        endpoint = f"{host}:{port}"
+    if endpoint:
+        transport = str(data.get("transport") or "tcp").upper()
+        print(f"Meshtastic:   {transport} {endpoint}")
+    else:
+        print("Meshtastic:   ingen node vald")
     print(f"Lokal node:   {data.get('local_node_id') or 'ikkje kjend enno'}")
     print(f"Tilkopla frå: {_local_time(data.get('connected_since'))}")
     if data.get("reconnect_attempt"):

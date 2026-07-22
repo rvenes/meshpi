@@ -76,6 +76,12 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.executescript(SCHEMA)
+            # Eldre versjonar kalla også den førebelse, implisitte ACK-en
+            # «stadfesta». Det gav eit sterkare leveringsløfte enn protokollen.
+            connection.execute(
+                "UPDATE messages SET status = ? WHERE status = 'stadfesta'",
+                (str(MessageStatus.ACKNOWLEDGED),),
+            )
             self._prune_messages(connection)
 
     def _prune_messages(self, connection: sqlite3.Connection) -> None:
@@ -143,12 +149,44 @@ class Database:
             return inserted, cursor.lastrowid if inserted else None
 
     def update_message_status(self, packet_id: int, status: MessageStatus) -> bool:
+        if status == MessageStatus.ACKNOWLEDGED:
+            allowed_statuses = (str(MessageStatus.QUEUED), "stadfesta")
+        elif status == MessageStatus.FAILED:
+            allowed_statuses = (
+                str(MessageStatus.QUEUED),
+                str(MessageStatus.ACKNOWLEDGED),
+                "stadfesta",
+            )
+        else:
+            allowed_statuses = (
+                str(MessageStatus.QUEUED),
+                str(MessageStatus.ACKNOWLEDGED),
+                str(MessageStatus.FAILED),
+                "stadfesta",
+            )
+        placeholders = ", ".join("?" for _ in allowed_statuses)
         with self._connect() as connection:
             cursor = connection.execute(
-                "UPDATE messages SET status = ? WHERE packet_id = ? AND direction = 'ut'",
-                (str(status), packet_id),
+                f"""
+                UPDATE messages SET status = ?
+                WHERE packet_id = ? AND direction = 'ut'
+                  AND status IN ({placeholders})
+                """,  # nosec B608 -- talet på plasshaldarar er lokalt og fast
+                (str(status), packet_id, *allowed_statuses),
             )
             return cursor.rowcount > 0
+
+    def outgoing_message(self, packet_id: int) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM messages
+                WHERE packet_id = ? AND direction = 'ut'
+                ORDER BY id DESC LIMIT 1
+                """,
+                (packet_id,),
+            ).fetchone()
+        return self._message_row(row) if row is not None else None
 
     def list_messages(
         self,

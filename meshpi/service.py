@@ -26,6 +26,7 @@ from meshpi.models import (
     Message,
     MessageStatus,
     Transport,
+    node_num_to_id,
     normalize_node_id,
     now_iso,
     validate_message_text,
@@ -96,6 +97,43 @@ def _ack_failed(packet: Any) -> bool:
     routing = packet.get("decoded", {}).get("routing", {})
     reason = routing.get("errorReason") if isinstance(routing, dict) else None
     return reason not in (None, "NONE", 0)
+
+
+def _packet_from_node(packet: Any) -> str | None:
+    if not isinstance(packet, dict):
+        return None
+    value = packet.get("fromId")
+    if isinstance(value, str) and value.startswith("!") and len(value) == 9:
+        return value.lower()
+    try:
+        return node_num_to_id(int(packet["from"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _routing_request_id(packet: Any) -> int | None:
+    if not isinstance(packet, dict):
+        return None
+    decoded = packet.get("decoded")
+    if not isinstance(decoded, dict) or not isinstance(decoded.get("routing"), dict):
+        return None
+    value = decoded.get("requestId", decoded.get("request_id"))
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _ack_status(
+    packet: Any,
+    destination: str | None,
+) -> MessageStatus:
+    if _ack_failed(packet):
+        return MessageStatus.FAILED
+    sender = _packet_from_node(packet)
+    if sender and destination and sender == destination.lower():
+        return MessageStatus.DELIVERED
+    return MessageStatus.ACKNOWLEDGED
 
 
 class MeshtasticService:
@@ -414,6 +452,7 @@ class MeshtasticService:
                 with self._lock:
                     if interface is not self._interface:
                         return
+            self._update_routing_ack(packet)
             message = parse_text_packet(packet, self._local_node_id)
             if message is None:
                 if interface:
@@ -442,6 +481,22 @@ class MeshtasticService:
             )
         except Exception:
             LOG.exception("Feil under handsaming av Meshtastic-pakke")
+
+    def _update_routing_ack(self, packet: dict[str, Any]) -> None:
+        request_id = _routing_request_id(packet)
+        if request_id is None:
+            return
+        outgoing = self.database.outgoing_message(request_id)
+        if outgoing is None:
+            return
+        status = _ack_status(packet, outgoing.get("to_node"))
+        if self.database.update_message_status(request_id, status):
+            self.events.publish(
+                {
+                    "type": "message_status",
+                    "data": {"packet_id": request_id, "status": str(status)},
+                }
+            )
 
     def send_public(self, text: str) -> dict[str, Any]:
         return self._send(text, destination="!ffffffff", public=True)
@@ -651,7 +706,7 @@ class MeshtasticService:
             early_status: list[MessageStatus] = []
 
             def onAckNak(packet: dict[str, Any]) -> None:  # noqa: N802
-                status = MessageStatus.FAILED if _ack_failed(packet) else MessageStatus.ACKNOWLEDGED
+                status = _ack_status(packet, destination)
                 with ack_lock:
                     if pending_id is None or not stored.is_set():
                         early_status[:] = [status]

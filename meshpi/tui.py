@@ -1371,6 +1371,7 @@ class MeshPiTUI(App[str | None]):
         )
         outgoing = message.get("direction") == "ut"
         transport = str(message.get("transport") or "Ukjend")
+        transport_label = "transport ukjend" if transport == "Ukjend" else transport
         text = Text()
         text.append(_time(message.get("timestamp")), style="cyan")
         text.append("  ")
@@ -1382,7 +1383,7 @@ class MeshPiTUI(App[str | None]):
         transport_style = (
             "bold green" if transport == "RF" else "bold magenta" if transport == "MQTT" else "dim"
         )
-        text.append(transport, style=transport_style)
+        text.append(transport_label, style=transport_style)
         details: list[str] = []
         if message.get("snr") is not None:
             details.append(f"SNR {message['snr']}")
@@ -1395,7 +1396,11 @@ class MeshPiTUI(App[str | None]):
         if details:
             text.append("  " + "  ".join(details), style="dim")
         if outgoing:
-            text.append(f"  [{message.get('status', 'sendt')}]", style="dim")
+            status = str(message.get("status") or "sendt")
+            if status == "stadfesta":
+                status = "ACK"
+            status_style = "bold green" if status == "levert" else "dim"
+            text.append(f"  [{status}]", style=status_style)
         text.append("\n  ")
         text.append(sanitize_terminal_text(message.get("text") or ""))
         text.append("\n" + "─" * 72, style="#394245")

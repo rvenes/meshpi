@@ -53,7 +53,8 @@ class Transport(ValueEnum):
 class MessageStatus(ValueEnum):
     RECEIVED = "motteken"
     QUEUED = "sendt"
-    ACKNOWLEDGED = "stadfesta"
+    ACKNOWLEDGED = "ACK"
+    DELIVERED = "levert"
     FAILED = "feila"
 
 

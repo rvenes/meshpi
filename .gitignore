@@ -11,3 +11,5 @@ dist/
 *.egg-info/
 data/
 
+# Private, maskinspesifikke testopplysningar. Sjå AGENTS.md.
+/LOCAL_TESTING.md

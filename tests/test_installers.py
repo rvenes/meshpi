@@ -93,3 +93,12 @@ def test_windows_installer_reports_progress_and_ignores_missing_legacy_task() ->
     assert '$ErrorActionPreference = "SilentlyContinue"' in windows
     assert '$ErrorActionPreference = $savedErrorActionPreference' in windows
     assert '& schtasks.exe /Delete /TN $taskName /F *> $null' in windows
+
+
+def test_posix_installers_report_the_same_progress_as_windows() -> None:
+    for name in ("install-linux.sh", "install-macos.sh"):
+        source = _text(name)
+        for step in range(1, 9):
+            assert f"install_step {step} " in source
+        assert "Dette kan ta nokre minutt" in source
+        assert "doctor --offline >/dev/null" not in source

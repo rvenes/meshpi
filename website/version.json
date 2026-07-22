@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.5.9",
-  "published_at": "2026-07-21T10:41:21Z",
+  "latest_version": "0.5.10",
+  "published_at": "2026-07-22T09:12:25Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.5.9",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.5.10",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.9-py3-none-any.whl",
-    "filename": "meshpi-0.5.9-py3-none-any.whl",
-    "sha256": "db120f85fdf1c2af335132f4e7ce326810c9d7179e1a357814f5c3d81ce1d27e",
-    "size": 74750,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.10-py3-none-any.whl",
+    "filename": "meshpi-0.5.10-py3-none-any.whl",
+    "sha256": "43a25793a131a462c43692d0de1c44e43ffa0b3406e18a1e477eb34dad4d12a0",
+    "size": 75803,
     "format": "wheel"
   },
   "locks": {
@@ -37,14 +37,14 @@
   "installers": {
     "linux": {
       "url": "https://venes.org/meshpi/install-linux.sh",
-      "sha256": "730aa4ff748945d02b8db0878b0ed910424363890c678c16bb814ab8c189f9b2",
-      "size": 12299,
+      "sha256": "77571df85ba6d39ca6be96a52b98ad19e89807539a767d13399aab3cb4e071dc",
+      "size": 13002,
       "update_command": "curl -fLO https://venes.org/meshpi/install-linux.sh && sudo sh install-linux.sh"
     },
     "macos": {
       "url": "https://venes.org/meshpi/install-macos.sh",
-      "sha256": "9d5ef04c7e7d91af9ae007077ba5145c37696233dddc26674af24f22263a9e1d",
-      "size": 11502,
+      "sha256": "cfa48142a034d3a5402e6368e443865d84e62c8dfb37a2b22f18c45599894221",
+      "size": 12205,
       "update_command": "curl -fLO https://venes.org/meshpi/install-macos.sh && sh install-macos.sh"
     },
     "windows": {
@@ -55,15 +55,15 @@
     }
   },
   "release_notes": [
-    "Windows-installasjonen feilar ikkje når ei gammal planlagd oppgåve manglar.",
-    "Åtte tydelege steg viser kva installatøren arbeider med.",
-    "Trege steg varslar at installasjon av avhengigheiter kan ta nokre minutt.",
-    "Nynorske framdrifts- og feilmeldingar blir viste rett i Windows PowerShell 5.1.",
-    "Nyinstallasjon og gjenteken installasjon er testa i eit reint Windows-miljø."
+    "DM-ar skil no vanleg eller implisitt ACK frå ende-til-ende-levering.",
+    "Ein ACK frå den faktiske mottakaren oppgraderer statusen til «levert».",
+    "«transport ukjend» forklarer når RF eller MQTT ikkje kan bevisast.",
+    "Status viser tydeleg «ingen node vald» på nye installasjonar.",
+    "Linux- og macOS-installatørane viser åtte tydelege framdriftssteg."
   ],
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "Q7lT1Ir5GRbcpvzplDiU3+QiB8dm3hOP+1IbVlChW9gVfCCt4aeIiFkyHu8wAhXw49HY4zFvRmRQJHocGs8hLv1Mbs2K+nguTrutYyg+TVc/sGG5OmT1RE4+voweQxFve3x4fw/qW4pdgiHHfoh6uV2eIWSjQHemgzVdKo/fgf3n5u9WHiNKz2DNS7WcBQ6u3YIuwXaWP/YeDdMrZ6au4aB206F4dNKwxxHDoiZ64NXflxgGtyNthFL6wmqrzoyPDwIJvUfcdXLG0bwtxFqGFlQh3r7ow4RLY/KSuRxuj2JTYqCuNr07bDIUpJ8TGdFoPQQQgPgwImdU3sYikFEk6Iinew9PWXWe3QS464Oo9vMwD6/cUVQfTjSQsjSUf0QZ42QRCgnsUuy/jcqmvXFtlJuwHbV7r2dy989V0MQ43/KUZDaXCBZaiyecVsOTNb3BDjbVsOAik9n3JsDf9Xa8FXzmJC0DumThvqeVbDHFVJvF4oR6mnZc3+Iu6p22Jgzq"
+    "value": "CWDu/S6D7UunrR6e95GOeg3g8BjzvUTtXd0zijmQ0YZwo4HKSnx623XiWZmGNBFYWBXw0SmvzCqTfVj20mZZchx+rAqIb6MzcuSzGLPUIFY/PWfXaEs1DeO0XHWiMi6X3YPAD7iqErQ4W+FtpMVTTdTbPaiLDJNOAkz9B/xuPxTuZU7JPd8jf107rAU+S/3OmWzQvvU4muOZRVoCTtlaVX8z49v77jSwaaSxZyYhrpKXwDN1gaUYO4kqOv0QsMYz+OEfyTw6tt1crGpuZziCZIStF3/hMILuad3sWxgs+3uLqQyJkaiq/QBzoKHi//7X3Po81Yo7Y0UflrjDKofbsieK1NnQBhT+w//oI5o+jc5w1UiHq3OSUrUFrrk0JXaPzeR/4oh7l3M2CeR0heVS4BZU7+aGJZrzK2HYEEzgfNl6IY4gPvaGw60zfLG8X+Ps8bdrz7H2xwsY+DNJbccb3Pt4x+UWz6ZwisblEYH2Xutpc2hLTmxIieJNWq2MVfxM"
   }
 }

@@ -162,6 +162,28 @@ def run_scenario(scenario):
     asyncio.run(scenario())
 
 
+def test_tui_distinguishes_ack_from_delivery():
+    backend = FakeBackend()
+    app = MeshPiTUI(
+        Settings(), requester=backend.request, watcher=None, update_checker=None
+    )
+    message = {
+        "timestamp": "2026-07-20T12:00:00+00:00",
+        "kind": "dm",
+        "direction": "ut",
+        "from_node": "!040840a0",
+        "transport": "Ukjend",
+        "status": "ACK",
+        "text": "Hei",
+    }
+
+    ack = app._render_message(message).plain
+    delivered = app._render_message({**message, "status": "levert"}).plain
+
+    assert "transport ukjend  [ACK]" in ack
+    assert "transport ukjend  [levert]" in delivered
+
+
 def test_tui_uses_enter_to_activate_and_tab_to_move_between_panes():
     async def scenario():
         backend = FakeBackend()
@@ -200,7 +222,7 @@ def test_status_bar_shows_current_meshpi_version():
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.5.9" in text
+            assert "MeshPi 0.5.10" in text
 
     run_scenario(scenario)
 

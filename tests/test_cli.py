@@ -1,4 +1,11 @@
-from meshpi.cli import _battery, _format_message, _normalize_argv, build_parser, run
+from meshpi.cli import (
+    _battery,
+    _format_message,
+    _normalize_argv,
+    _print_status,
+    build_parser,
+    run,
+)
 from meshpi.config import Settings
 
 
@@ -32,6 +39,23 @@ def test_message_display_contains_context_and_metadata():
     assert "hopp 3/2" in rendered
 
 
+def test_outgoing_message_display_explains_transport_and_ack_status():
+    rendered = _format_message(
+        {
+            "timestamp": "2026-07-20T12:00:00+00:00",
+            "kind": "dm",
+            "direction": "ut",
+            "from_node": "!710365c8",
+            "transport": "Ukjend",
+            "status": "ACK",
+            "text": "Hei",
+        }
+    )
+
+    assert "transport ukjend" in rendered
+    assert "[ACK]" in rendered
+
+
 def test_cli_parser_supports_json_and_node_details():
     args = build_parser().parse_args(["--json", "node", "!11112222"])
     assert args.json is True
@@ -42,6 +66,24 @@ def test_cli_parser_supports_json_and_node_details():
 def test_cli_defaults_to_tui():
     args = build_parser().parse_args([])
     assert args.command == "tui"
+
+
+def test_status_without_selected_node_has_a_readable_meshtastic_label(capsys):
+    _print_status(
+        {
+            "state": "ingen node",
+            "transport": None,
+            "endpoint": None,
+            "host": None,
+            "port": None,
+            "local_node_id": None,
+            "connected_since": None,
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "Meshtastic:   ingen node vald" in output
+    assert "None" not in output
 
 
 def test_cli_accepts_connection_shortcuts():

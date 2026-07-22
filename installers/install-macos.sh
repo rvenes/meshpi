@@ -6,6 +6,10 @@ MODE="${MESHPI_MODE:-always}"
 IPC_PORT_VALUE="${MESHPI_IPC_PORT:-8765}"
 SKIP_SERVICE="${MESHPI_SKIP_SERVICE:-0}"
 
+install_step() {
+    printf '[%s/8] %s\n' "$1" "$2"
+}
+
 for argument in "$@"; do
     case "$argument" in
         --mode=always) MODE=always ;;
@@ -18,6 +22,7 @@ done
     exit 2
 }
 
+install_step 1 "Kontrollerer Python 3.11 eller nyare …"
 for command in curl shasum; do
     command -v "$command" >/dev/null 2>&1 || {
         echo "Manglar kommandoen «$command»." >&2
@@ -57,6 +62,7 @@ PREVIOUS_LINK="$APP_ROOT/previous"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
 MANIFEST="$TMP_DIR/version.json"
+install_step 2 "Hentar og kontrollerer signert versjonsinformasjon …"
 if [ -n "${MESHPI_MANIFEST_FILE:-}" ]; then
     cp "$MESHPI_MANIFEST_FILE" "$MANIFEST"
 else
@@ -131,6 +137,7 @@ esac
 
 WHEEL="$TMP_DIR/meshpi-$VERSION-py3-none-any.whl"
 LOCK_FILE="$TMP_DIR/requirements-macos.txt"
+install_step 3 "Lastar ned MeshPi $VERSION og låste avhengigheiter …"
 if [ -n "${MESHPI_PACKAGE_FILE:-}" ]; then
     cp "$MESHPI_PACKAGE_FILE" "$WHEEL"
 else
@@ -141,6 +148,7 @@ if [ -n "${MESHPI_LOCK_FILE:-}" ]; then
 else
     curl -fsSL "$LOCK_URL" -o "$LOCK_FILE"
 fi
+install_step 4 "Kontrollerer SHA-256 for alle nedlasta filer …"
 ACTUAL_SHA256="$(shasum -a 256 "$WHEEL" | awk '{print $1}')"
 [ "$ACTUAL_SHA256" = "$EXPECTED_SHA256" ] || {
     echo "SHA-256 stemmer ikkje. Installasjonen er avbroten." >&2
@@ -195,18 +203,23 @@ if [ -L "$CURRENT_LINK" ]; then
     OLD_RELEASE="$(cd "$CURRENT_LINK" 2>/dev/null && pwd -P || true)"
 fi
 if [ "$RELEASE" != "$OLD_RELEASE" ]; then
+    install_step 5 "Opprettar programmiljø og installerer avhengigheiter. Dette kan ta nokre minutt …"
     rm -rf "$RELEASE"
     "$PYTHON" -m venv "$RELEASE/venv"
     "$RELEASE/venv/bin/python" -m pip install -q --require-hashes -r "$LOCK_FILE"
     "$RELEASE/venv/bin/python" -m pip install -q --no-deps "$WHEEL"
+else
+    install_step 5 "MeshPi $VERSION er alt installert; bruker programfilene på nytt …"
 fi
+install_step 6 "Kontrollerer installert versjon og køyrer sjølvtest …"
 INSTALLED_VERSION="$("$RELEASE/venv/bin/meshpi" --version)"
 [ "$INSTALLED_VERSION" = "MeshPi $VERSION" ] || {
     echo "Pakken rapporterer «$INSTALLED_VERSION», venta MeshPi $VERSION." >&2
     exit 1
 }
-"$RELEASE/venv/bin/meshpi" --env-file "$CONFIG_FILE" doctor --offline >/dev/null
+"$RELEASE/venv/bin/meshpi" --env-file "$CONFIG_FILE" doctor --offline
 
+install_step 7 "Aktiverer MeshPi og konfigurerer bakgrunnstenesta …"
 DOMAIN="gui/$(id -u)"
 LABEL="org.venes.meshpi"
 launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
@@ -327,5 +340,6 @@ else
     rm -f "$PLIST_FILE"
 fi
 
+install_step 8 "Installasjonen er ferdig."
 echo "MeshPi $VERSION er installert i $MODE-modus."
 echo "Opne ein ny terminal og start med: meshpi"

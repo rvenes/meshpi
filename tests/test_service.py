@@ -75,9 +75,53 @@ def test_send_dm_requests_ack_and_updates_status(service):
     assert kwargs["destinationId"] == "!11112222"
     assert kwargs["wantAck"] is True
     assert kwargs["onResponse"].__name__ == "onAckNak"
-    kwargs["onResponse"]({"decoded": {"routing": {"errorReason": "NONE"}}})
+    kwargs["onResponse"](
+        {
+            "fromId": "!11112222",
+            "decoded": {"routing": {"errorReason": "NONE"}},
+        }
+    )
+    row = database.list_messages("dm", "!11112222")[0]
+    assert row["status"] == str(MessageStatus.DELIVERED)
+
+
+def test_implicit_ack_is_not_reported_as_delivered(service):
+    value, interface, database = service
+    value.send_dm("!11112222", "privat")
+    interface.calls[0][1]["onResponse"](
+        {
+            "fromId": "!710365c8",
+            "decoded": {"routing": {"errorReason": "NONE"}},
+        }
+    )
     row = database.list_messages("dm", "!11112222")[0]
     assert row["status"] == str(MessageStatus.ACKNOWLEDGED)
+
+
+def test_recipient_ack_after_implicit_ack_is_reported_as_delivered(service):
+    value, interface, database = service
+    value.send_dm("!11112222", "privat")
+    interface.calls[0][1]["onResponse"](
+        {
+            "fromId": "!710365c8",
+            "decoded": {"routing": {"errorReason": "NONE"}},
+        }
+    )
+
+    value._on_receive(
+        {
+            "fromId": "!11112222",
+            "decoded": {
+                "requestId": 991,
+                "portnum": "ROUTING_APP",
+                "routing": {"errorReason": "NONE"},
+            },
+        },
+        interface,
+    )
+
+    row = database.list_messages("dm", "!11112222")[0]
+    assert row["status"] == str(MessageStatus.DELIVERED)
 
 
 def test_dm_failure_status(service):
@@ -95,13 +139,18 @@ def test_very_early_ack_is_not_lost(service):
 
     def send_with_immediate_ack(text, **kwargs):
         del text
-        kwargs["onResponse"]({"decoded": {"routing": {"errorReason": "NONE"}}})
+        kwargs["onResponse"](
+            {
+                "fromId": "!710365c8",
+                "decoded": {"routing": {"errorReason": "NONE"}},
+            }
+        )
         return SentPacket()
 
     interface.sendText = send_with_immediate_ack
     result = value.send_dm("!11112222", "privat")
     assert result["status"] == str(MessageStatus.ACKNOWLEDGED)
-    assert database.list_messages("dm", "!11112222")[0]["status"] == "stadfesta"
+    assert database.list_messages("dm", "!11112222")[0]["status"] == "ACK"
 
 
 def test_send_requires_connection(service):
