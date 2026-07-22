@@ -31,7 +31,7 @@ def request(
     except OSError as exc:
         raise CLIError(
             "Får ikkje kontakt med meshpi-tenesta. "
-            "Kontroller at ho køyrer med «systemctl status meshpi»."
+            "Kontroller med «meshpi service status»."
         ) from exc
     if not raw:
         raise CLIError("Meshpi-tenesta lukka sambandet utan svar")

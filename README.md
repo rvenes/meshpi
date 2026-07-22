@@ -246,8 +246,12 @@ ein node, eller marker han og trykk `Shift+F10`, for å opne nodehandlingane.
 Her kan du mellom anna sende traceroute. Status og resultat kjem som ei tydeleg
 ramme i DM-samtalen med noden, slik at resten av appen kan brukast medan du
 ventar. Resultatet viser ruta fram, eventuell returrute og SNR per hopp når
-nodane rapporterer dette. Fastvaren tillèt éin traceroute kvart 30. sekund;
+nodane rapporterer dette. Traceroute-forsøk og resultat blir lagra i den lokale
+loggen og viste igjen når DM-samtalen blir opna seinare. Fastvaren tillèt éin
+traceroute kvart 30. sekund;
 nodehandlinga er sperra og viser ei nedteljing til neste forsøk kan sendast.
+Meldingar frå tidlegare datoar viser dato som `21.07.26` i svak grå tekst før
+klokkeslettet; meldingar frå i dag viser berre klokkeslett.
 
 Piltastane flyttar den blå markeringa i ei liste. Trykk Enter for å gjere den
 markerte samtalen eller noden aktiv i chatten. Tastane i grensesnittet er:
@@ -304,6 +308,18 @@ meshpi public
 meshpi public --limit 200
 meshpi dm 710365c8
 ```
+
+Slett public kanal 0, alle DM-ar eller begge delar med éin kommando:
+
+```bash
+meshpi delete-messages public
+meshpi delete-messages dm
+meshpi delete-messages all
+```
+
+Kommandoen krev at du skriv `SLETT`. Legg til `--yes` for ei uttrykkeleg
+ikkje-interaktiv stadfesting, til dømes `meshpi delete-messages all --yes`.
+Traceroute-loggen og nodelista blir ikkje sletta av denne kommandoen.
 
 ### Sending
 
@@ -397,7 +413,8 @@ systemet si portliste og føretrekkjer stabile stiar under `/dev/serial/by-id`.
 Set `UPDATE_URL` til tom verdi dersom automatisk oppdateringssjekk skal vere
 av. Nettverksfeil under sjekken blir ignorerte og hindrar aldri oppstart.
 
-`BACKGROUND_MODE=always` held daemonen i gang uavhengig av TUI-en.
+`BACKGROUND_MODE=always` held daemonen i gang uavhengig av TUI-en. Dersom du
+vel å stoppe tenesta når du avsluttar, startar neste `meshpi` henne på nytt.
 `BACKGROUND_MODE=session` startar han ved behov og gir val om å stoppe han når
 du avsluttar TUI-en med `Ctrl+Q`.
 

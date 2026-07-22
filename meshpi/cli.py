@@ -16,7 +16,13 @@ from meshpi.client import request as _request
 from meshpi.config import Settings
 from meshpi.daemon import run_daemon
 from meshpi.doctor import offline_checks
-from meshpi.lifecycle import DaemonHandle, start_session_daemon, stop_daemon
+from meshpi.lifecycle import (
+    DaemonHandle,
+    daemon_status,
+    start_session_daemon,
+    stop_daemon,
+    wait_for_daemon,
+)
 from meshpi.models import normalize_node_id, sanitize_terminal_text
 from meshpi.platform_service import manage_service
 
@@ -33,6 +39,7 @@ COMMANDS = {
     "nodes",
     "node",
     "conversations",
+    "delete-messages",
     "public",
     "dm",
     "send-public",
@@ -413,6 +420,16 @@ def build_parser() -> argparse.ArgumentParser:
     node = sub.add_parser("node", help="vis alle detaljar om éin node")
     node.add_argument("node_id")
     sub.add_parser("conversations", help="vis samtalar og uleste meldingar")
+    delete_messages = sub.add_parser(
+        "delete-messages",
+        help="slett lagra meldingar frå public, DM eller begge",
+    )
+    delete_messages.add_argument("scope", choices=("public", "dm", "all"))
+    delete_messages.add_argument(
+        "--yes",
+        action="store_true",
+        help="stadfest slettinga utan interaktivt spørsmål",
+    )
 
     public = sub.add_parser("public", help="vis meldingar frå public kanal 0")
     public.add_argument("--limit", type=int, default=100)
@@ -502,6 +519,29 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
     elif command == "conversations":
         data = _request(settings, {"command": "conversations"})["data"]
         print(json.dumps(data, ensure_ascii=False)) if args.json else _print_conversations(data)
+    elif command == "delete-messages":
+        if not args.yes:
+            if args.json:
+                raise ValueError("Bruk --yes saman med --json for å stadfeste slettinga")
+            labels = {
+                "public": "alle meldingar frå public kanal 0",
+                "dm": "alle DM-meldingar",
+                "all": "alle meldingar frå public kanal 0 og DM",
+            }
+            answer = input(
+                f"Dette slettar {labels[args.scope]} permanent. Skriv SLETT for å halde fram: "
+            )
+            if answer.strip() != "SLETT":
+                print("Ingen meldingar blei sletta.")
+                return None
+        data = _request(
+            settings,
+            {"command": "delete_messages", "scope": args.scope},
+        )["data"]
+        if args.json:
+            print(json.dumps(data, ensure_ascii=False))
+        else:
+            print(f"Sletta {data['deleted']} meldingar.")
     elif command in {"public", "dm"}:
         conversation = "public" if command == "public" else normalize_node_id(args.node_id)
         data = _request(
@@ -548,8 +588,12 @@ def main(argv: list[str] | None = None) -> None:
         settings = Settings.load(args.env_file)
         handle = DaemonHandle()
         needs_daemon = args.command not in {"daemon", "doctor", "service"}
-        if settings.background_mode == "session" and needs_daemon:
-            handle = start_session_daemon(settings, args.env_file)
+        if needs_daemon:
+            if settings.background_mode == "session":
+                handle = start_session_daemon(settings, args.env_file)
+            elif daemon_status(settings) is None:
+                manage_service("start", settings, args.env_file)
+                wait_for_daemon(settings)
         outcome: str | None = None
         try:
             outcome = run(args, settings)

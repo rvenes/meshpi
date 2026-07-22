@@ -4,6 +4,7 @@ import threading
 
 import pytest
 
+from meshpi.client import CLIError, request
 from meshpi.config import Settings
 from meshpi.database import Database
 from meshpi.events import EventHub
@@ -49,6 +50,16 @@ class FakeService:
 
     def connect(self, **kwargs):
         return {"state": "koplar til", **kwargs}
+
+
+def test_client_connection_error_uses_cross_platform_service_hint(monkeypatch):
+    def fail_connection(*_args, **_kwargs):
+        raise OSError("ikkje tilgjengeleg")
+
+    monkeypatch.setattr("meshpi.client.socket.create_connection", fail_connection)
+
+    with pytest.raises(CLIError, match="meshpi service status"):
+        request(Settings(), {"command": "status"})
 
 
 def test_settings_load_env_file(tmp_path, monkeypatch):
@@ -127,6 +138,10 @@ def test_ipc_dispatch_and_validation(tmp_path):
         {"command": "unarchive_conversation", "node_id": "!11112222"}
     )["data"]
     assert restored == {"node_id": "!11112222", "archived": False}
+    assert app.dispatch({"command": "delete_messages", "scope": "public"})["data"] == {
+        "scope": "public",
+        "deleted": 0,
+    }
     assert app.dispatch({"command": "send_public", "text": "hei"})["data"]["text"] == "hei"
     assert (
         app.dispatch(
@@ -149,6 +164,23 @@ def test_ipc_dispatch_and_validation(tmp_path):
     assert app.dispatch(
         {"command": "node_action_status", "action_id": "trace-1"}
     )["data"]["status"] == "completed"
+    database.upsert_node_action(
+        {
+            "action_id": "trace-saved",
+            "action": "traceroute",
+            "node_id": "!11112222",
+            "status": "completed",
+            "started_at": "2026-07-21T12:00:00+00:00",
+            "result": {"forward": []},
+        }
+    )
+    assert app.dispatch(
+        {
+            "command": "node_actions",
+            "action": "traceroute",
+            "node_id": "!11112222",
+        }
+    )["data"][0]["action_id"] == "trace-saved"
     assert app.dispatch(
         {
             "command": "node_action_availability",

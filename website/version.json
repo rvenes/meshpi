@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.5.10",
-  "published_at": "2026-07-22T09:12:25Z",
+  "latest_version": "0.5.11",
+  "published_at": "2026-07-22T13:13:00Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.5.10",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.5.11",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.10-py3-none-any.whl",
-    "filename": "meshpi-0.5.10-py3-none-any.whl",
-    "sha256": "43a25793a131a462c43692d0de1c44e43ffa0b3406e18a1e477eb34dad4d12a0",
-    "size": 75803,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.5.11-py3-none-any.whl",
+    "filename": "meshpi-0.5.11-py3-none-any.whl",
+    "sha256": "1af7fa9d2f01a80c87b7434073d3cdc5d6906e64e0d9d6d6bc5d034c17627f4f",
+    "size": 77754,
     "format": "wheel"
   },
   "locks": {
@@ -55,15 +55,15 @@
     }
   },
   "release_notes": [
-    "DM-ar skil no vanleg eller implisitt ACK frå ende-til-ende-levering.",
-    "Ein ACK frå den faktiske mottakaren oppgraderer statusen til «levert».",
-    "«transport ukjend» forklarer når RF eller MQTT ikkje kan bevisast.",
-    "Status viser tydeleg «ingen node vald» på nye installasjonar.",
-    "Linux- og macOS-installatørane viser åtte tydelege framdriftssteg."
+    "Ein stoppa bakgrunnsteneste startar automatisk ved neste meshpi.",
+    "TUI-en lukkar IPC-overvakinga reint og slepp terminalen raskare.",
+    "Traceroute-resultat blir lagra og viste igjen i DM-historikken.",
+    "CLI-en kan slette public-meldingar, DM-ar eller begge delar.",
+    "Eldre meldingar viser dato i tillegg til klokkeslett."
   ],
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "CWDu/S6D7UunrR6e95GOeg3g8BjzvUTtXd0zijmQ0YZwo4HKSnx623XiWZmGNBFYWBXw0SmvzCqTfVj20mZZchx+rAqIb6MzcuSzGLPUIFY/PWfXaEs1DeO0XHWiMi6X3YPAD7iqErQ4W+FtpMVTTdTbPaiLDJNOAkz9B/xuPxTuZU7JPd8jf107rAU+S/3OmWzQvvU4muOZRVoCTtlaVX8z49v77jSwaaSxZyYhrpKXwDN1gaUYO4kqOv0QsMYz+OEfyTw6tt1crGpuZziCZIStF3/hMILuad3sWxgs+3uLqQyJkaiq/QBzoKHi//7X3Po81Yo7Y0UflrjDKofbsieK1NnQBhT+w//oI5o+jc5w1UiHq3OSUrUFrrk0JXaPzeR/4oh7l3M2CeR0heVS4BZU7+aGJZrzK2HYEEzgfNl6IY4gPvaGw60zfLG8X+Ps8bdrz7H2xwsY+DNJbccb3Pt4x+UWz6ZwisblEYH2Xutpc2hLTmxIieJNWq2MVfxM"
+    "value": "p1YqghUSxLtuLsbJuUSUkqOMWPp8F90jAIBTQlcZv/+Q5ozEmzanaT53Ugo20/JOpMk49ooQcAIq8wHxz7e899mgcYYIkdIqzPPUPoHCoq8tHjZimRGTYBAUzMYf+Uip3RS7inUAxa/TOjEOEW70Ng3SwFHwl1TwU3mFQUsV6N8Vlz8cfcaQb/ekF3Nm7aXLbakn8oNrfbMPs39JvJN19VDu6HYWTSgX9TaRDJKg/CKnnrJdfVSJBelLTxjTKviL0dNfY66U78/51P/pngobJ+bbBZlag+Nmcaw452i1d4FG1vrdrfZC0Do94d5JLMX3GxgqHfkP4JzmixRhlitEeEac2AkuHfuysZ3v6LhKmPNRdJis3KNqwTH3VVj8nuG0a6vtSzT8Z8c+csLyCy6a2uPpqYzVVLX/4SwOcqFGOyH5rovzTilJxqf9l/IGGr37/n3DDDQ5gOhMXh1r294q8tD6RA1+S2QMRTYe3dGZeX8TODnrcHhBLRk6b6HDx0U7"
   }
 }

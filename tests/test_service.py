@@ -162,7 +162,7 @@ def test_send_requires_connection(service):
 
 
 def test_traceroute_is_started_asynchronously_and_publishes_result(service):
-    value, interface, _ = service
+    value, interface, database = service
     with value.events.subscribe() as events:
         started = value.start_node_action("traceroute", "!11112222")
         started_event = events.get(timeout=1)
@@ -196,6 +196,9 @@ def test_traceroute_is_started_asynchronously_and_publishes_result(service):
         "snr": 6.0,
     }
     assert value.node_action_status(started["action_id"])["status"] == "completed"
+    saved = database.list_node_actions("!11112222")
+    assert saved[0]["action_id"] == started["action_id"]
+    assert saved[0]["status"] == "completed"
 
 
 def test_traceroute_rejects_local_node_and_request_during_cooldown(service):

@@ -4,6 +4,7 @@ from meshpi.cli import (
     _normalize_argv,
     _print_status,
     build_parser,
+    main,
     run,
 )
 from meshpi.config import Settings
@@ -96,6 +97,52 @@ def test_cli_accepts_connection_shortcuts():
 def test_cli_has_new_connection_dialog_command():
     args = build_parser().parse_args(["new"])
     assert args.command == "new"
+
+
+def test_main_starts_stopped_always_service_before_running_command(monkeypatch):
+    settings = Settings(background_mode="always")
+    calls = []
+    monkeypatch.setattr("meshpi.cli.Settings.load", lambda _path: settings)
+    monkeypatch.setattr("meshpi.cli.daemon_status", lambda _settings: None)
+    monkeypatch.setattr(
+        "meshpi.cli.manage_service",
+        lambda action, _settings, env_file: calls.append((action, env_file)),
+    )
+    monkeypatch.setattr(
+        "meshpi.cli.wait_for_daemon",
+        lambda _settings: calls.append(("wait", None)),
+    )
+    monkeypatch.setattr("meshpi.cli.run", lambda _args, _settings: "leave")
+
+    main(["status"])
+
+    assert calls == [("start", ".env"), ("wait", None)]
+
+
+def test_delete_messages_command_requires_confirmation(monkeypatch, capsys):
+    calls = []
+    monkeypatch.setattr("builtins.input", lambda _prompt: "nei")
+    monkeypatch.setattr("meshpi.cli._request", lambda _settings, payload: calls.append(payload))
+
+    run(build_parser().parse_args(["delete-messages", "all"]), Settings())
+
+    assert calls == []
+    assert "Ingen meldingar blei sletta" in capsys.readouterr().out
+
+
+def test_delete_messages_command_can_delete_all_in_one_command(monkeypatch, capsys):
+    calls = []
+
+    def fake_request(_settings, payload):
+        calls.append(payload)
+        return {"ok": True, "data": {"scope": "all", "deleted": 7}}
+
+    monkeypatch.setattr("meshpi.cli._request", fake_request)
+
+    run(build_parser().parse_args(["delete-messages", "all", "--yes"]), Settings())
+
+    assert calls == [{"command": "delete_messages", "scope": "all"}]
+    assert "Sletta 7 meldingar" in capsys.readouterr().out
 
 
 def test_tui_opens_connection_picker_when_no_profile_exists(monkeypatch):

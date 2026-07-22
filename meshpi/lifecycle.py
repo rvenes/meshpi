@@ -101,6 +101,16 @@ def start_session_daemon(
     raise RuntimeError(f"Session-daemonen svarte ikkje. Sjå {log_path}")
 
 
+def wait_for_daemon(settings: Settings, timeout: float = 15) -> dict:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        status = daemon_status(settings)
+        if status is not None:
+            return status
+        time.sleep(0.15)
+    raise RuntimeError("Bakgrunnstenesta svarte ikkje etter start")
+
+
 def stop_daemon(settings: Settings, timeout: float = 10) -> bool:
     if daemon_status(settings) is None:
         return False

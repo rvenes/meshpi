@@ -29,7 +29,7 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.5.10</div>
+        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.5.11</div>
         <h1>Meshtastic-chat.<br><span>Rett i terminalen.</span></h1>
         <p class="lead">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
@@ -54,7 +54,7 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.5.10</b><i>●</i> Tilkopla
+          <b>MeshPi 0.5.11</b><i>●</i> Tilkopla
           <span>TCP meshtastic.local:4403</span>
         </div>
         <div class="terminal-grid">
@@ -112,7 +112,7 @@
         <article>
           <span class="feature-number">04</span>
           <h3>Lokal historikk</h3>
-          <p>Meldingar, ulest-status og nodeinformasjon blir lagra lokalt i SQLite. Arkivering slettar ingenting.</p>
+          <p>Meldingar, traceroute-resultat, ulest-status og nodeinformasjon blir lagra lokalt i SQLite. Arkivering slettar ingenting, og meldingar kan tømmast etter omfang med CLI-en.</p>
         </article>
       </div>
     </section>
@@ -246,8 +246,8 @@
           <code>meshpi service stop</code><br>
           <code>meshpi doctor --offline</code></p>
         <p>
-          I session-modus startar MeshPi daemonen ved behov. Når du avsluttar
-          TUI-en, kan du velje om han skal stoppast eller stå att.
+          MeshPi startar ein stoppa daemon ved behov. Når du avsluttar TUI-en,
+          kan du velje om han skal stoppast eller stå att.
         </p>
       </div>
       <div class="info-card">
@@ -279,21 +279,21 @@
       </div>
     </section>
 
-    <section id="release-0.5.10" class="section release-section">
+    <section id="release-0.5.11" class="section release-section">
       <div class="section-heading">
         <span>Siste versjon</span>
-        <h2>MeshPi 0.5.10</h2>
+        <h2>MeshPi 0.5.11</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li>DM-ar skil no vanleg eller implisitt ACK frå ende-til-ende-levering</li>
-          <li>Ein ACK frå den faktiske mottakaren oppgraderer statusen til «levert»</li>
-          <li>«transport ukjend» forklarer når RF eller MQTT ikkje kan bevisast</li>
-          <li>Status viser tydeleg «ingen node vald» på nye installasjonar</li>
-          <li>Linux- og macOS-installatørane viser åtte tydelege framdriftssteg</li>
+          <li>Ein stoppa bakgrunnsteneste startar automatisk ved neste <code>meshpi</code></li>
+          <li>TUI-en lukkar IPC-overvakinga reint og slepp terminalen raskare</li>
+          <li>Traceroute-resultat blir lagra og viste igjen i DM-historikken</li>
+          <li>CLI-en kan slette public-meldingar, DM-ar eller begge delar</li>
+          <li>Eldre meldingar viser dato i tillegg til klokkeslett</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.5.10-py3-none-any.whl">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.5.11-py3-none-any.whl">Last ned Python-pakken</a>
           <a href="https://github.com/rvenes/meshpi">Kjeldekode på GitHub</a>
         </div>
       </div>

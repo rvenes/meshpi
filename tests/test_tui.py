@@ -1,5 +1,8 @@
 import asyncio
+import io
+import threading
 import time
+from datetime import datetime, timezone
 
 from textual.widgets import Button, Input, ListView, RichLog, Static
 
@@ -14,6 +17,7 @@ from meshpi.tui import (
     NodePickerItem,
     NodeSidebarItem,
     QuitScreen,
+    _message_time_parts,
 )
 from meshpi.update import UpdateNotice
 
@@ -103,6 +107,10 @@ class FakeBackend:
             ],
             "!2f779c48": [],
         }
+        self.node_actions = {
+            "!710365c8": [],
+            "!2f779c48": [],
+        }
 
     def request(self, settings, payload):
         del settings
@@ -124,6 +132,8 @@ class FakeBackend:
             data = next(
                 node for node in self.nodes if node["node_id"] == payload["node_id"]
             )
+        elif command == "node_actions":
+            data = self.node_actions[payload["node_id"]]
         elif command == "archive_conversation":
             self.archived.add(payload["node_id"])
             data = {"node_id": payload["node_id"], "archived": True}
@@ -184,6 +194,29 @@ def test_tui_distinguishes_ack_from_delivery():
     assert "transport ukjend  [levert]" in delivered
 
 
+def test_old_messages_show_a_dim_date_before_the_time():
+    date_label, time_label = _message_time_parts(
+        "2026-07-21T11:30:00+00:00",
+        now=datetime(2026, 7, 22, 12, 0, tzinfo=timezone.utc),
+    )
+    assert date_label == "21.07.26"
+    assert time_label
+
+    app = MeshPiTUI(Settings(), requester=FakeBackend().request, watcher=None)
+    rendered = app._render_message(
+        {
+            "timestamp": "2026-07-21T11:30:00+00:00",
+            "kind": "dm",
+            "direction": "inn",
+            "from_node": "!710365c8",
+            "transport": "RF",
+            "text": "Hei",
+        }
+    )
+    assert rendered.plain.startswith("21.07.26 ")
+    assert rendered.spans[0].style == "dim"
+
+
 def test_tui_uses_enter_to_activate_and_tab_to_move_between_panes():
     async def scenario():
         backend = FakeBackend()
@@ -222,7 +255,7 @@ def test_status_bar_shows_current_meshpi_version():
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.5.10" in text
+            assert "MeshPi 0.5.11" in text
 
     run_scenario(scenario)
 
@@ -597,6 +630,41 @@ def test_completed_traceroute_is_rendered_in_dm_without_blocking_the_app():
     run_scenario(scenario)
 
 
+def test_saved_traceroute_is_loaded_into_dm_history():
+    async def scenario():
+        backend = FakeBackend()
+        backend.node_actions["!710365c8"] = [
+            {
+                "action_id": "trace-saved-1",
+                "action": "traceroute",
+                "node_id": "!710365c8",
+                "status": "completed",
+                "started_at": "2026-07-20T12:02:00+00:00",
+                "finished_at": "2026-07-20T12:02:05+00:00",
+                "result": {"forward": [], "return": None},
+            }
+        ]
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            app._open_node_dm("!710365c8", focus_input=False)
+            await pilot.pause(0.3)
+
+            message_log = app.query_one("#message-log", RichLog)
+            text = "\n".join(line.text for line in message_log.lines)
+            assert "TRACEROUTE · FERDIG" in text
+            assert {
+                "command": "node_actions",
+                "action": "traceroute",
+                "node_id": "!710365c8",
+                "limit": 100,
+            } in backend.calls
+
+    run_scenario(scenario)
+
+
 def test_message_text_can_still_be_selected_with_left_mouse_drag():
     async def scenario():
         backend = FakeBackend()
@@ -692,3 +760,42 @@ def test_tui_closes_socket_safely_if_watch_worker_clears_reference():
         assert racing_socket.closed is True
 
     run_scenario(scenario)
+
+
+def test_tui_closes_watch_socket_that_finishes_opening_during_shutdown():
+    started = threading.Event()
+    release = threading.Event()
+
+    class WatchSocket:
+        def __init__(self):
+            self.closed = False
+
+        def shutdown(self, _how):
+            pass
+
+        def close(self):
+            self.closed = True
+
+    watch_socket = WatchSocket()
+
+    def delayed_watcher(_settings, _conversation):
+        started.set()
+        release.wait(1)
+        return watch_socket, io.BytesIO()
+
+    app = MeshPiTUI(
+        Settings(),
+        requester=FakeBackend().request,
+        watcher=delayed_watcher,
+        update_checker=None,
+    )
+    worker = threading.Thread(target=app._watch_worker)
+    worker.start()
+    assert started.wait(1)
+
+    app.on_unmount()
+    release.set()
+    worker.join(1)
+
+    assert worker.is_alive() is False
+    assert watch_socket.closed is True

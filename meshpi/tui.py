@@ -86,6 +86,24 @@ def _time(value: str | int | None, seconds: bool = False) -> str:
         return str(value)
 
 
+def _message_time_parts(
+    value: str | int | None,
+    now: datetime | None = None,
+) -> tuple[str | None, str]:
+    if value is None:
+        return None, "–"
+    try:
+        if isinstance(value, int):
+            parsed = datetime.fromtimestamp(value).astimezone()
+        else:
+            parsed = datetime.fromisoformat(value).astimezone()
+        current = now.astimezone() if now is not None else datetime.now().astimezone()
+        date_label = parsed.strftime("%d.%m.%y") if parsed.date() != current.date() else None
+        return date_label, parsed.strftime("%H:%M")
+    except (ValueError, TypeError, OSError):
+        return None, str(value)
+
+
 def _battery(value: Any) -> str:
     if value in (None, ""):
         return "–"
@@ -900,6 +918,7 @@ class MeshPiTUI(App[str | None]):
         self.nodes: dict[str, dict[str, Any]] = {}
         self.current_conversation = "public"
         self._watch_socket: socket.socket | None = None
+        self._watch_lock = threading.Lock()
         self._watch_stop = threading.Event()
         self._rebuilding_list = False
         self._rebuilding_nodes = False
@@ -987,8 +1006,9 @@ class MeshPiTUI(App[str | None]):
 
     def on_unmount(self) -> None:
         self._watch_stop.set()
-        watch_socket = self._watch_socket
-        self._watch_socket = None
+        with self._watch_lock:
+            watch_socket = self._watch_socket
+            self._watch_socket = None
         if watch_socket is not None:
             with suppress(OSError):
                 watch_socket.shutdown(socket.SHUT_RDWR)
@@ -1283,6 +1303,18 @@ class MeshPiTUI(App[str | None]):
                     "mark_read": True,
                 }
             )["data"]
+            node_actions = (
+                []
+                if conversation == "public"
+                else self._call(
+                    {
+                        "command": "node_actions",
+                        "action": "traceroute",
+                        "node_id": conversation,
+                        "limit": 100,
+                    }
+                )["data"]
+            )
             node_id = conversation if conversation != "public" else self._latest_peer(messages)
             node = None
             if node_id and node_id not in {"!ffffffff", "^all"}:
@@ -1295,6 +1327,7 @@ class MeshPiTUI(App[str | None]):
                 conversation,
                 messages,
                 node,
+                node_actions,
             )
         except Exception as exc:
             self.call_from_thread(
@@ -1316,9 +1349,21 @@ class MeshPiTUI(App[str | None]):
         conversation: str,
         messages: list[dict[str, Any]],
         node: dict[str, Any] | None,
+        node_actions: list[dict[str, Any]],
     ) -> None:
         if conversation != self.current_conversation:
             return
+        rank = {"started": 0, "completed": 1, "failed": 1}
+        for action in node_actions:
+            action_id = str(action.get("action_id") or "")
+            if not action_id:
+                continue
+            previous = self.node_action_entries.get(action_id)
+            if previous is not None and rank.get(
+                str(previous.get("status") or "started"), 0
+            ) > rank.get(str(action.get("status") or "started"), 0):
+                continue
+            self.node_action_entries[action_id] = dict(action)
         log = self.query_one("#message-log", RichLog)
         log.clear()
         timeline: list[tuple[str, int, str, dict[str, Any]]] = [
@@ -1373,7 +1418,10 @@ class MeshPiTUI(App[str | None]):
         transport = str(message.get("transport") or "Ukjend")
         transport_label = "transport ukjend" if transport == "Ukjend" else transport
         text = Text()
-        text.append(_time(message.get("timestamp")), style="cyan")
+        date_label, time_label = _message_time_parts(message.get("timestamp"))
+        if date_label:
+            text.append(f"{date_label} ", style="dim")
+        text.append(time_label, style="cyan")
         text.append("  ")
         text.append(
             f"{name} [{node_id[-4:] if node_id else '????'}]",
@@ -1433,6 +1481,11 @@ class MeshPiTUI(App[str | None]):
         status = str(action.get("status") or "started")
         target = self._node_action_label(str(action.get("node_id") or ""))
         text = Text()
+        date_label, time_label = _message_time_parts(action.get("started_at"))
+        text.append("Sendt: ", style="dim")
+        if date_label:
+            text.append(f"{date_label} ", style="dim")
+        text.append(f"{time_label}\n", style="cyan")
         text.append(f"Mål: {target}\n")
         if status == "started":
             text.append("Førespurnaden er sendt. Ventar på svar.\n", style="yellow")
@@ -1553,13 +1606,31 @@ class MeshPiTUI(App[str | None]):
                 if self.watcher is None:
                     return
                 sock, stream = self.watcher(self.settings, "all")
-                self._watch_socket = sock
-                for raw in stream:
-                    if self._watch_stop.is_set():
-                        return
-                    event = json.loads(raw)
-                    if event.get("type") != "heartbeat":
-                        self.call_from_thread(self.post_message, LiveEvent(event))
+                with self._watch_lock:
+                    stopping = self._watch_stop.is_set()
+                    if not stopping:
+                        self._watch_socket = sock
+                if stopping:
+                    with suppress(OSError):
+                        sock.shutdown(socket.SHUT_RDWR)
+                    with suppress(OSError):
+                        sock.close()
+                    stream.close()
+                    return
+                try:
+                    for raw in stream:
+                        if self._watch_stop.is_set():
+                            return
+                        event = json.loads(raw)
+                        if event.get("type") != "heartbeat":
+                            self.call_from_thread(self.post_message, LiveEvent(event))
+                finally:
+                    with self._watch_lock:
+                        if self._watch_socket is sock:
+                            self._watch_socket = None
+                    stream.close()
+                    with suppress(OSError):
+                        sock.close()
             except (OSError, ValueError, CLIError):
                 if not self._watch_stop.is_set():
                     self.call_from_thread(
@@ -1571,9 +1642,7 @@ class MeshPiTUI(App[str | None]):
                             }
                         ),
                     )
-                    time.sleep(2)
-            finally:
-                self._watch_socket = None
+                    self._watch_stop.wait(2)
 
     @on(LiveEvent)
     def live_event(self, message: LiveEvent) -> None:

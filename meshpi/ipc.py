@@ -91,6 +91,15 @@ class IPCApplication:
             return {"ok": True, "data": node}
         if command == "conversations":
             return {"ok": True, "data": self.database.conversations()}
+        if command == "delete_messages":
+            scope = str(request.get("scope", ""))
+            return {
+                "ok": True,
+                "data": {
+                    "scope": scope,
+                    "deleted": self.database.delete_messages(scope),
+                },
+            }
         if command == "archive_conversation":
             node_id = normalize_node_id(str(request.get("node_id", "")))
             self.database.archive_conversation(node_id)
@@ -133,6 +142,16 @@ class IPCApplication:
                 "ok": True,
                 "data": self.service.node_action_status(
                     str(request.get("action_id", ""))
+                ),
+            }
+        if command == "node_actions":
+            node_id = normalize_node_id(str(request.get("node_id", "")))
+            return {
+                "ok": True,
+                "data": self.database.list_node_actions(
+                    node_id,
+                    action=str(request.get("action", "traceroute")),
+                    limit=int(request.get("limit", 100)),
                 ),
             }
         if command == "node_action_availability":

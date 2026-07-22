@@ -45,6 +45,21 @@ CREATE TABLE IF NOT EXISTS archived_conversations (
     archived_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS node_actions (
+    action_id TEXT PRIMARY KEY,
+    action TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    packet_id INTEGER,
+    result TEXT,
+    error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS node_actions_node_time
+ON node_actions(node_id, started_at);
+
 CREATE TABLE IF NOT EXISTS nodes (
     node_id TEXT PRIMARY KEY,
     node_num INTEGER,
@@ -249,6 +264,98 @@ class Database:
         """
         with self._connect() as connection:
             return [dict(row) for row in connection.execute(sql).fetchall()]
+
+    def delete_messages(self, scope: str) -> int:
+        where = {
+            "public": "kind = 'public' AND channel = 0",
+            "dm": "kind = 'dm'",
+            "all": "kind IN ('public', 'dm')",
+        }.get(scope)
+        if where is None:
+            raise ValueError("Omfang må vere public, dm eller all")
+        with self._connect() as connection:
+            cursor = connection.execute(f"DELETE FROM messages WHERE {where}")  # nosec B608
+            if scope in {"dm", "all"}:
+                connection.execute("DELETE FROM archived_conversations")
+            return cursor.rowcount
+
+    def upsert_node_action(self, action: dict[str, Any]) -> None:
+        action_id = str(action.get("action_id") or "")
+        node_id = str(action.get("node_id") or "")
+        started_at = str(action.get("started_at") or "")
+        if not action_id or not node_id or not started_at:
+            raise ValueError("Nodehandlinga manglar ID, node eller starttid")
+        result = action.get("result")
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO node_actions (
+                    action_id, action, node_id, status, started_at, finished_at,
+                    packet_id, result, error
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(action_id) DO UPDATE SET
+                    status=excluded.status,
+                    finished_at=excluded.finished_at,
+                    packet_id=excluded.packet_id,
+                    result=excluded.result,
+                    error=excluded.error
+                """,
+                (
+                    action_id,
+                    str(action.get("action") or ""),
+                    node_id,
+                    str(action.get("status") or "started"),
+                    started_at,
+                    action.get("finished_at"),
+                    action.get("packet_id"),
+                    json.dumps(result, ensure_ascii=False, separators=(",", ":"))
+                    if result is not None
+                    else None,
+                    action.get("error"),
+                ),
+            )
+
+    def list_node_actions(
+        self,
+        node_id: str,
+        action: str = "traceroute",
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 1000))
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM (
+                    SELECT * FROM node_actions
+                    WHERE node_id = ? AND action = ?
+                    ORDER BY started_at DESC, action_id DESC LIMIT ?
+                ) AS recent
+                ORDER BY recent.started_at, recent.action_id
+                """,
+                (node_id, action, limit),
+            ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            if item["result"]:
+                try:
+                    item["result"] = json.loads(item["result"])
+                except json.JSONDecodeError:
+                    item["result"] = None
+            result.append(item)
+        return result
+
+    def fail_started_node_actions(self, error: str) -> int:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE node_actions
+                SET status = 'failed', finished_at = ?, error = ?
+                WHERE status = 'started'
+                """,
+                (now_iso(), error),
+            )
+            return cursor.rowcount
 
     def archive_conversation(self, peer_node: str) -> None:
         with self._connect() as connection:

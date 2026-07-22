@@ -84,6 +84,82 @@ def test_conversation_can_be_unarchived_without_new_message(tmp_path):
     assert database.conversations()[0]["conversation"] == "!11112222"
 
 
+def test_messages_can_be_deleted_by_scope(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    database.insert_message(message(1))
+    database.insert_message(message(2, ConversationKind.DM, "!11112222"))
+    database.archive_conversation("!11112222")
+
+    assert database.delete_messages("public") == 1
+    assert database.list_messages("public") == []
+    assert len(database.list_messages("dm", "!11112222")) == 1
+
+    assert database.delete_messages("all") == 1
+    assert database.list_messages("dm", "!11112222") == []
+    database.unarchive_conversation("!11112222")
+    assert database.conversations() == []
+
+
+def test_traceroute_history_is_upserted_and_returned_in_time_order(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    first = {
+        "action_id": "trace-1",
+        "action": "traceroute",
+        "node_id": "!11112222",
+        "status": "started",
+        "started_at": "2026-07-21T12:00:00+00:00",
+        "packet_id": 42,
+    }
+    second = {
+        "action_id": "trace-2",
+        "action": "traceroute",
+        "node_id": "!11112222",
+        "status": "failed",
+        "started_at": "2026-07-21T12:01:00+00:00",
+        "finished_at": "2026-07-21T12:01:30+00:00",
+        "error": "Ingen rute",
+    }
+    database.upsert_node_action(first)
+    database.upsert_node_action(second)
+    database.upsert_node_action(
+        first
+        | {
+            "status": "completed",
+            "finished_at": "2026-07-21T12:00:10+00:00",
+            "result": {"forward": [{"node_id": "!11112222", "snr": 6.0}]},
+        }
+    )
+
+    history = database.list_node_actions("!11112222")
+
+    assert [item["action_id"] for item in history] == ["trace-1", "trace-2"]
+    assert history[0]["status"] == "completed"
+    assert history[0]["result"]["forward"][0]["snr"] == 6.0
+    assert history[1]["error"] == "Ingen rute"
+
+
+def test_started_traceroute_can_be_marked_as_interrupted(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    database.upsert_node_action(
+        {
+            "action_id": "trace-started",
+            "action": "traceroute",
+            "node_id": "!11112222",
+            "status": "started",
+            "started_at": "2026-07-21T12:00:00+00:00",
+        }
+    )
+
+    assert database.fail_started_node_actions("Tenesta stoppa") == 1
+    saved = database.list_node_actions("!11112222")[0]
+    assert saved["status"] == "failed"
+    assert saved["error"] == "Tenesta stoppa"
+    assert saved["finished_at"] is not None
+
+
 def test_update_outgoing_status(tmp_path):
     database = Database(tmp_path / "messages.db")
     database.initialize()

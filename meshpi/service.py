@@ -149,6 +149,11 @@ class MeshtasticService:
         self.database = database
         self.events = events
         self.interface_factory = interface_factory
+        interrupted = self.database.fail_started_node_actions(
+            "MeshPi-tenesta blei avslutta før traceroute fekk svar"
+        )
+        if interrupted:
+            LOG.info("Merka %s avbrotne traceroute-forsøk som feila", interrupted)
         default_profile = (
             ConnectionProfile.tcp(settings.meshtastic_host, settings.meshtastic_port)
             if settings.meshtastic_host
@@ -571,6 +576,7 @@ class MeshtasticService:
             }
             self._node_actions[action_id] = action
             self._trim_node_actions()
+        self.database.upsert_node_action(action)
 
         def on_response(packet: dict[str, Any]) -> None:
             try:
@@ -612,6 +618,7 @@ class MeshtasticService:
 
         timer = threading.Timer(TRACEROUTE_TIMEOUT_SECONDS, on_timeout)
         timer.daemon = True
+        start_timer = False
         with self._lock:
             current = self._node_actions.get(action_id)
             if current is not None:
@@ -622,10 +629,14 @@ class MeshtasticService:
                 )
             if current is not None and current.get("status") == "started":
                 self._node_action_timers[action_id] = timer
-                timer.start()
+                start_timer = True
             snapshot = dict(current or action)
-        if snapshot.get("status") == "started":
-            self.events.publish({"type": "node_action", "data": snapshot})
+            self.database.upsert_node_action(snapshot)
+            if snapshot.get("status") == "started":
+                self.events.publish({"type": "node_action", "data": snapshot})
+        if start_timer:
+            timer.start()
+            LOG.info("Traceroute sendt til %s", node_id)
         return snapshot
 
     @staticmethod
@@ -670,7 +681,12 @@ class MeshtasticService:
             else:
                 action["result"] = result or {}
             snapshot = dict(action)
+        self.database.upsert_node_action(snapshot)
         self.events.publish({"type": "node_action", "data": snapshot})
+        if error:
+            LOG.warning("Traceroute til %s feila: %s", snapshot["node_id"], error)
+        else:
+            LOG.info("Traceroute til %s er ferdig", snapshot["node_id"])
 
     def _fail_pending_node_actions(self, error: str) -> None:
         with self._lock:
