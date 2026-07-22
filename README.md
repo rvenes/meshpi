@@ -257,17 +257,20 @@ Piltastane flyttar den blå markeringa i ei liste. Trykk Enter for å gjere den
 markerte samtalen eller noden aktiv i chatten. Tastane i grensesnittet er:
 
 ```text
-F1                 vis eller lukk oversikta over alle tastatursnarvegane
-Tab / Shift+Tab    neste / førre felt: samtalar, chat og nodar
+F1                 vis eller lukk denne oversikta
+Tab / Shift+Tab    flytt mellom samtalar, melding og nodar
+Enter              opne vald samtale/node eller send melding
+↑ / ↓              naviger i den aktive lista
 Ctrl+L             flytt markøren til meldingsfeltet
-Enter              opne markert samtale/node, eller send tekst i meldingsfeltet
-Delete             lukk/arkiver markert DM frå samtalelista
-Ctrl+D             søk i nodelista og opne ein ny DM
+Ctrl+D             finn ein node og start ein ny DM
 F2                 flytt markøren til samtalelista
 F3                 flytt markøren til nodelista
 Shift+F10          opne handlingar for markert node
-Ctrl+R             oppdater samtalar og nodar
-Ctrl+Q             avslutt
+Delete             lukk vald DM utan å slette historikken
+Ctrl+R             oppdater status, samtalar og nodar
+Ctrl+U             kopier oppdateringskommandoen når ein ny versjon finst
+Ctrl+Q             avslutt MeshPi og vel kva som skjer med daemonen
+Esc                lukk dialogen som er open
 ```
 
 Grensesnittet tilpassar seg terminalbreidda. Nodedetaljane blir skjulte først
@@ -288,6 +291,56 @@ Enter. Den lokale noden blir ikkje vist som mottakar. Dersom mottakaren ikkje
 finst i lista, kan du skrive den fulle node-ID-en og trykkje Enter.
 
 ## Kommandoar
+
+Alle CLI-kommandoane:
+
+| Kommando | Kva han gjer |
+|---|---|
+| `meshpi` eller `meshpi tui` | Start fullskjermsgrensesnittet. |
+| `meshpi new` | Oppdag, vel eller legg til ei tilkopling, og opne TUI-en. |
+| `meshpi connect MÅL [--name NAMN]` | Byt til ei TCP- eller serielltilkopling. |
+| `meshpi connections` | Vis lagra tilkoplingsprofilar. |
+| `meshpi daemon` | Køyr bakgrunnstenesta i framgrunnen; mest for feilsøking og tenesteoppsett. |
+| `meshpi doctor [--offline]` | Køyr sjølvtest; `--offline` krev ikkje ein tilgjengeleg node. |
+| `meshpi service {status,start,stop,enable,disable}` | Vis eller styr bakgrunnstenesta og autostart. |
+| `meshpi status` | Vis sambands- og tilkoplingsstatus. |
+| `meshpi nodes [--search TEKST] [--sort name\|seen\|id]` | Vis, filtrer og sorter kjende nodar. |
+| `meshpi node NODE-ID` | Vis alle lagra detaljar om éin node. |
+| `meshpi conversations` | Vis samtalar og talet på uleste meldingar. |
+| `meshpi delete-messages {public,dm,all} [--yes]` | Slett meldingar i valt omfang. |
+| `meshpi public [--limit TAL]` | Vis meldingar frå public kanal 0. |
+| `meshpi dm NODE-ID [--limit TAL]` | Vis DM-historikken med éin node. |
+| `meshpi send-public TEKST` | Send ei melding til public kanal 0. |
+| `meshpi send-dm NODE-ID TEKST` | Send ei direkte melding til éin node. |
+| `meshpi watch [all\|public\|NODE-ID]` | Følg nye meldingar i sanntid. |
+| `meshpi chat {public\|NODE-ID} [--limit TAL]` | Start interaktiv linjebasert chat. |
+
+Globale val skal stå før kommandoen:
+
+| Val | Kva det gjer |
+|---|---|
+| `-h`, `--help` | Vis hjelp for hovudkommandoen eller ein underkommando. |
+| `--version` | Vis installert MeshPi-versjon. |
+| `--env-file FIL` | Les konfigurasjon frå ei anna miljøfil enn `.env`. |
+| `--json` | Skriv maskinlesbar JSON for ikkje-interaktive kommandoar. |
+
+Til dømes viser `meshpi nodes --help` alle vala for nodelista, medan
+`meshpi --json nodes --sort name` skriv den sorterte lista som JSON.
+
+### Start og tilkopling
+
+```bash
+meshpi
+meshpi tui
+meshpi new
+meshpi connect 192.0.2.42 --name "Heimenode"
+meshpi connect COM4 --name "USB-node"
+meshpi connections
+```
+
+Du kan òg skrive eit TCP-mål eller ei seriellsti direkte, til dømes
+`meshpi 192.0.2.42` eller `meshpi COM4`. Det er ein snarveg til `meshpi
+connect MÅL`.
 
 ### Status og nodar
 
@@ -381,6 +434,22 @@ meshpi --json watch public
 ```
 
 JSON-lesing markerer ikkje meldingar som lesne.
+
+### Teneste og sjølvtest
+
+```bash
+meshpi doctor
+meshpi doctor --offline
+meshpi service status
+meshpi service start
+meshpi service stop
+meshpi service enable
+meshpi service disable
+```
+
+`meshpi daemon` køyrer daemonen i framgrunnen og er først og fremst nyttig ved
+feilsøking eller i eit tenesteoppsett. Vanleg bruk skal gå gjennom den
+installerte bakgrunnstenesta eller session-modusen.
 
 ## Konfigurasjon
 

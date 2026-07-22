@@ -543,6 +543,40 @@ h3 {
   color: var(--green);
 }
 
+.command-reference {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.command-reference > div {
+  display: grid;
+  grid-template-columns: minmax(290px, 0.9fr) 1.1fr;
+  gap: 1.2rem;
+  align-items: center;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+}
+
+.command-reference code {
+  overflow-wrap: anywhere;
+  color: var(--cyan);
+}
+
+.command-reference span,
+.global-options p {
+  color: var(--muted);
+}
+
+.global-options {
+  margin-top: 1rem;
+}
+
+.global-options p:last-child {
+  margin-bottom: 0;
+}
+
 .shortcut-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -660,6 +694,7 @@ footer small {
   .feature-grid,
   .platform-panel,
   .split-section,
+  .command-reference > div,
   .shortcut-grid,
   .release-card,
   footer {

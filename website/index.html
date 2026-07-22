@@ -22,6 +22,7 @@
       <a href="#installasjon">Installer</a>
       <a href="#oppdatering">Oppdater</a>
       <a href="#drift">Drift</a>
+      <a href="#kommandoar">Kommandoar</a>
       <a href="https://github.com/rvenes/meshpi">GitHub</a>
     </nav>
   </header>
@@ -262,20 +263,73 @@
       </div>
     </section>
 
+    <section id="kommandoar" class="section">
+      <div class="section-heading">
+        <span>Komplett CLI-referanse</span>
+        <h2>Alle MeshPi-kommandoane</h2>
+        <p>
+          Bruk <code>meshpi KOMMANDO --help</code> for detaljar om eitt val.
+          Globale val som <code>--json</code> og <code>--env-file</code> skal stå
+          før kommandoen.
+        </p>
+      </div>
+      <div class="command-reference">
+        <div><code>meshpi</code><span>Start fullskjermsgrensesnittet.</span></div>
+        <div><code>meshpi tui</code><span>Start fullskjermsgrensesnittet uttrykkeleg.</span></div>
+        <div><code>meshpi new</code><span>Oppdag, vel eller legg til ei tilkopling, og opne TUI-en.</span></div>
+        <div><code>meshpi connect MÅL [--name NAMN]</code><span>Byt til TCP, seriellsti eller COM-port.</span></div>
+        <div><code>meshpi connections</code><span>Vis lagra tilkoplingsprofilar.</span></div>
+        <div><code>meshpi daemon</code><span>Køyr bakgrunnstenesta i framgrunnen for feilsøking eller tenesteoppsett.</span></div>
+        <div><code>meshpi doctor [--offline]</code><span>Køyr sjølvtest; offline krev ikkje ein tilgjengeleg node.</span></div>
+        <div><code>meshpi service {status,start,stop,enable,disable}</code><span>Vis eller styr tenesta og autostart.</span></div>
+        <div><code>meshpi status</code><span>Vis sambands- og tilkoplingsstatus.</span></div>
+        <div><code>meshpi nodes [--search TEKST] [--sort name|seen|id]</code><span>Vis, filtrer og sorter kjende nodar.</span></div>
+        <div><code>meshpi node NODE-ID</code><span>Vis alle lagra detaljar om éin node.</span></div>
+        <div><code>meshpi conversations</code><span>Vis samtalar og uleste meldingar.</span></div>
+        <div><code>meshpi delete-messages {public,dm,all} [--yes]</code><span>Slett meldingar frå valt omfang etter stadfesting.</span></div>
+        <div><code>meshpi public [--limit TAL]</code><span>Vis historikken frå public kanal 0.</span></div>
+        <div><code>meshpi dm NODE-ID [--limit TAL]</code><span>Vis DM-historikken med éin node.</span></div>
+        <div><code>meshpi send-public TEKST</code><span>Send ei melding til public kanal 0.</span></div>
+        <div><code>meshpi send-dm NODE-ID TEKST</code><span>Send ei direkte melding til éin node.</span></div>
+        <div><code>meshpi watch [all|public|NODE-ID]</code><span>Følg nye meldingar i sanntid.</span></div>
+        <div><code>meshpi chat {public|NODE-ID} [--limit TAL]</code><span>Start interaktiv linjebasert chat.</span></div>
+      </div>
+      <div class="global-options info-card">
+        <h3>Globale val</h3>
+        <p>
+          <code>-h / --help</code> viser hjelp ·
+          <code>--version</code> viser versjonen ·
+          <code>--env-file FIL</code> vel miljøfil ·
+          <code>--json</code> skriv maskinlesbart svar
+        </p>
+        <p>
+          Du kan òg skrive målet direkte, til dømes
+          <code>meshpi 192.0.2.42</code> eller <code>meshpi COM4</code>.
+          Det er ein snarveg til <code>meshpi connect MÅL</code>.
+        </p>
+      </div>
+    </section>
+
     <section class="section shortcuts">
       <div class="section-heading">
         <span>Tastatur</span>
-        <h2>Alt utan mus</h2>
+        <h2>Alt som står under F1</h2>
       </div>
       <div class="shortcut-grid">
-        <div><kbd>F1</kbd><span>Alle snarvegar</span></div>
-        <div><kbd>Tab</kbd><span>Neste felt</span></div>
-        <div><kbd>Shift</kbd> + <kbd>Tab</kbd><span>Førre felt</span></div>
-        <div><kbd>Enter</kbd><span>Opne eller send</span></div>
-        <div><kbd>Delete</kbd><span>Arkiver DM</span></div>
-        <div><kbd>F2</kbd><span>Samtalar</span></div>
-        <div><kbd>F3</kbd><span>Nodar</span></div>
-        <div><kbd>Shift</kbd> + <kbd>F10</kbd><span>Nodehandlingar</span></div>
+        <div><kbd>F1</kbd><span>Vis eller lukk denne oversikta</span></div>
+        <div><kbd>Tab / Shift+Tab</kbd><span>Flytt mellom samtalar, melding og nodar</span></div>
+        <div><kbd>Enter</kbd><span>Opne vald samtale/node eller send melding</span></div>
+        <div><kbd>↑ / ↓</kbd><span>Naviger i den aktive lista</span></div>
+        <div><kbd>Ctrl+L</kbd><span>Flytt markøren til meldingsfeltet</span></div>
+        <div><kbd>Ctrl+D</kbd><span>Finn ein node og start ein ny DM</span></div>
+        <div><kbd>F2</kbd><span>Flytt markøren til samtalelista</span></div>
+        <div><kbd>F3</kbd><span>Flytt markøren til nodelista</span></div>
+        <div><kbd>Shift+F10</kbd><span>Opne handlingar for markert node</span></div>
+        <div><kbd>Delete</kbd><span>Lukk vald DM utan å slette historikken</span></div>
+        <div><kbd>Ctrl+R</kbd><span>Oppdater status, samtalar og nodar</span></div>
+        <div><kbd>Ctrl+U</kbd><span>Kopier oppdateringskommandoen når ein ny versjon finst</span></div>
+        <div><kbd>Ctrl+Q</kbd><span>Avslutt MeshPi og vel kva som skjer med daemonen</span></div>
+        <div><kbd>Esc</kbd><span>Lukk dialogen som er open</span></div>
       </div>
     </section>
 
