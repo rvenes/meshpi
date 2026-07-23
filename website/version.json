@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.6.2",
-  "published_at": "2026-07-23T03:16:44Z",
+  "latest_version": "0.6.3",
+  "published_at": "2026-07-23T10:20:11Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.6.2",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.6.3",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.6.2-py3-none-any.whl",
-    "filename": "meshpi-0.6.2-py3-none-any.whl",
-    "sha256": "908aa2e0d9a25ebed05a3010e16c85706465b035bca60ff8c652862d2cf544ed",
-    "size": 80170,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.6.3-py3-none-any.whl",
+    "filename": "meshpi-0.6.3-py3-none-any.whl",
+    "sha256": "7b10672b6b73c3c1a0f9f11c7c0ae4474bbcf6bb68d88453ae58afa3f934b414",
+    "size": 80292,
     "format": "wheel"
   },
   "locks": {
@@ -55,12 +55,12 @@
     }
   },
   "release_notes": [
-    "SQLite-koplingar blir no lukka etter kvart databasekall, slik at daemonen ikkje går tom for filhandtak.",
-    "Dette hindrar sporadiske IPC-brot på macOS og reduserer ressursbruken på Linux og Windows."
+    "Stoppkommandoen ventar no til IPC-svaret er sendt før daemonen blir avslutta.",
+    "Klienten etterkontrollerer at daemonen faktisk er stoppa dersom stoppsvaret går tapt."
   ],
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "FSoGZlrhbaCZd1o+R1MS8xPbMfkNPsGLNTcITxazkMstanZHCvfhPaNrd2HZBJLtAOSTc3sBy7IBhar606mYE4Q279KuI/IbvLaQrvVgdmTiIosYm+SlUSOb1PDD4YP3hOnQlczNzOUMUH4GwVhm1lYR3PHG6qMMs8GBFXDGvas1brWmI5lskpIT8w7zISwbQ2rxTGSt/N0gwS4fHFEeH3x2XUEkA6l5aS/ehx7mlGG+JxDxmL1/CF8fpqD5Y9Jhh7rj5g0gE6JpOgKOk9yKrYuFjI3YofMA1tsteHQ48C17u/zZhAl+sSmoTb4Lat1cQnb6Hrq4q/PXY9eeugMG05IzautlxWJAYLcioglLDnKXX8RKhEfv4TX8ji1oY/K7xoppPzK0TrvNjYhIf5VrOg1KiovcBb1Up349zy/WHjO/65RkQqvAk71knGwT+T1qktAnMoBVQCFZ4FIrqLZRnrM/F38IhCAeEFLgclHsnnMvbpmk9XylIId3ilwyRKbA"
+    "value": "JvcYSKPdldLCsNT4KptUpFYIjOr89KfAzSGwEf2LN2ej6tH82bw4sQl+ehcqoxtzmBwCpabYykC5R7kkaAsLe67sajvqdpf6eujMfD5Qq+/KymKP+7esbv6HLQ65oOLubCI2F4FDV80QHTirye9MDDyHDrr73YbbXNf/afQXugrqey1Rc2md+p6QFwHL0TF/kCLQpZFiv/5KY6vKY7oAyOi4FlVMFKB3drm6YyjM1O7zV+vEpQuAlJQlguVBecSCd9jCLwQaYfro+whyThFfyYs/sM9OlVJ361bf5yfc5TNs3VCQTkQ8Gg9i1lt30POWkrGm5LL4fMuVc84t9aft1M+bGkJ7HQLBv7mKBPg1azvUju1njyE7vpwjFPzsFsi7YSx4EfzVivnIWdKagcvL8eOyAnPzhUb7i5Kk2ddV3+KJ0ZbnzrS5TbFTkYRQUbm+LV4faVhx1cPyBPfERm71DUI9JHLKmr60XUetFUQCqQQdtnaS/yzswBulDY7EUzAg"
   }
 }

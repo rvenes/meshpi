@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from meshpi.client import CLIUnavailableError, request
+from meshpi.client import CLIError, CLIUnavailableError, request
 from meshpi.config import Settings
 
 
@@ -114,10 +114,19 @@ def wait_for_daemon(settings: Settings, timeout: float = 15) -> dict:
 def stop_daemon(settings: Settings, timeout: float = 10) -> bool:
     if daemon_status(settings) is None:
         return False
-    request(settings, {"command": "shutdown"}, timeout=2)
+    request_error: CLIError | None = None
+    try:
+        request(settings, {"command": "shutdown"}, timeout=2)
+    except CLIError as exc:
+        request_error = exc
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if daemon_status(settings, timeout=0.2) is None:
-            return True
+        try:
+            if daemon_status(settings, timeout=0.2) is None:
+                return True
+        except CLIError:
+            pass
         time.sleep(0.1)
+    if request_error is not None:
+        raise request_error
     raise RuntimeError("Daemonen stoppa ikkje innan fristen")

@@ -60,7 +60,6 @@ class IPCApplication:
         if command == "shutdown":
             if self.shutdown_callback is None:
                 raise RuntimeError("Denne daemonen kan ikkje stoppast via IPC")
-            threading.Thread(target=self.shutdown_callback, daemon=True).start()
             return {"ok": True, "data": {"stopping": True}}
         if command == "connections":
             return {"ok": True, "data": self.service.list_connections()}
@@ -164,6 +163,10 @@ class IPCApplication:
             }
         raise ValueError("Ukjend kommando")
 
+    def complete_request(self, request: dict[str, Any]) -> None:
+        if request.get("command") == "shutdown" and self.shutdown_callback is not None:
+            threading.Thread(target=self.shutdown_callback, daemon=True).start()
+
 
 class _IPCServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
@@ -215,7 +218,11 @@ class _IPCHandler(socketserver.StreamRequestHandler):
             if request.get("command") == "watch":
                 self._watch(request)
                 return
-            self._write(self.server.app.dispatch(request))
+            response = self.server.app.dispatch(request)
+            try:
+                self._write(response)
+            finally:
+                self.server.app.complete_request(request)
         except (BrokenPipeError, ConnectionResetError):
             return
         except Exception as exc:

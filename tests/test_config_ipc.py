@@ -252,6 +252,27 @@ def test_ipc_dispatch_and_validation(tmp_path):
         app.dispatch({"command": "ukjend"})
 
 
+def test_ipc_shutdown_starts_only_after_response_is_completed(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    stopped = threading.Event()
+    app = IPCApplication(
+        Settings(database_path=database.path),
+        database,
+        FakeService(),
+        EventHub(),
+        shutdown_callback=stopped.set,
+    )
+    request_data = {"command": "shutdown"}
+
+    response = app.dispatch(request_data)
+
+    assert response == {"ok": True, "data": {"stopping": True}}
+    assert not stopped.is_set()
+    app.complete_request(request_data)
+    assert stopped.wait(1)
+
+
 def test_ipc_socket_roundtrip(tmp_path):
     database = Database(tmp_path / "db.sqlite")
     database.initialize()
