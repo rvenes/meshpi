@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.6.1",
-  "published_at": "2026-07-23T00:58:39Z",
+  "latest_version": "0.6.2",
+  "published_at": "2026-07-23T03:16:44Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.6.1",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.6.2",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.6.1-py3-none-any.whl",
-    "filename": "meshpi-0.6.1-py3-none-any.whl",
-    "sha256": "c266a44bef5054ed2f788f9d7911b6756ea1f587c614b6d154034d88a76aa3b3",
-    "size": 80102,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.6.2-py3-none-any.whl",
+    "filename": "meshpi-0.6.2-py3-none-any.whl",
+    "sha256": "908aa2e0d9a25ebed05a3010e16c85706465b035bca60ff8c652862d2cf544ed",
+    "size": 80170,
     "format": "wheel"
   },
   "locks": {
@@ -55,12 +55,12 @@
     }
   },
   "release_notes": [
-    "«Lukk appen og stopp tenesta» lastar no ut macOS-tenesta slik at daemonen ikkje startar seg sjølv på nytt.",
-    "Ei stoppa macOS-teneste blir registrert på nytt når MeshPi blir starta seinare."
+    "SQLite-koplingar blir no lukka etter kvart databasekall, slik at daemonen ikkje går tom for filhandtak.",
+    "Dette hindrar sporadiske IPC-brot på macOS og reduserer ressursbruken på Linux og Windows."
   ],
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "CptWiWgfGXmpNvovB+I0Z8WmPTMyKqwcV/1zEiQGATDx4yz2uctVc34YbAMs4MFl2yD1IPz9PQLFbJ2o36j45hkyTGnN/37DSTWbA0T9sTbQl8IIvNTIi1yqISTd+Fk1vrZRPR0e6wJde0ATZrzVl+ypeRtpm/vnmbDb5PHNVLzXkLy5jq7homGBFArJx12ntHR5R/R/75V5b4Zvy2X66JnkjzSS8vPiKxI8/oDHzy6W4WdpOZjoxNPqpUIv833qRf8OusYIru8lBZfsPOepG8B5RuwdfWRiCgNkArQiyyK+UkL5+21XhMRlUWfy07hof2Qk0F1rDdozYHQh6Ra00TNSIEU43HtdQNuomA3T1DUlxWZ2GCkdtDxlhpUvavKZwO9mkQH/P7VUwcMlaTnJ4r8+zLmhW+pZuvpD043NxPcXhsMzCUPwdO7EkjY4XKIr1yA8jukfDx4D94gZVyZ8Ng/AC7hh+Aobfmp8X7mgkjNlJiMtezkqhto6xgnViQ50"
+    "value": "FSoGZlrhbaCZd1o+R1MS8xPbMfkNPsGLNTcITxazkMstanZHCvfhPaNrd2HZBJLtAOSTc3sBy7IBhar606mYE4Q279KuI/IbvLaQrvVgdmTiIosYm+SlUSOb1PDD4YP3hOnQlczNzOUMUH4GwVhm1lYR3PHG6qMMs8GBFXDGvas1brWmI5lskpIT8w7zISwbQ2rxTGSt/N0gwS4fHFEeH3x2XUEkA6l5aS/ehx7mlGG+JxDxmL1/CF8fpqD5Y9Jhh7rj5g0gE6JpOgKOk9yKrYuFjI3YofMA1tsteHQ48C17u/zZhAl+sSmoTb4Lat1cQnb6Hrq4q/PXY9eeugMG05IzautlxWJAYLcioglLDnKXX8RKhEfv4TX8ji1oY/K7xoppPzK0TrvNjYhIf5VrOg1KiovcBb1Up349zy/WHjO/65RkQqvAk71knGwT+T1qktAnMoBVQCFZ4FIrqLZRnrM/F38IhCAeEFLgclHsnnMvbpmk9XylIId3ilwyRKbA"
   }
 }
