@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.6.0",
-  "published_at": "2026-07-22T23:49:21Z",
+  "latest_version": "0.6.1",
+  "published_at": "2026-07-23T00:58:39Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.6.0",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.6.1",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.6.0-py3-none-any.whl",
-    "filename": "meshpi-0.6.0-py3-none-any.whl",
-    "sha256": "586228b77ecb1420761d340669995a513e1b5f85b5c6dff63a7cef9663f9ccc1",
-    "size": 79887,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.6.1-py3-none-any.whl",
+    "filename": "meshpi-0.6.1-py3-none-any.whl",
+    "sha256": "c266a44bef5054ed2f788f9d7911b6756ea1f587c614b6d154034d88a76aa3b3",
+    "size": 80102,
     "format": "wheel"
   },
   "locks": {
@@ -55,14 +55,12 @@
     }
   },
   "release_notes": [
-    "USB-einingar blir kjende att på serienummer når macOS eller Windows endrar portnamnet.",
-    "Nye meldingar held mottaksrekkjefølgja sjølv om radionoden sender feil klokkeslett.",
-    "Ulest-merket blir oppdatert med ein gong når den opne samtalen får ei melding.",
-    "MeshPi startar ikkje ein ekstra daemon når IPC-sambandet blir brote etter tilkopling."
+    "«Lukk appen og stopp tenesta» lastar no ut macOS-tenesta slik at daemonen ikkje startar seg sjølv på nytt.",
+    "Ei stoppa macOS-teneste blir registrert på nytt når MeshPi blir starta seinare."
   ],
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "aMLmxwZLyj2EkAD/QS7YOJ5X5/zPoHrYgYCIhN/Vv5LjRCoE49d2sioYPz5jxNi9DbdTbdjFSbBioe4hSnROChu3kLNpWbVtMNQLMW692fS3bLTE3D6B7DTFhizkE93IHM2InfX4NDXbwYusG3O+imAD24tJ7jFa3WrUg6bt/UtJ9Xkj6UwxW1lomz8JhD0ioE+QNdOGCuB5+wS4/t0f5xUINI35UkHyiD3S1yW8mEn0IFAS1XsT9OQae4hxMjwo9rowaKIBtesqsudUw4v0qEXLGA9VIlK76xi/ZT+ILbJ8d8NwmOnDoZhrAoRfq5thINLfYWl9ipwv6SkM3eXAozS8MaazQg1c3MLfQ3mXNTo1q0oMK8l1esp4vsl75NaZx3FRN+0l1bYqAKNnEBWXCRaGbVcEYKrEDfi7GlWTzzcPK31e0mBUii6ADLnQgxolyfMW1Gj937t0Ezl8gxJYjQQ/9xSfD7kgpUYIUyptnSn3h81veIfN10Hh36qDxksU"
+    "value": "CptWiWgfGXmpNvovB+I0Z8WmPTMyKqwcV/1zEiQGATDx4yz2uctVc34YbAMs4MFl2yD1IPz9PQLFbJ2o36j45hkyTGnN/37DSTWbA0T9sTbQl8IIvNTIi1yqISTd+Fk1vrZRPR0e6wJde0ATZrzVl+ypeRtpm/vnmbDb5PHNVLzXkLy5jq7homGBFArJx12ntHR5R/R/75V5b4Zvy2X66JnkjzSS8vPiKxI8/oDHzy6W4WdpOZjoxNPqpUIv833qRf8OusYIru8lBZfsPOepG8B5RuwdfWRiCgNkArQiyyK+UkL5+21XhMRlUWfy07hof2Qk0F1rDdozYHQh6Ra00TNSIEU43HtdQNuomA3T1DUlxWZ2GCkdtDxlhpUvavKZwO9mkQH/P7VUwcMlaTnJ4r8+zLmhW+pZuvpD043NxPcXhsMzCUPwdO7EkjY4XKIr1yA8jukfDx4D94gZVyZ8Ng/AC7hh+Aobfmp8X7mgkjNlJiMtezkqhto6xgnViQ50"
   }
 }

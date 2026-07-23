@@ -502,8 +502,8 @@ meshpi doctor --offline
 ```
 
 På Linux kan `enable`, `disable` og start av ei stoppa systemteneste krevje
-`sudo`. `meshpi service stop` prøver først ei kontrollert avslutting over lokal
-IPC.
+`sudo`. `meshpi service stop` stoppar daemonen kontrollert og lastar ved behov
+ut den plattformstyrte tenesta slik at ho ikkje startar daemonen opp att.
 
 ### Linux / Raspberry Pi OS
 

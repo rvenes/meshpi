@@ -71,6 +71,24 @@ IPC-protokollen, ikkje opne eit parallelt radiosamband.
    python -m pip install -e ".[test,dev]"
    ```
 
+   Kontroller versjonen i eit eksisterande miljø før det blir brukt:
+
+   ```text
+   .venv\Scripts\python --version
+   ```
+
+   På Windows, der fleire Python-versjonar kan vere installerte samstundes,
+   skal eit nytt miljø opprettast eksplisitt med støtta Python:
+
+   ```text
+   py -3.11 -m venv .venv
+   .venv\Scripts\python -m pip install -e ".[test,dev]"
+   ```
+
+   Eit eksisterande `.venv` som bruker Python 3.10 eller eldre, skal byggjast
+   på nytt; installasjon av ein ny global Python oppgraderer ikkje virtuelle
+   miljø automatisk.
+
 3. Gjer den minste samanhengande endringa. Oppdater testar og dokumentasjon i
    same endring når åtferd eller kommandoar blir endra.
 

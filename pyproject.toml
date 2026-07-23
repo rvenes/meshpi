@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "meshpi"
-version = "0.6.0"
+version = "0.6.1"
 description = "Ein stabil Meshtastic-klient for terminalen"
 readme = "README.md"
 license = "GPL-3.0-only"
@@ -23,6 +23,7 @@ test = [
 ]
 dev = [
     "meshpi[test]",
+    "build>=1.2,<2",
     "cryptography>=45,<47",
     "ruff>=0.12,<1",
 ]

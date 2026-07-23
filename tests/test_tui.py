@@ -259,7 +259,7 @@ def test_status_bar_shows_current_meshpi_version():
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.6.0" in text
+            assert "MeshPi 0.6.1" in text
 
     run_scenario(scenario)
 

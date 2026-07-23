@@ -598,10 +598,9 @@ def main(argv: list[str] | None = None) -> None:
         try:
             outcome = run(args, settings)
         finally:
-            should_stop = outcome == "stop" or (
-                handle.owned and outcome != "leave"
-            )
-            if should_stop:
+            if outcome == "stop":
+                manage_service("stop", settings, args.env_file)
+            elif handle.owned and outcome != "leave":
                 stop_daemon(settings)
     except (CLIError, ValueError, RuntimeError) as exc:
         print(f"Feil: {exc}", file=sys.stderr)

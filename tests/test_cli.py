@@ -119,6 +119,26 @@ def test_main_starts_stopped_always_service_before_running_command(monkeypatch):
     assert calls == [("start", ".env"), ("wait", None)]
 
 
+def test_main_uses_platform_service_when_tui_requests_stop(monkeypatch):
+    settings = Settings(background_mode="always")
+    calls = []
+    monkeypatch.setattr("meshpi.cli.Settings.load", lambda _path: settings)
+    monkeypatch.setattr("meshpi.cli.daemon_status", lambda _settings: {"state": "klar"})
+    monkeypatch.setattr("meshpi.cli.run", lambda _args, _settings: "stop")
+    monkeypatch.setattr(
+        "meshpi.cli.manage_service",
+        lambda action, _settings, env_file: calls.append((action, env_file)),
+    )
+    monkeypatch.setattr(
+        "meshpi.cli.stop_daemon",
+        lambda _settings: calls.append(("direct-stop", None)),
+    )
+
+    main([])
+
+    assert calls == [("stop", ".env")]
+
+
 def test_delete_messages_command_requires_confirmation(monkeypatch, capsys):
     calls = []
     monkeypatch.setattr("builtins.input", lambda _prompt: "nei")
