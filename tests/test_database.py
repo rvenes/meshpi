@@ -1,3 +1,5 @@
+import sqlite3
+
 from meshpi.database import Database
 from meshpi.models import (
     ConversationKind,
@@ -22,6 +24,33 @@ def message(packet_id=42, kind=ConversationKind.PUBLIC, peer=None):
         direction=Direction.INCOMING,
         transport=Transport.RF,
     )
+
+
+def test_database_connections_are_closed_after_each_operation(tmp_path, monkeypatch):
+    original_connect = sqlite3.connect
+    opened = []
+    closed = []
+
+    class TrackingConnection(sqlite3.Connection):
+        def close(self):
+            closed.append(self)
+            super().close()
+
+    def tracking_connect(*args, **kwargs):
+        kwargs["factory"] = TrackingConnection
+        connection = original_connect(*args, **kwargs)
+        opened.append(connection)
+        return connection
+
+    monkeypatch.setattr("meshpi.database.sqlite3.connect", tracking_connect)
+    database = Database(tmp_path / "messages.db")
+
+    database.initialize()
+    for _ in range(10):
+        database.list_nodes()
+
+    assert len(opened) == 11
+    assert closed == opened
 
 
 def test_store_retrieve_and_deduplicate_message(tmp_path):

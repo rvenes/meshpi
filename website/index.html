@@ -30,7 +30,7 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.6.1</div>
+        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.6.2</div>
         <h1>Meshtastic-chat.<br><span>Rett i terminalen.</span></h1>
         <p class="lead">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
@@ -55,7 +55,7 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.6.1</b><i>●</i> Tilkopla
+          <b>MeshPi 0.6.2</b><i>●</i> Tilkopla
           <span>TCP meshtastic.local:4403</span>
         </div>
         <div class="terminal-grid">
@@ -333,18 +333,18 @@
       </div>
     </section>
 
-    <section id="release-0.6.1" class="section release-section">
+    <section id="release-0.6.2" class="section release-section">
       <div class="section-heading">
         <span>Siste versjon</span>
-        <h2>MeshPi 0.6.1</h2>
+        <h2>MeshPi 0.6.2</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li>«Lukk appen og stopp tenesta» lastar no ut macOS-tenesta slik at daemonen ikkje startar seg sjølv på nytt</li>
-          <li>Ei stoppa macOS-teneste blir registrert på nytt når MeshPi blir starta seinare</li>
+          <li>SQLite-koplingar blir no lukka etter kvart databasekall, slik at daemonen ikkje går tom for filhandtak</li>
+          <li>Dette hindrar sporadiske IPC-brot på macOS og reduserer ressursbruken på Linux og Windows</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.6.1-py3-none-any.whl">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.6.2-py3-none-any.whl">Last ned Python-pakken</a>
           <a href="https://github.com/rvenes/meshpi">Kjeldekode på GitHub</a>
         </div>
       </div>
