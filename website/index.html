@@ -30,7 +30,7 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.6.3</div>
+        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.6.4</div>
         <h1>Meshtastic-chat.<br><span>Rett i terminalen.</span></h1>
         <p class="lead">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
@@ -55,7 +55,7 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.6.3</b><i>●</i> Tilkopla
+          <b>MeshPi 0.6.4</b><i>●</i> Tilkopla
           <span>TCP meshtastic.local:4403</span>
         </div>
         <div class="terminal-grid">
@@ -139,6 +139,7 @@
         <div>
           <h3>Linux og Raspberry Pi OS</h3>
           <p>Installerer under <code>/opt/meshpi</code> og set opp ei avgrensa systemd-teneste (always).</p>
+          <p>Minimal Debian/Ubuntu kan først trenge <code>sudo apt install curl python3-venv</code>. Installatøren viser rett versjonspakke dersom den valde Python-versjonen manglar venv.</p>
         </div>
         <div class="command-box">
           <code id="install-linux-command">curl -fLO https://venes.org/meshpi/install-linux.sh &amp;&amp; sudo sh install-linux.sh</code>
@@ -193,7 +194,8 @@
           fila:
         </p>
         <p><code>less</code> viser berre fila. Bla med piltastane og trykk <code>q</code> for å lukke visaren før du køyrer neste linje.</p>
-        <p><code>curl -fLO https://venes.org/meshpi/install-linux.sh</code><br>
+        <p><code>sudo apt install curl python3-venv</code><br>
+          <code>curl -fLO https://venes.org/meshpi/install-linux.sh</code><br>
           <code>less install-linux.sh</code><br>
           <code>sudo sh install-linux.sh</code></p>
         <p><code>curl -fLO https://venes.org/meshpi/install-macos.sh</code><br>
@@ -276,7 +278,7 @@
       <div class="command-reference">
         <div><code>meshpi</code><span>Start fullskjermsgrensesnittet.</span></div>
         <div><code>meshpi tui</code><span>Start fullskjermsgrensesnittet uttrykkeleg.</span></div>
-        <div><code>meshpi new</code><span>Oppdag, vel eller legg til ei tilkopling, og opne TUI-en.</span></div>
+        <div><code>meshpi new</code><span>Oppdag eller vel ei tilkopling. Fråkopla serieprofilar blir merkte, og F4 viser alle Linux-portar.</span></div>
         <div><code>meshpi connect MÅL [--name NAMN]</code><span>Byt til TCP, seriellsti eller COM-port.</span></div>
         <div><code>meshpi connections</code><span>Vis lagra tilkoplingsprofilar.</span></div>
         <div><code>meshpi daemon</code><span>Køyr bakgrunnstenesta i framgrunnen for feilsøking eller tenesteoppsett.</span></div>
@@ -333,18 +335,20 @@
       </div>
     </section>
 
-    <section id="release-0.6.3" class="section release-section">
+    <section id="release-0.6.4" class="section release-section">
       <div class="section-heading">
         <span>Siste versjon</span>
-        <h2>MeshPi 0.6.3</h2>
+        <h2>MeshPi 0.6.4</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li>Stoppkommandoen ventar no til IPC-svaret er sendt før daemonen blir avslutta</li>
-          <li>Klienten etterkontrollerer at daemonen faktisk er stoppa dersom stoppsvaret går tapt</li>
+          <li>Fiendtlege nodenamn blir viste bokstavleg og kan ikkje lenger krasje eller styre TUI-en med markup</li>
+          <li>Linux-installatøren kontrollerer venv før nedlasting og held ukjende miljøvariablar borte frå systemd-tenesta</li>
+          <li>Relevante USB-portar blir prioriterte; fråkopla profilar blir merkte, og innebygde ttyS-portar kan visast med F4</li>
+          <li>Windows reserverer IPC-porten eksklusivt, og lokale database- og profilfiler får private POSIX-rettar</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.6.3-py3-none-any.whl">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.6.4-py3-none-any.whl">Last ned Python-pakken</a>
           <a href="https://github.com/rvenes/meshpi">Kjeldekode på GitHub</a>
         </div>
       </div>

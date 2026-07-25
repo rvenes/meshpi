@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -62,6 +63,22 @@ def test_connection_store_starts_empty_without_default_profile(tmp_path):
     assert saved == {"version": 1, "active_profile_id": None, "profiles": []}
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX-filrettar")
+def test_connection_store_is_private_on_posix(tmp_path, monkeypatch):
+    path = tmp_path / "connections.json"
+    original_replace = os.replace
+
+    def assert_private_before_replace(source, destination):
+        assert Path(source).stat().st_mode & 0o777 == 0o600
+        original_replace(source, destination)
+
+    monkeypatch.setattr("meshpi.connections.os.replace", assert_private_before_replace)
+
+    ConnectionStore(path)
+
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
 def test_connection_profile_rejects_unknown_transport():
     with pytest.raises(ValueError):
         ConnectionProfile.from_dict({"transport": "ble", "name": "test"})
@@ -83,6 +100,38 @@ def test_discover_serial_prefers_stable_by_id_path(monkeypatch):
     )
 
     assert discover_serial()[0]["target"] == "/dev/serial/by-id/xiao"
+
+
+def test_discover_serial_marks_linux_ttys_as_secondary(monkeypatch):
+    ports = [
+        SimpleNamespace(
+            device="/dev/ttyS4",
+            description="ttyS4",
+            serial_number=None,
+            vid=None,
+            pid=None,
+            hwid="PNP0501",
+        ),
+        SimpleNamespace(
+            device="/dev/ttyACM0",
+            description="Seeed XIAO",
+            serial_number="ABC",
+            vid=0x239A,
+            pid=0x810B,
+            hwid="USB test",
+        ),
+    ]
+    monkeypatch.setattr("serial.tools.list_ports.comports", lambda: ports)
+    monkeypatch.setattr("meshpi.connections._stable_serial_paths", dict)
+    monkeypatch.setattr("meshpi.connections.sys.platform", "linux")
+
+    found = discover_serial()
+
+    assert [item["system_device"] for item in found] == [
+        "/dev/ttyACM0",
+        "/dev/ttyS4",
+    ]
+    assert [item["recommended"] for item in found] == [True, False]
 
 
 def test_serial_profile_persists_usb_identity(tmp_path):

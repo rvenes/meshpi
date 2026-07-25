@@ -6,6 +6,8 @@ import json
 import os
 import re
 import socket
+import sys
+import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, replace
@@ -15,6 +17,7 @@ from typing import Any
 DEFAULT_MESHTASTIC_PORT = 4403
 SUPPORTED_TRANSPORTS = {"tcp", "serial"}
 WINDOWS_PORT = re.compile(r"^COM\d+$", re.IGNORECASE)
+LINUX_LEGACY_SERIAL = re.compile(r"^/dev/ttyS\d+$")
 
 
 class SerialIdentityMismatchError(RuntimeError):
@@ -207,12 +210,19 @@ class ConnectionStore:
 
     def _write(self, data: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
-        temporary.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{self.path.name}.",
+            suffix=".tmp",
+            dir=self.path.parent,
+            text=True,
         )
-        os.replace(temporary, self.path)
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as output:
+                output.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+            os.replace(temporary, self.path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def list_profiles(self) -> list[ConnectionProfile]:
         with self._lock:
@@ -291,6 +301,14 @@ def _stable_serial_paths() -> dict[str, str]:
     return result
 
 
+def _recommended_serial(system_device: str, device: str) -> bool:
+    if not sys.platform.startswith("linux"):
+        return True
+    if device.startswith("/dev/serial/by-id/"):
+        return True
+    return LINUX_LEGACY_SERIAL.fullmatch(system_device) is None
+
+
 def discover_serial() -> list[dict[str, Any]]:
     from serial.tools import list_ports
 
@@ -298,6 +316,7 @@ def discover_serial() -> list[dict[str, Any]]:
     devices: list[dict[str, Any]] = []
     for port in list_ports.comports():
         device = stable.get(str(Path(port.device).resolve()), port.device)
+        recommended = _recommended_serial(str(port.device), str(device))
         devices.append(
             {
                 "transport": "serial",
@@ -310,9 +329,16 @@ def discover_serial() -> list[dict[str, Any]]:
                 "vid": getattr(port, "vid", None),
                 "pid": getattr(port, "pid", None),
                 "hwid": port.hwid,
+                "recommended": recommended,
             }
         )
-    return sorted(devices, key=lambda item: str(item["name"]).casefold())
+    return sorted(
+        devices,
+        key=lambda item: (
+            not bool(item["recommended"]),
+            str(item["name"]).casefold(),
+        ),
+    )
 
 
 def resolve_serial_profile(

@@ -259,7 +259,54 @@ def test_status_bar_shows_current_meshpi_version():
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.6.3" in text
+            assert "MeshPi 0.6.4" in text
+
+    run_scenario(scenario)
+
+
+def test_remote_node_markup_is_literal_in_conversation_title():
+    async def scenario():
+        backend = FakeBackend()
+        hostile_name = "[/] [@click=app.quit]Trykk[/]"
+        backend.conversations[1]["long_name"] = hostile_name
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("f2", "down", "enter")
+            await pilot.pause(0.2)
+
+            rendered = app.query_one("#conversation-title", Static).render()
+            assert hostile_name in rendered.plain
+            assert all(
+                not getattr(span.style, "meta", None)
+                for span in rendered.spans
+            )
+
+    run_scenario(scenario)
+
+
+def test_remote_node_markup_is_literal_in_node_action_dialog():
+    async def scenario():
+        backend = FakeBackend()
+        hostile_name = "[/] [@click=app.quit]Trykk[/]"
+        backend.nodes[1]["long_name"] = hostile_name
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("f3", "up", "down", "shift+f10")
+            await pilot.pause(0.2)
+
+            assert isinstance(app.screen, NodeActionScreen)
+            rendered = app.screen.query_one("#node-action-node", Static).render()
+            assert hostile_name in rendered.plain
+            assert all(
+                not getattr(span.style, "meta", None)
+                for span in rendered.spans
+            )
 
     run_scenario(scenario)
 

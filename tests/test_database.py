@@ -1,4 +1,7 @@
+import os
 import sqlite3
+
+import pytest
 
 from meshpi.database import Database
 from meshpi.models import (
@@ -51,6 +54,15 @@ def test_database_connections_are_closed_after_each_operation(tmp_path, monkeypa
 
     assert len(opened) == 11
     assert closed == opened
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX-filrettar")
+def test_database_is_private_on_posix(tmp_path):
+    path = tmp_path / "messages.db"
+
+    Database(path).initialize()
+
+    assert path.stat().st_mode & 0o777 == 0o600
 
 
 def test_store_retrieve_and_deduplicate_message(tmp_path):

@@ -209,6 +209,12 @@ Ei privat RSA-utgivingsnøkkel finst berre utanfor repoet. Ho skal aldri
 skrivast ut i terminaloutput, kopierast inn i prosjektet eller commitast. Bruk
 sti via argument eller miljøvariabelen `MESHPI_SIGNING_KEY`.
 
+Før releasebygging skal agenten lese den gitignorerte `LOCAL_TESTING.md`
+dersom ho finst. Der kan den lokale nøkkelstien og trygg bruk vere dokumentert.
+Dersom `MESHPI_SIGNING_KEY` ikkje er sett og lokal-fila ikkje gir ein eintydig
+sti, skal agenten spørje brukaren. Han skal ikkje gjennomsøkje brukarmapper
+breitt etter private nøklar eller skrive moglege nøkkelstiar til loggen.
+
 Frå prosjektre rota, etter versjonsauke og grøne testar:
 
 ```text

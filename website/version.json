@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.6.3",
-  "published_at": "2026-07-23T10:20:11Z",
+  "latest_version": "0.6.4",
+  "published_at": "2026-07-25T04:28:01Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.6.3",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.6.4",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.6.3-py3-none-any.whl",
-    "filename": "meshpi-0.6.3-py3-none-any.whl",
-    "sha256": "7b10672b6b73c3c1a0f9f11c7c0ae4474bbcf6bb68d88453ae58afa3f934b414",
-    "size": 80292,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.6.4-py3-none-any.whl",
+    "filename": "meshpi-0.6.4-py3-none-any.whl",
+    "sha256": "83dcc1e28d8c4f566b841be26c1817d822afe03bb4a32c2276661e2c392c2b95",
+    "size": 81686,
     "format": "wheel"
   },
   "locks": {
@@ -37,8 +37,8 @@
   "installers": {
     "linux": {
       "url": "https://venes.org/meshpi/install-linux.sh",
-      "sha256": "77571df85ba6d39ca6be96a52b98ad19e89807539a767d13399aab3cb4e071dc",
-      "size": 13002,
+      "sha256": "f3400177c3ed1c44213712ea567cf6322ffae268aba2f770d3378dc3c752c879",
+      "size": 13515,
       "update_command": "curl -fLO https://venes.org/meshpi/install-linux.sh && sudo sh install-linux.sh"
     },
     "macos": {
@@ -55,12 +55,14 @@
     }
   },
   "release_notes": [
-    "Stoppkommandoen ventar no til IPC-svaret er sendt før daemonen blir avslutta.",
-    "Klienten etterkontrollerer at daemonen faktisk er stoppa dersom stoppsvaret går tapt."
+    "Fiendtlege nodenamn blir viste bokstavleg og kan ikkje lenger krasje eller styre TUI-en med markup.",
+    "Linux-installatøren kontrollerer venv før nedlasting og held ukjende miljøvariablar borte frå systemd-tenesta.",
+    "Relevante USB-portar blir prioriterte; fråkopla profilar blir merkte, og innebygde ttyS-portar kan visast med F4.",
+    "Windows reserverer IPC-porten eksklusivt, og lokale database- og profilfiler får private POSIX-rettar."
   ],
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "JvcYSKPdldLCsNT4KptUpFYIjOr89KfAzSGwEf2LN2ej6tH82bw4sQl+ehcqoxtzmBwCpabYykC5R7kkaAsLe67sajvqdpf6eujMfD5Qq+/KymKP+7esbv6HLQ65oOLubCI2F4FDV80QHTirye9MDDyHDrr73YbbXNf/afQXugrqey1Rc2md+p6QFwHL0TF/kCLQpZFiv/5KY6vKY7oAyOi4FlVMFKB3drm6YyjM1O7zV+vEpQuAlJQlguVBecSCd9jCLwQaYfro+whyThFfyYs/sM9OlVJ361bf5yfc5TNs3VCQTkQ8Gg9i1lt30POWkrGm5LL4fMuVc84t9aft1M+bGkJ7HQLBv7mKBPg1azvUju1njyE7vpwjFPzsFsi7YSx4EfzVivnIWdKagcvL8eOyAnPzhUb7i5Kk2ddV3+KJ0ZbnzrS5TbFTkYRQUbm+LV4faVhx1cPyBPfERm71DUI9JHLKmr60XUetFUQCqQQdtnaS/yzswBulDY7EUzAg"
+    "value": "eR8N/JaqWg8AmWd4KLJuf4bJWPFcOQuWjtL11ja4KtgbOx2yj47KJrq7Y34RsHamp4KBf2p4DERE5iRr6LY22PSFpCylArK5J1+KZlhxdOuHesT56jUr6gffAh9QOSzLbo3YK3WPzOJmnFGpnxAWlrn4lYl6u46NT0+mRgO4+GV0D1UjWIRvdEy1vrnCw6fir4FX0t2QTxyeq5X+N/DMfNJjQ4eJwvY8vkjP1dfMxQ6/e8qIyDgWmr4tvUrqVgDF/L70nmRPt6cox/4XHYoBWvYM3ydzQ6TJoVFqFvzwJ3AJKbw3/b3YPMMw415UyCdcreeImJtz/HHIzbIpo9mbjhe+HFYojzt2p9GXM1z41AOgX9USlwA69veMYDJS1uYT3l+z1qlJfEQ5qLBO3vppr3+m7BVhiym81Sa6DpaGlc6WdubG28CbOguqwKkJkB9Jhpld94/GbuuvvKaquh+caXh+qa0zCEnQ2xkV5rpiAM0D8HP6kcGZzwmf7y/wNfhU"
   }
 }

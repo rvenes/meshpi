@@ -61,6 +61,22 @@ if [ -z "$PYTHON" ]; then
     exit 1
 fi
 
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
+
+PYTHON_SERIES="$("$PYTHON" -c \
+    'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+VENV_CHECK="$TMP_DIR/venv-check"
+if ! "$PYTHON" -m venv "$VENV_CHECK" >/dev/null 2>&1 ||
+    ! "$VENV_CHECK/bin/python" -m pip --version >/dev/null 2>&1
+then
+    echo "Python $PYTHON_SERIES kan ikkje opprette virtuelle miljø." >&2
+    echo "På Debian/Ubuntu: sudo apt install python$PYTHON_SERIES-venv" >&2
+    echo "Alternativt kan distribusjonen bruke pakken python3-venv." >&2
+    exit 1
+fi
+rm -rf "$VENV_CHECK"
+
 INSTALL_USER="${SUDO_USER:-${USER:-root}}"
 if [ "$INSTALL_USER" = "root" ]; then
     USER_HOME="${HOME:-/root}"
@@ -84,8 +100,6 @@ RELEASES_DIR="$PREFIX/releases"
 CURRENT_LINK="$PREFIX/current"
 PREVIOUS_LINK="$PREFIX/previous"
 
-TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
 MANIFEST="$TMP_DIR/version.json"
 
 install_step 2 "Hentar og kontrollerer signert versjonsinformasjon …"
@@ -337,8 +351,8 @@ User=meshpi
 Group=meshpi
 SupplementaryGroups=dialout
 WorkingDirectory=$STATE_DIR
-EnvironmentFile=$CONFIG_FILE
 Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
 ExecStart=$CURRENT_LINK/.venv/bin/meshpi --env-file $CONFIG_FILE daemon
 Restart=on-failure
 RestartSec=5

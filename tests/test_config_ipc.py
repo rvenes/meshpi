@@ -1,4 +1,5 @@
 import json
+import os
 import socket
 import threading
 
@@ -325,3 +326,45 @@ def test_ipc_rejects_missing_token(tmp_path):
     finally:
         server.shutdown()
         thread.join(timeout=2)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows-spesifikk socketåtferd")
+def test_windows_ipc_server_uses_exclusive_address(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    settings = Settings(database_path=database.path, ipc_port=0, ipc_token="c" * 64)
+    server = IPCServer(
+        settings,
+        IPCApplication(settings, database, FakeService(), EventHub()),
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with socket.socket() as contender:
+            contender.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            with pytest.raises(OSError):
+                contender.bind(server.address)
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows-spesifikk socketåtferd")
+def test_windows_ipc_server_rejects_prebound_reusable_address(tmp_path):
+    with socket.socket() as blocker:
+        blocker.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen()
+        database = Database(tmp_path / "db.sqlite")
+        database.initialize()
+        settings = Settings(
+            database_path=database.path,
+            ipc_port=blocker.getsockname()[1],
+            ipc_token="d" * 64,
+        )
+
+        with pytest.raises(OSError):
+            IPCServer(
+                settings,
+                IPCApplication(settings, database, FakeService(), EventHub()),
+            )

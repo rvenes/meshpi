@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -91,6 +92,10 @@ class Database:
 
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(self.path, os.O_CREAT | os.O_APPEND, 0o600)
+        os.close(descriptor)
+        if os.name == "posix":
+            self.path.chmod(0o600)
         with self._connect() as connection:
             connection.executescript(SCHEMA)
             # Eldre versjonar kalla også den førebelse, implisitte ACK-en

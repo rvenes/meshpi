@@ -13,27 +13,89 @@ from meshpi.client import request
 from meshpi.config import Settings
 
 
-def build_connection_choices(data: dict[str, Any]) -> list[dict[str, Any]]:
+def _serial_profile_available(
+    profile: dict[str, Any],
+    serial_entries: list[dict[str, Any]],
+) -> bool:
+    serial_number = str(profile.get("serial_number") or "").strip()
+    if serial_number:
+        profile_vid = profile.get("vid")
+        profile_pid = profile.get("pid")
+        return any(
+            str(entry.get("serial_number") or "").strip() == serial_number
+            and (profile_vid is None or entry.get("vid") == profile_vid)
+            and (profile_pid is None or entry.get("pid") == profile_pid)
+            for entry in serial_entries
+        )
+
+    endpoint = str(profile.get("device") or profile.get("endpoint") or "").strip()
+    if not endpoint:
+        return False
+    return any(
+        endpoint
+        in {
+            str(entry.get("target") or ""),
+            str(entry.get("device") or ""),
+            str(entry.get("system_device") or ""),
+        }
+        for entry in serial_entries
+    )
+
+
+def build_connection_choices(
+    data: dict[str, Any],
+    *,
+    include_all_serial: bool = False,
+) -> list[dict[str, Any]]:
     active_id = str(data.get("active_profile_id", ""))
     choices: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
+    serial_entries = list(data.get("serial", []))
+    saved_available: list[dict[str, Any]] = []
+    saved_unavailable: list[dict[str, Any]] = []
+    available_serial_profiles: list[dict[str, Any]] = []
 
     for profile in data.get("profiles", []):
         profile_id = str(profile.get("profile_id", ""))
         endpoint = str(profile.get("endpoint", ""))
-        key = (str(profile.get("transport", "")), endpoint)
-        seen.add(key)
-        choices.append(
-            {
-                "section": "Lagra",
-                "name": profile.get("name") or endpoint,
-                "transport": profile.get("transport"),
-                "endpoint": endpoint,
-                "profile_id": profile_id,
-                "active": profile_id == active_id,
-                "search": " ".join(str(value or "") for value in profile.values()),
-            }
+        transport = str(profile.get("transport", ""))
+        available = (
+            _serial_profile_available(profile, serial_entries)
+            if transport == "serial"
+            else None
         )
+        choice = {
+            "section": "Lagra",
+            "name": profile.get("name") or endpoint,
+            "transport": transport,
+            "endpoint": endpoint,
+            "profile_id": profile_id,
+            "active": profile_id == active_id,
+            "available": available,
+            "search": " ".join(str(value or "") for value in profile.values()),
+        }
+        if available is False:
+            saved_unavailable.append(choice)
+        else:
+            saved_available.append(choice)
+            if transport == "serial":
+                available_serial_profiles.append(profile)
+
+    saved_available.sort(
+        key=lambda choice: (
+            not bool(choice["active"]),
+            str(choice["name"]).casefold(),
+        )
+    )
+    saved_unavailable.sort(
+        key=lambda choice: (
+            not bool(choice["active"]),
+            str(choice["name"]).casefold(),
+        )
+    )
+    for choice in saved_available:
+        seen.add((str(choice["transport"]), str(choice["endpoint"])))
+        choices.append(choice)
 
     for section, entries in (
         ("USB / seriell", data.get("serial", [])),
@@ -41,6 +103,17 @@ def build_connection_choices(data: dict[str, Any]) -> list[dict[str, Any]]:
     ):
         for entry in entries:
             transport = str(entry.get("transport", ""))
+            if (
+                transport == "serial"
+                and not include_all_serial
+                and entry.get("recommended") is False
+            ):
+                continue
+            if transport == "serial" and any(
+                _serial_profile_available(profile, [entry])
+                for profile in available_serial_profiles
+            ):
+                continue
             endpoint = str(entry.get("device") or entry.get("target") or "")
             if (transport, endpoint) in seen:
                 continue
@@ -53,9 +126,11 @@ def build_connection_choices(data: dict[str, Any]) -> list[dict[str, Any]]:
                     "endpoint": endpoint,
                     "target": entry.get("target") or endpoint,
                     "active": False,
+                    "available": True,
                     "search": " ".join(str(value or "") for value in entry.values()),
                 }
             )
+    choices.extend(saved_unavailable)
     return choices
 
 
@@ -66,7 +141,10 @@ class ConnectionItem(ListItem):
 
     def _label(self) -> Text:
         text = Text()
-        if self.choice.get("active"):
+        unavailable = self.choice.get("available") is False
+        if unavailable:
+            text.append("◌ ", style="bold yellow")
+        elif self.choice.get("active"):
             text.append("● ", style="bold green")
         else:
             text.append("○ ", style="dim")
@@ -75,6 +153,8 @@ class ConnectionItem(ListItem):
             f"  {str(self.choice.get('transport', '')).upper()}",
             style="cyan",
         )
+        if unavailable:
+            text.append("  IKKJE TILKOPLA", style="bold yellow")
         text.append("\n")
         text.append(
             f"  {self.choice['section']}  •  {self.choice['endpoint']}",
@@ -91,6 +171,7 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         Binding("ctrl+q", "cancel", "Avbryt", priority=True),
         Binding("down", "next_choice", "Neste", priority=True),
         Binding("up", "previous_choice", "Førre", priority=True),
+        Binding("f4", "toggle_serial_ports", "Alle serieportar", priority=True),
     ]
 
     CSS = """
@@ -167,7 +248,14 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
 
     def __init__(self, discovery: dict[str, Any]):
         super().__init__()
+        self.discovery = discovery
+        self.show_all_serial = False
         self.all_choices = build_connection_choices(discovery)
+        choices_with_all_serial = build_connection_choices(
+            discovery,
+            include_all_serial=True,
+        )
+        self.hidden_serial_count = len(choices_with_all_serial) - len(self.all_choices)
         self.filtered_choices = list(self.all_choices)
 
     def compose(self) -> ComposeResult:
@@ -199,11 +287,11 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         shown = len(self.filtered_choices)
         total = len(self.all_choices)
         label = f"{shown} av {total} tilkoplingar" if shown != total else f"{total} tilkoplingar"
+        if self.hidden_serial_count and not self.show_all_serial:
+            label += f" · {self.hidden_serial_count} serieportar skjulte (F4)"
         self.query_one("#choice-count", Static).update(label)
 
-    @on(Input.Changed, "#connection-input")
-    async def filter_choices(self, event: Input.Changed) -> None:
-        query = event.value.strip().casefold()
+    async def _replace_choices(self, query: str) -> None:
         self.filtered_choices = [
             choice
             for choice in self.all_choices
@@ -216,6 +304,22 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         await choices.extend(ConnectionItem(choice) for choice in self.filtered_choices)
         choices.index = 0 if self.filtered_choices else None
         self._update_count()
+
+    @on(Input.Changed, "#connection-input")
+    async def filter_choices(self, event: Input.Changed) -> None:
+        query = event.value.strip().casefold()
+        await self._replace_choices(query)
+
+    async def action_toggle_serial_ports(self) -> None:
+        if not self.hidden_serial_count:
+            return
+        self.show_all_serial = not self.show_all_serial
+        self.all_choices = build_connection_choices(
+            self.discovery,
+            include_all_serial=self.show_all_serial,
+        )
+        query = self.query_one("#connection-input", Input).value.strip().casefold()
+        await self._replace_choices(query)
 
     @on(Input.Submitted, "#connection-input")
     def submit_input(self, event: Input.Submitted) -> None:

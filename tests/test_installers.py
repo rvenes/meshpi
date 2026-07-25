@@ -70,6 +70,19 @@ def test_linux_always_mode_has_restricted_permissions() -> None:
     assert 'chmod 0640 "$CONFIG_FILE"' in source
     assert 'chown -R meshpi:meshpi "$STATE_DIR"' in source
     assert 'chmod 0750 "$STATE_DIR"' in source
+    assert "EnvironmentFile=" not in source
+    assert "UMask=0077" in source
+
+
+def test_linux_checks_venv_before_downloading_release_files() -> None:
+    source = _text("install-linux.sh")
+
+    assert '"$PYTHON" -m venv "$VENV_CHECK"' in source
+    assert '"$VENV_CHECK/bin/python" -m pip --version' in source
+    assert "sudo apt install python$PYTHON_SERIES-venv" in source
+    assert source.index('VENV_CHECK="$TMP_DIR/venv-check"') < source.index(
+        'install_step 2 "Hentar'
+    )
 
 
 def test_installers_do_not_ship_a_preselected_meshtastic_node() -> None:

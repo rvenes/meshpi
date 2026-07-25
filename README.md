@@ -56,10 +56,20 @@ sjølv om TUI-en er lukka.
 
 Linux, inkludert Raspberry Pi OS:
 
+På ein minimal Debian-/Ubuntu-installasjon må du først ha `curl`. Installer òg
+den vanlege `venv`-pakken; installatøren kontrollerer den valde
+Python-versjonen og viser rett versjonspakke dersom ho manglar:
+
 ```bash
+sudo apt update
+sudo apt install curl python3-venv
 curl -fLO https://venes.org/meshpi/install-linux.sh
 sudo sh install-linux.sh
 ```
+
+Installatøren installerer aldri systempakkar automatisk. Dersom til dømes
+Python 3.14 manglar `venv`, får du kommandoen
+`sudo apt install python3.14-venv` før MeshPi-filer blir lasta ned.
 
 macOS:
 
@@ -106,6 +116,7 @@ før du køyrer installasjonskommandoen på neste linje.
 
 ```bash
 # Linux
+sudo apt install curl python3-venv
 curl -fLO https://venes.org/meshpi/install-linux.sh
 less install-linux.sh
 sudo sh install-linux.sh
@@ -221,8 +232,10 @@ meshpi new
 
 Veljaren viser lagra profilar, oppdaga USB-portar og Meshtastic TCP-portar i det
 konfigurerte lokalnettet. Skriv for å filtrere eller skrive eit manuelt mål,
-bruk `↑`/`↓`, og trykk Enter for å byte og opne TUI-en. Vis profilane utan å
-byte:
+bruk `↑`/`↓`, og trykk Enter for å byte og opne TUI-en. Ein lagra seriellprofil
+blir merkt `IKKJE TILKOPLA` og lagd nedst dersom USB-identiteten ikkje finst.
+Innebygde Linux-portar som `/dev/ttyS*` er skjulte som standard; trykk F4 for å
+vise dei. Vis profilane utan å byte:
 
 ```bash
 meshpi connections

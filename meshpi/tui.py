@@ -374,7 +374,7 @@ class NodeActionScreen(ModalScreen[str | None]):
         local = bool(self.node.get("is_local"))
         with Container(id="node-action-dialog"):
             yield Label("Handlingar for node", id="node-action-title")
-            yield Static(f"{name}  [{node_id[-4:]}]", id="node-action-node")
+            yield Static(Text(f"{name}  [{node_id[-4:]}]"), id="node-action-node")
             yield Button(
                 "Opne samtale",
                 id="node-action-open-dm",
@@ -1283,7 +1283,7 @@ class MeshPiTUI(App[str | None]):
             ),
             f"DM {conversation}",
         )
-        self.query_one("#conversation-title", Static).update(title)
+        self.query_one("#conversation-title", Static).update(Text(title))
         self.run_worker(
             lambda: self._conversation_worker(conversation),
             name=f"conversation-{conversation}",

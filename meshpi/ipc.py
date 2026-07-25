@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import queue
+import socket
 import socketserver
 import threading
 from collections.abc import Callable
@@ -169,13 +170,22 @@ class IPCApplication:
 
 
 class _IPCServer(socketserver.ThreadingTCPServer):
-    allow_reuse_address = True
+    allow_reuse_address = os.name != "nt"
     daemon_threads = True
 
     def __init__(self, address: tuple[str, int], app: IPCApplication):
         self.app = app
         self._client_slots = threading.BoundedSemaphore(MAX_IPC_CLIENTS)
         super().__init__(address, _IPCHandler)
+
+    def server_bind(self) -> None:
+        if os.name == "nt":
+            self.socket.setsockopt(
+                socket.SOL_SOCKET,
+                socket.SO_EXCLUSIVEADDRUSE,
+                1,
+            )
+        super().server_bind()
 
     def process_request(self, request: Any, client_address: Any) -> None:
         if not self._client_slots.acquire(blocking=False):
