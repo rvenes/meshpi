@@ -1370,20 +1370,37 @@ class MeshPiTUI(App[str | None]):
             ("message", message) for message in messages
         ]
         if conversation != "public":
-            timeline.extend(
+            actions = sorted(
                 (
-                    "node_action",
-                    action,
-                )
-                for action in sorted(
-                    self.node_action_entries.values(),
-                    key=lambda item: (
-                        str(item.get("started_at") or ""),
-                        str(item.get("action_id") or ""),
-                    ),
-                )
-                if action.get("node_id") == conversation
+                    action
+                    for action in self.node_action_entries.values()
+                    if action.get("node_id") == conversation
+                ),
+                key=lambda item: (
+                    str(item.get("started_at") or ""),
+                    str(item.get("action_id") or ""),
+                ),
             )
+            for action in actions:
+                started_at = str(action.get("started_at") or "")
+                insert_at = len(timeline)
+                if started_at:
+                    for index, (entry_type, entry) in enumerate(timeline):
+                        entry_time = str(
+                            entry.get(
+                                "timestamp"
+                                if entry_type == "message"
+                                else "started_at"
+                            )
+                            or ""
+                        )
+                        if entry_time and entry_time > started_at:
+                            insert_at = index
+                            break
+                timeline.insert(
+                    insert_at,
+                    ("node_action", action),
+                )
         for entry_type, entry in timeline:
             renderable = (
                 self._render_message(entry)

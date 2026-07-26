@@ -259,7 +259,7 @@ def test_status_bar_shows_current_meshpi_version():
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.7.0" in text
+            assert "MeshPi 0.7.1" in text
 
     run_scenario(scenario)
 
@@ -732,6 +732,68 @@ def test_saved_traceroute_is_loaded_into_dm_history():
                 "node_id": "!710365c8",
                 "limit": 100,
             } in backend.calls
+
+    run_scenario(scenario)
+
+
+def test_message_stays_below_older_traceroute_after_ack_refresh():
+    async def scenario():
+        backend = FakeBackend()
+        backend.node_actions["!710365c8"] = [
+            {
+                "action_id": "trace-before-message",
+                "action": "traceroute",
+                "node_id": "!710365c8",
+                "status": "completed",
+                "started_at": "2026-07-20T12:02:00+00:00",
+                "finished_at": "2026-07-20T12:02:05+00:00",
+                "result": {"forward": [], "return": None},
+            }
+        ]
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            app._open_node_dm("!710365c8", focus_input=True)
+            await pilot.pause(0.3)
+
+            outgoing = {
+                "timestamp": "2026-07-20T12:03:00+00:00",
+                "kind": "dm",
+                "direction": "ut",
+                "from_node": "!040840a0",
+                "peer_node": "!710365c8",
+                "transport": "Ukjend",
+                "status": "sendt",
+                "text": "Melding etter traceroute",
+            }
+            backend.messages["!710365c8"].append(outgoing)
+            app.post_message(LiveEvent({"type": "message", "data": outgoing}))
+            await pilot.pause(0.2)
+
+            message_log = app.query_one("#message-log", RichLog)
+            before_ack = "\n".join(line.text for line in message_log.lines)
+            assert before_ack.index("TRACEROUTE · FERDIG") < before_ack.index(
+                "Melding etter traceroute"
+            )
+
+            outgoing["status"] = "ACK"
+            app.post_message(
+                LiveEvent(
+                    {
+                        "type": "message_status",
+                        "data": {"packet_id": 123, "status": "ACK"},
+                    }
+                )
+            )
+            await pilot.pause(0.3)
+
+            after_ack = "\n".join(line.text for line in message_log.lines)
+            assert "[ACK]" in after_ack
+            assert after_ack.index("TRACEROUTE · FERDIG") < after_ack.index(
+                "Melding etter traceroute"
+            )
 
     run_scenario(scenario)
 

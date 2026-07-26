@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.7.0",
-  "published_at": "2026-07-26T02:09:27Z",
+  "latest_version": "0.7.1",
+  "published_at": "2026-07-26T02:50:42Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.7.0",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.7.1",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.7.0-py3-none-any.whl",
-    "filename": "meshpi-0.7.0-py3-none-any.whl",
-    "sha256": "95362432fbca013d23bc6dd217769f8818dd425e2c88d2f028fe6cf4c6aad1cf",
-    "size": 87696,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.7.1-py3-none-any.whl",
+    "filename": "meshpi-0.7.1-py3-none-any.whl",
+    "sha256": "794906f1f62e962922516ca646c983bb5cb3261168a0e7155ae1b6f5627475dd",
+    "size": 87813,
     "format": "wheel"
   },
   "locks": {
@@ -55,15 +55,11 @@
     }
   },
   "release_notes": [
-    "Den innebygde oppdateraren verifiserer signatur, storleik og SHA-256 før han køyrer ein lokal installatør.",
-    "Linux og macOS bruker privat Unix-socket; Windows held fram med eksklusiv loopback-TCP.",
-    "Sanntidsovervaking har eiga kvote, og fråkopla klientar frigjer plassen automatisk.",
-    "Utgjevingsnøklar kan roterast og tilbakekallast gjennom allowlista nøkkelregister.",
-    "Tenestekommandoar bruker kontrollerte absolutte programstiar, og nodesøk behandlar jokerteikn bokstavleg."
+    "ACK og andre statusoppdateringar flyttar ikkje lenger meldingar forbi eldre traceroute-resultat i samtalen."
   ],
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "sUNa/Z8gBO+d0pLt+ZImZaPGl62wpM09NHNqshhd4/YGwbb6NXX0bqkW/3XrwT4Bgl6V0IWJBGzvjmqO36yl+Aj4NIYOwWRwLB0cJN6+f9ubNMGitjJBI8IN6U7Rl3ouSxDQWjqD4tMmbw9Jgc/0/3U8/369wmY5YpWwFdyVCwkp+KE7f6ehINNRvJdBi3tIjd+rV4A0xTT7XsEuMlMPLQLZVoppcMJ0VRCI+TWSE9SzO9hYoBkg31D8ImuovuwA9X5KTbF/shyzwXgvgjkIyYvzUFiy3Sm2QgrVFTXfPM7azJ+hcrKjLuvlqeu75ZY7TglJYtFGeTt9NeO1+3gb/TKiM+YlE5y5/A7dfRk3AXgaWNzMJ5t4OSHNYK6TZGTSNKnOFKmzt6eiIBdTCn4Z6mxfjgN2yOzYfwi8lDl2DtrXah42sNr2yEfKOOhf4HsYismPGOWFrXgzclouUJy8XL0PShFGTGQgR5vES1YJ6pLZjFgIo6yqYWdDj5h9GXby"
+    "value": "QXvyUqlag2WlJIZ4rujCy1qT57XocuWH+AQriyW26yF5GQwsE1v/HgO3di7V+8SjaA830rED4Wops3CUnQga2uqrsnh/vx3GW4t2njxrsGSb7+jfJEdo8JoyZnp1BwvPIOolqzYGAYnIqipbfMPCjzA4yT1NOXrvj3q2DF9psjjLrgiNJJ1zT/MKVKFoNNJIcQX8I8GzE2N6Xf3HoCjtxDVnKPNau3VTeGKxFD+Q9NA3xMrBWAGttuwBX10rkWm3JnPNbaaQGqJl9t2QYzLNnplii7Mqb8ah+pa7z+0+VkCxyEF4HXcSrZS78toAHj8YSg97XDQeOYfSfE6u6M4de3h0tpULqaqu5eDnsKWD5Z4t+C0r3xYbt1YwN+ptajqthk5FWx0v6tZEE2EpCajMyzXchnc/tnWx8x2a7s3SDERPg/7Tdxuy48Qy2qf7+4a5ciH89Av8uvBXAL5Nqd/ZqN1E62MQJWJuYatZgIdrXncYfnSQQePoLZmRDsNhUkSV"
   }
 }

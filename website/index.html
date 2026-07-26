@@ -30,7 +30,7 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.7.0</div>
+        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.7.1</div>
         <h1>Meshtastic-chat.<br><span>Rett i terminalen.</span></h1>
         <p class="lead">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
@@ -55,7 +55,7 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.7.0</b><i>●</i> Tilkopla
+          <b>MeshPi 0.7.1</b><i>●</i> Tilkopla
           <span>TCP meshtastic.local:4403</span>
         </div>
         <div class="terminal-grid">
@@ -339,21 +339,17 @@
       </div>
     </section>
 
-    <section id="release-0.7.0" class="section release-section">
+    <section id="release-0.7.1" class="section release-section">
       <div class="section-heading">
         <span>Siste versjon</span>
-        <h2>MeshPi 0.7.0</h2>
+        <h2>MeshPi 0.7.1</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li>Den innebygde oppdateraren verifiserer signatur, storleik og SHA-256 før han køyrer ein lokal installatør</li>
-          <li>Linux og macOS bruker privat Unix-socket; Windows held fram med eksklusiv loopback-TCP</li>
-          <li>Sanntidsovervaking har eiga kvote, og fråkopla klientar frigjer plassen automatisk</li>
-          <li>Utgjevingsnøklar kan roterast og tilbakekallast gjennom allowlista nøkkelregister</li>
-          <li>Tenestekommandoar bruker kontrollerte absolutte programstiar, og nodesøk behandlar jokerteikn bokstavleg</li>
+          <li>ACK og andre statusoppdateringar flyttar ikkje lenger meldingar forbi eldre traceroute-resultat i samtalen</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.7.0-py3-none-any.whl">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.7.1-py3-none-any.whl">Last ned Python-pakken</a>
           <a href="https://github.com/rvenes/meshpi">Kjeldekode på GitHub</a>
         </div>
       </div>
