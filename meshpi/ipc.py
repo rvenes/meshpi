@@ -93,6 +93,47 @@ class IPCApplication:
             if node is None:
                 raise ValueError(f"Fann ikkje noden {node_id}")
             return {"ok": True, "data": node}
+        if command == "node_overview":
+            node_id = normalize_node_id(str(request.get("node_id", "")))
+            node = self.database.get_node(node_id)
+            if node is None:
+                raise ValueError(f"Fann ikkje noden {node_id}")
+            return {
+                "ok": True,
+                "data": {
+                    "node": node,
+                    **self.database.node_observation_summary(node_id),
+                },
+            }
+        if command == "node_telemetry":
+            node_id = normalize_node_id(str(request.get("node_id", "")))
+            return {
+                "ok": True,
+                "data": self.database.list_telemetry(
+                    node_id,
+                    kind=str(request.get("kind", "")).strip() or None,
+                    limit=int(request.get("limit", 100)),
+                    before_id=(
+                        int(request["before_id"])
+                        if request.get("before_id") is not None
+                        else None
+                    ),
+                ),
+            }
+        if command == "node_positions":
+            node_id = normalize_node_id(str(request.get("node_id", "")))
+            return {
+                "ok": True,
+                "data": self.database.list_positions(
+                    node_id,
+                    limit=int(request.get("limit", 100)),
+                    before_id=(
+                        int(request["before_id"])
+                        if request.get("before_id") is not None
+                        else None
+                    ),
+                ),
+            }
         if command == "conversations":
             return {"ok": True, "data": self.database.conversations()}
         if command == "delete_messages":

@@ -133,6 +133,7 @@ def test_settings_load_env_file(tmp_path, monkeypatch):
         "IPC_TOKEN",
         "IPC_TRANSPORT",
         "LOG_LEVEL",
+        "OBSERVATION_RETENTION_DAYS",
         "UPDATE_URL",
         "UPDATE_TIMEOUT",
         "BACKGROUND_MODE",
@@ -141,7 +142,7 @@ def test_settings_load_env_file(tmp_path, monkeypatch):
     path = tmp_path / ".env"
     path.write_text(
         "MESHTASTIC_HOST=192.0.2.42\nMESHTASTIC_PORT=4403\nIPC_HOST=127.0.0.1\n"
-        "PYTHONPATH=/tmp/evil\n",
+        "OBSERVATION_RETENTION_DAYS=730\nPYTHONPATH=/tmp/evil\n",
         encoding="utf-8",
     )
     settings = Settings.load(path)
@@ -151,6 +152,7 @@ def test_settings_load_env_file(tmp_path, monkeypatch):
     assert settings.update_url == "https://venes.org/meshpi/version.json"
     assert settings.update_timeout == 3
     assert settings.background_mode == "always"
+    assert settings.observation_retention_days == 730
     assert settings.ipc_transport == "auto"
     assert settings.ipc_socket_path == settings.database_path.with_name("meshpi.sock")
     assert "PYTHONPATH" not in settings.__dataclass_fields__
@@ -281,10 +283,53 @@ def test_ipc_dispatch_and_validation(tmp_path):
         }
     )["data"]["available"] is True
     database.upsert_node(Node(node_id="!11112222", long_name="Test"))
+    common_observation = {
+        "node_id": "!11112222",
+        "sample_time": "2026-07-26T12:00:00+00:00",
+        "received_at": "2026-07-26T12:00:01+00:00",
+        "packet_id": 42,
+        "transport": "RF",
+        "rssi": -90,
+        "snr": 7.5,
+        "hop_limit": 3,
+        "hop_start": 3,
+        "gateway_profile_id": "tcp-test",
+        "gateway_node_id": "!aaaaaaaa",
+        "gateway_transport": "tcp",
+    }
+    database.insert_telemetry(
+        common_observation
+        | {
+            "dedupe_key": "ipc-telemetry-42",
+            "kind": "device",
+            "metrics": {"batteryLevel": 75},
+        }
+    )
+    database.insert_position(
+        common_observation
+        | {
+            "dedupe_key": "ipc-position-42",
+            "latitude": 60.123,
+            "longitude": 5.456,
+            "altitude_msl": 104,
+            "metadata": {},
+        }
+    )
     assert (
         app.dispatch({"command": "node", "node_id": "!11112222"})["data"]["long_name"]
         == "Test"
     )
+    overview = app.dispatch(
+        {"command": "node_overview", "node_id": "!11112222"}
+    )["data"]
+    assert overview["counts"]["telemetry"] == 1
+    assert overview["latest_position"]["altitude_msl"] == 104
+    assert app.dispatch(
+        {"command": "node_telemetry", "node_id": "!11112222"}
+    )["data"][0]["metrics"]["batteryLevel"] == 75
+    assert app.dispatch(
+        {"command": "node_positions", "node_id": "!11112222"}
+    )["data"][0]["latitude"] == 60.123
     with pytest.raises(ValueError):
         app.dispatch({"command": "messages", "conversation": "!kort"})
     with pytest.raises(ValueError):

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import re
 import socket
 import threading
 import time
@@ -9,9 +11,12 @@ from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime
 from typing import Any, BinaryIO
+from urllib.parse import urlencode
 
 from rich import box
 from rich.panel import Panel
+from rich.style import Style
+from rich.table import Table
 from rich.text import Text
 from textual import events, on
 from textual.app import App, ComposeResult
@@ -110,6 +115,163 @@ def _battery(value: Any) -> str:
     if value in (0, 101, "0", "101"):
         return "Straum"
     return f"{value}%"
+
+
+METRIC_PRESENTATION = {
+    "battery_level": ("Batteri", "%"),
+    "voltage": ("Spenning", "V"),
+    "channel_utilization": ("Kanalbruk", "%"),
+    "air_util_tx": ("Sendebruk av radiotid", "%"),
+    "uptime_seconds": ("Oppetid", "s"),
+    "temperature": ("Temperatur", "°C"),
+    "relative_humidity": ("Luftfukt", "%"),
+    "barometric_pressure": ("Lufttrykk", "hPa"),
+    "gas_resistance": ("Gassmotstand", "MΩ"),
+    "current": ("Straum", "A"),
+    "iaq": ("Luftkvalitetsindeks", ""),
+    "distance": ("Avstand", "mm"),
+    "lux": ("Lysstyrke", "lx"),
+    "white_lux": ("Kvitt lys", "lx"),
+    "ir_lux": ("Infraraudt lys", "lx"),
+    "uv_lux": ("UV-lys", "lx"),
+    "wind_direction": ("Vindretning", "°"),
+    "wind_speed": ("Vindfart", "m/s"),
+    "wind_gust": ("Vindkast", "m/s"),
+    "wind_lull": ("Lågaste vindfart", "m/s"),
+    "weight": ("Vekt", "kg"),
+    "rainfall_1h": ("Nedbør siste time", "mm"),
+    "rainfall_24h": ("Nedbør siste døgn", "mm"),
+    "soil_moisture": ("Jordfukt", "%"),
+    "soil_temperature": ("Jordtemperatur", "°C"),
+    "one_wire_temperature": ("Ekstern temperatur", "°C"),
+    "co2": ("CO₂", "ppm"),
+}
+
+TELEMETRY_KIND_LABELS = {
+    "device": "Eining",
+    "environment": "Miljø",
+    "air_quality": "Luftkvalitet",
+    "power": "Straum",
+    "local_stats": "Lokal statistikk",
+    "health": "Helse",
+    "host": "Vert",
+    "traffic_management": "Trafikkstyring",
+}
+
+METRIC_TABLE_ORDER = (
+    "air_util_tx",
+    "battery_level",
+    "channel_utilization",
+    "uptime_seconds",
+    "voltage",
+    "temperature",
+    "relative_humidity",
+    "barometric_pressure",
+    "gas_resistance",
+    "iaq",
+    "co2",
+)
+
+METRIC_TABLE_LABELS = {
+    "air_util_tx": "Sendebruk",
+    "channel_utilization": "Kanalbruk",
+    "relative_humidity": "Luftfukt",
+    "barometric_pressure": "Lufttrykk",
+    "gas_resistance": "Gassmotst.",
+    "uptime_seconds": "Oppetid",
+}
+
+
+def _canonical_metric_name(value: str) -> str:
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", value).replace("-", "_").lower()
+
+
+def _metric_label_and_value(name: str, value: Any) -> tuple[str, str]:
+    canonical = _canonical_metric_name(name)
+    label, unit = METRIC_PRESENTATION.get(
+        canonical,
+        (canonical.replace("_", " ").capitalize(), ""),
+    )
+    if canonical == "battery_level":
+        return label, _battery(value)
+    if canonical == "uptime_seconds":
+        try:
+            seconds = int(value)
+        except (TypeError, ValueError):
+            return label, str(value)
+        days, remainder = divmod(seconds, 86_400)
+        hours, remainder = divmod(remainder, 3_600)
+        minutes = remainder // 60
+        parts = []
+        if days:
+            parts.append(f"{days} d")
+        if hours or days:
+            parts.append(f"{hours} t")
+        parts.append(f"{minutes} min")
+        return label, " ".join(parts)
+    rendered = (
+        f"{value:.3f}".rstrip("0").rstrip(".")
+        if isinstance(value, float)
+        else str(value)
+    )
+    return label, f"{rendered} {unit}".rstrip()
+
+
+def _google_maps_url(position: dict[str, Any]) -> str:
+    latitude = float(position["latitude"])
+    longitude = float(position["longitude"])
+    query = urlencode({"api": "1", "query": f"{latitude:.7f},{longitude:.7f}"})
+    return f"https://www.google.com/maps/search/?{query}"
+
+
+def _map_link(url: str, label: str | None = None) -> Text:
+    style = Style(
+        color="cyan",
+        underline=True,
+        link=url,
+        meta={"@click": f"screen.open_map({url!r})"},
+    )
+    return Text(label or url, style=style)
+
+
+def _gateway_label(item: dict[str, Any]) -> str:
+    gateway = str(item.get("gateway_node_id") or "")
+    transport = str(item.get("transport") or "Ukjend")
+    parts = []
+    if gateway:
+        parts.append(f"via [{gateway[-4:]}]")
+    if transport != "Ukjend":
+        parts.append(transport)
+    return " · ".join(parts) or "mottaksveg ukjend"
+
+
+def _host_name() -> str:
+    try:
+        value = sanitize_terminal_text(socket.gethostname().strip())
+    except OSError:
+        value = ""
+    return value[:32] or "ukjend"
+
+
+def _fit_status_text(value: str, width: int) -> str:
+    if width <= 0:
+        return ""
+    if len(value) <= width:
+        return value
+    if width == 1:
+        return "…"
+    return value[: width - 1] + "…"
+
+
+def _fit_status_endpoint(transport: str, endpoint: str, width: int) -> str:
+    value = f"{transport}:{endpoint}" if transport else endpoint
+    if len(value) <= width:
+        return value
+    prefix = f"{transport}:" if transport else ""
+    if width <= len(prefix) + 1:
+        return _fit_status_text(value, width)
+    remaining = width - len(prefix) - 1
+    return prefix + "…" + endpoint[-remaining:]
 
 
 def _conversation_id(item: dict[str, Any]) -> str:
@@ -351,6 +513,7 @@ class NodeActionScreen(ModalScreen[str | None]):
         Binding("up", "previous_choice", "Førre val", priority=True),
         Binding("down", "next_choice", "Neste val", priority=True),
         Binding("t", "traceroute", "Traceroute", priority=True),
+        Binding("i", "node_info", "Nodeinfo", priority=True),
         Binding("escape", "cancel", "Avbryt", priority=True),
     ]
 
@@ -385,19 +548,27 @@ class NodeActionScreen(ModalScreen[str | None]):
                 id="node-action-traceroute",
                 disabled=local or not bool(self.availability.get("available")),
             )
+            yield Button("Nodeinfo og loggar  [I]", id="node-action-info")
             yield Button("Lukk", id="node-action-cancel")
             yield Static(
-                "↑/↓: vel   Enter: køyr   T: traceroute   Esc: lukk",
+                "↑/↓: vel   Enter: køyr   T: traceroute   I: nodeinfo   Esc: lukk",
                 id="node-action-help",
             )
 
     def on_mount(self) -> None:
-        target = "#node-action-cancel" if self.node.get("is_local") else "#node-action-open-dm"
+        target = (
+            "#node-action-info"
+            if self.node.get("is_local")
+            else "#node-action-open-dm"
+        )
         self.query_one(target, Button).focus()
         self.set_interval(1, self._update_traceroute_button)
 
     def _cooldown_remaining(self) -> int:
-        return max(0, math.ceil(self._cooldown_deadline - time.monotonic()))
+        return max(
+            0,
+            math.ceil(self._cooldown_deadline - time.monotonic() - 1e-6),
+        )
 
     def _traceroute_label(self) -> str:
         remaining = self._cooldown_remaining()
@@ -418,6 +589,7 @@ class NodeActionScreen(ModalScreen[str | None]):
         result = {
             "node-action-open-dm": "open_dm",
             "node-action-traceroute": "traceroute",
+            "node-action-info": "node_info",
             "node-action-cancel": None,
         }.get(event.button.id)
         self.dismiss(result)
@@ -452,7 +624,587 @@ class NodeActionScreen(ModalScreen[str | None]):
             return
         self.dismiss("traceroute")
 
+    def action_node_info(self) -> None:
+        self.dismiss("node_info")
+
     def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class NodeInfoScreen(ModalScreen[None]):
+    TABS = ("overview", "telemetry", "position", "traceroute")
+    BINDINGS = [
+        Binding("left", "previous_tab", "Førre fane", priority=True),
+        Binding("right", "next_tab", "Neste fane", priority=True),
+        Binding("o", "overview", "Oversikt", priority=True),
+        Binding("m", "telemetry", "Telemetri", priority=True),
+        Binding("p", "position", "Posisjon", priority=True),
+        Binding("t", "traceroute", "Traceroute", priority=True),
+        Binding("r", "run_traceroute", "Køyr traceroute", priority=True),
+        Binding("x", "exchange_position", "Utveksle posisjon", priority=True),
+        Binding("escape", "close", "Lukk", priority=True),
+    ]
+
+    def __init__(
+        self,
+        overview: dict[str, Any],
+        telemetry: list[dict[str, Any]],
+        positions: list[dict[str, Any]],
+        traceroutes: list[dict[str, Any]],
+        traceroute_formatter: Callable[
+            [dict[str, Any]],
+            tuple[str, str, str, str, str],
+        ],
+        action_callback: Callable[[str], None],
+        action_availability: dict[str, dict[str, Any]] | None = None,
+    ):
+        super().__init__()
+        self.overview_data = overview
+        self.telemetry = sorted(
+            (dict(sample) for sample in telemetry),
+            key=self._observation_sort_key,
+            reverse=True,
+        )
+        self.positions = sorted(
+            (dict(position) for position in positions),
+            key=self._observation_sort_key,
+            reverse=True,
+        )
+        self.traceroutes = sorted(
+            (dict(action) for action in traceroutes),
+            key=self._traceroute_sort_key,
+        )
+        self.traceroute_formatter = traceroute_formatter
+        self.action_callback = action_callback
+        self.current_tab = "overview"
+        now = time.monotonic()
+        availability = action_availability or {}
+        self._action_cooldown_until = {}
+        self._action_blocked = {}
+        for action in ("traceroute", "position_exchange"):
+            details = availability.get(action, {})
+            try:
+                cooldown = max(0, int(details.get("cooldown_seconds") or 0))
+            except (TypeError, ValueError):
+                cooldown = 0
+            self._action_cooldown_until[action] = now + cooldown
+            self._action_blocked[action] = (
+                not bool(details.get("available", True)) and cooldown == 0
+            )
+
+    @staticmethod
+    def _observation_sort_key(item: dict[str, Any]) -> tuple[str, int, str]:
+        try:
+            item_id = int(item.get("id") or 0)
+        except (TypeError, ValueError):
+            item_id = 0
+        return (
+            str(item.get("sample_time") or ""),
+            item_id,
+            str(item.get("dedupe_key") or ""),
+        )
+
+    @staticmethod
+    def _traceroute_sort_key(item: dict[str, Any]) -> tuple[str, str]:
+        return (
+            str(item.get("started_at") or ""),
+            str(item.get("action_id") or ""),
+        )
+
+    def compose(self) -> ComposeResult:
+        node = self.overview_data.get("node", {})
+        node_id = str(node.get("node_id") or "")
+        name = sanitize_terminal_text(
+            node.get("long_name") or node.get("short_name") or node_id
+        )
+        with Container(id="node-info-dialog"):
+            yield Label(
+                Text(f"Nodeinfo – {name} [{node_id[-4:]}]"),
+                id="node-info-title",
+            )
+            with Horizontal(id="node-info-tabs"):
+                yield Button("Oversikt [O]", id="node-info-tab-overview")
+                yield Button("Telemetri [M]", id="node-info-tab-telemetry")
+                yield Button("Posisjon [P]", id="node-info-tab-position")
+                yield Button("Traceroute [T]", id="node-info-tab-traceroute")
+            yield SelectableRichLog(
+                id="node-info-log",
+                wrap=True,
+                highlight=False,
+                markup=False,
+                auto_scroll=False,
+            )
+            with Horizontal(id="node-info-footer"):
+                yield Static(
+                    "←/→: fane   O/M/P/T: vel   Dra: merk   Esc: lukk",
+                    id="node-info-help",
+                )
+                yield Button(
+                    "Utveksle [X]",
+                    id="node-info-exchange-position",
+                    variant="primary",
+                )
+                yield Button(
+                    "Køyr trace [R]",
+                    id="node-info-run-traceroute",
+                    variant="primary",
+                )
+                yield Button("Lukk", id="node-info-close")
+
+    def on_mount(self) -> None:
+        self._show_tab("overview")
+        now = time.monotonic()
+        for action, deadline in self._action_cooldown_until.items():
+            remaining = deadline - now
+            if remaining > 0:
+                self.set_timer(
+                    remaining,
+                    lambda selected=action: self._end_action_cooldown(selected),
+                )
+
+    def _refresh_action_buttons(self) -> None:
+        node = self.overview_data.get("node", {})
+        local = bool(node.get("is_local")) if isinstance(node, dict) else False
+        now = time.monotonic()
+        exchange = self.query_one("#node-info-exchange-position", Button)
+        run_trace = self.query_one("#node-info-run-traceroute", Button)
+        exchange.display = self.current_tab == "position"
+        exchange.disabled = (
+            local
+            or self._action_blocked["position_exchange"]
+            or now < self._action_cooldown_until["position_exchange"]
+        )
+        run_trace.display = self.current_tab == "traceroute"
+        run_trace.disabled = (
+            local
+            or self._action_blocked["traceroute"]
+            or now < self._action_cooldown_until["traceroute"]
+        )
+
+    def _show_tab(self, tab: str) -> None:
+        if tab not in self.TABS:
+            return
+        self.current_tab = tab
+        for name in self.TABS:
+            button = self.query_one(f"#node-info-tab-{name}", Button)
+            button.variant = "success" if name == tab else "default"
+        self._refresh_action_buttons()
+        log = self.query_one("#node-info-log", RichLog)
+        log.clear()
+        {
+            "overview": self._render_overview,
+            "telemetry": self._render_telemetry,
+            "position": self._render_positions,
+            "traceroute": self._render_traceroutes,
+        }[tab](log)
+        log.scroll_home(animate=False)
+
+    @on(Button.Pressed, "#node-info-tabs Button")
+    def choose_tab(self, event: Button.Pressed) -> None:
+        if event.button.id:
+            self._show_tab(event.button.id.removeprefix("node-info-tab-"))
+
+    @on(Button.Pressed, "#node-info-close")
+    def close_with_mouse(self) -> None:
+        self.action_close()
+
+    @on(Button.Pressed, "#node-info-exchange-position")
+    def exchange_position_with_mouse(self) -> None:
+        self.action_exchange_position()
+
+    @on(Button.Pressed, "#node-info-run-traceroute")
+    def run_traceroute_with_mouse(self) -> None:
+        self.action_run_traceroute()
+
+    def _render_overview(self, log: RichLog) -> None:
+        node = self.overview_data.get("node", {})
+        text = Text()
+        fields = (
+            ("Node-ID", node.get("node_id")),
+            ("Kortnamn", node.get("short_name")),
+            ("Maskinvare", node.get("hw_model")),
+            ("Rolle", node.get("role")),
+            ("Sist høyrd", _time(node.get("last_heard"), seconds=True)),
+            ("Transport", node.get("transport")),
+            ("Hopp", node.get("hops_away")),
+            ("SNR", f"{node['snr']:g} dB" if node.get("snr") is not None else None),
+            ("RSSI", f"{node['rssi']} dBm" if node.get("rssi") is not None else None),
+        )
+        for label, value in fields:
+            if value not in (None, "", "Ukjend"):
+                text.append(f"{label:<15}", style="bold cyan")
+                text.append(f"{value}\n")
+
+        latest = self.overview_data.get("latest_telemetry", {})
+        if isinstance(latest, dict) and latest:
+            text.append("\nSiste telemetri\n", style="bold green")
+            for kind, sample in latest.items():
+                metrics = sample.get("metrics") if isinstance(sample, dict) else None
+                if not isinstance(metrics, dict):
+                    continue
+                text.append(
+                    f"{TELEMETRY_KIND_LABELS.get(str(kind), str(kind))}: ",
+                    style="bold",
+                )
+                rendered = [
+                    f"{label} {value}"
+                    for name, raw in metrics.items()
+                    for label, value in [_metric_label_and_value(str(name), raw)]
+                ]
+                text.append(" · ".join(rendered) + "\n")
+                text.append(
+                    f"  {_time(sample.get('sample_time'), seconds=True)} · "
+                    f"{_gateway_label(sample)}\n",
+                    style="dim",
+                )
+
+        position = self.overview_data.get("latest_position")
+        if isinstance(position, dict):
+            text.append(
+                "\nNodens plassering (sist rapportert)\n",
+                style="bold green",
+            )
+            text.append(
+                f"{position['latitude']:.7f}, {position['longitude']:.7f}"
+            )
+            if position.get("altitude_msl") is not None:
+                text.append(f" · {position['altitude_msl']} m over havet")
+            text.append(
+                f"\n  {_time(position.get('sample_time'), seconds=True)} · "
+                f"{_gateway_label(position)}\n",
+                style="dim",
+            )
+            url = _google_maps_url(position)
+            text.append("Google Maps: ", style="bold cyan")
+            text.append_text(_map_link(url))
+            text.append("\n")
+
+        counts = self.overview_data.get("counts", {})
+        text.append("\nLagra historikk\n", style="bold green")
+        text.append(
+            f"Telemetri: {int(counts.get('telemetry') or 0)} · "
+            f"Posisjonar: {int(counts.get('positions') or 0)} · "
+            f"Traceroutar: {int(counts.get('traceroutes') or 0)}"
+        )
+        log.write(Panel(text, border_style="cyan", box=box.SQUARE), scroll_end=False)
+
+    def _render_telemetry(self, log: RichLog) -> None:
+        if not self.telemetry:
+            log.write(Text("Ingen telemetri er logga for denne noden.", style="dim"))
+            return
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for sample in self.telemetry:
+            kind = str(sample.get("kind") or "telemetry")
+            grouped.setdefault(kind, []).append(sample)
+
+        for kind, samples in grouped.items():
+            normalized_metrics = []
+            metric_names: set[str] = set()
+            for sample in samples:
+                metrics = sample.get("metrics")
+                normalized = (
+                    {
+                        _canonical_metric_name(str(name)): value
+                        for name, value in metrics.items()
+                    }
+                    if isinstance(metrics, dict)
+                    else {}
+                )
+                normalized_metrics.append(normalized)
+                metric_names.update(normalized)
+            ordered_names = [
+                name for name in METRIC_TABLE_ORDER if name in metric_names
+            ]
+            ordered_names.extend(sorted(metric_names.difference(ordered_names)))
+
+            table = Table(
+                title=Text(
+                    TELEMETRY_KIND_LABELS.get(kind, kind.capitalize()),
+                    style="bold green",
+                ),
+                title_justify="left",
+                box=box.SIMPLE_HEAD,
+                show_edge=False,
+                pad_edge=False,
+                collapse_padding=True,
+            )
+            table.add_column("Tid", style="dim", no_wrap=True)
+            table.add_column("Via", style="dim", no_wrap=True)
+            for name in ordered_names:
+                label = METRIC_TABLE_LABELS.get(
+                    name,
+                    METRIC_PRESENTATION.get(
+                        name,
+                        (name.replace("_", " ").capitalize(), ""),
+                    )[0],
+                )
+                table.add_column(
+                    Text(str(label), style="bold cyan"),
+                    no_wrap=True,
+                )
+
+            for sample, metrics in zip(samples, normalized_metrics, strict=True):
+                values = []
+                for name in ordered_names:
+                    raw = metrics.get(name)
+                    values.append(
+                        "–"
+                        if raw is None
+                        else _metric_label_and_value(name, raw)[1]
+                    )
+                table.add_row(
+                    Text(_time(sample.get("sample_time"), seconds=True)),
+                    Text(_gateway_label(sample).removeprefix("via ")),
+                    *(Text(str(value)) for value in values),
+                )
+            log.write(table, scroll_end=False)
+
+    def _render_positions(self, log: RichLog) -> None:
+        if not self.positions:
+            log.write(Text("Ingen posisjonar er logga for denne noden.", style="dim"))
+            return
+
+        table = Table(
+            title="Posisjonslogg",
+            title_justify="left",
+            title_style="bold green",
+            box=box.SIMPLE_HEAD,
+            show_edge=False,
+            pad_edge=False,
+            collapse_padding=True,
+        )
+        for label in (
+            "Tid",
+            "Via",
+            "Breiddegrad",
+            "Lengdegrad",
+            "Høgd MSL",
+            "HAE",
+            "Sat.",
+            "GPS-pres.",
+            "PDOP",
+        ):
+            table.add_column(
+                label,
+                header_style="bold cyan",
+                no_wrap=label not in {"Via"},
+            )
+
+        for position in self.positions:
+            table.add_row(
+                Text(_time(position.get("sample_time"), seconds=True)),
+                Text(_gateway_label(position).removeprefix("via ")),
+                Text(f"{position['latitude']:.7f}"),
+                Text(f"{position['longitude']:.7f}"),
+                Text(
+                    f"{position['altitude_msl']} m"
+                    if position.get("altitude_msl") is not None
+                    else "–"
+                ),
+                Text(
+                    f"{position['altitude_hae']} m"
+                    if position.get("altitude_hae") is not None
+                    else "–"
+                ),
+                Text(str(position.get("sats_in_view") or "–")),
+                Text(
+                    f"{position['gps_accuracy_mm']} mm"
+                    if position.get("gps_accuracy_mm") is not None
+                    else "–"
+                ),
+                Text(
+                    f"{position['pdop']:g}"
+                    if position.get("pdop") is not None
+                    else "–"
+                ),
+            )
+        log.write(table, scroll_end=False)
+
+        links = Table(
+            title="Kartlenkjer",
+            title_justify="left",
+            title_style="bold green",
+            box=box.SIMPLE_HEAD,
+            show_edge=False,
+            pad_edge=False,
+            collapse_padding=True,
+        )
+        links.add_column("Tid", style="dim", no_wrap=True)
+        links.add_column("Google Maps", header_style="bold cyan", overflow="fold")
+        for position in self.positions:
+            url = _google_maps_url(position)
+            links.add_row(
+                Text(_time(position.get("sample_time"), seconds=True)),
+                _map_link(url),
+            )
+        log.write(links, scroll_end=False)
+
+    def _render_traceroutes(self, log: RichLog) -> None:
+        if not self.traceroutes:
+            log.write(Text("Ingen traceroutar er logga for denne noden.", style="dim"))
+            return
+
+        table = Table(
+            title="Traceroute-logg",
+            title_justify="left",
+            title_style="bold green",
+            box=box.SIMPLE_HEAD,
+            show_edge=False,
+            pad_edge=False,
+            collapse_padding=True,
+        )
+        table.add_column("Tid", style="dim", no_wrap=True)
+        table.add_column("Status", no_wrap=True)
+        table.add_column("Hopp F/T", justify="right", no_wrap=True)
+        table.add_column("Fram", overflow="fold")
+        table.add_column("Tilbake / feil", overflow="fold")
+        for action in self.traceroutes:
+            table.add_row(
+                *(Text(str(cell)) for cell in self.traceroute_formatter(action))
+            )
+        log.write(table, scroll_end=False)
+
+    def upsert_traceroute(self, action: dict[str, Any]) -> None:
+        action_id = str(action.get("action_id") or "")
+        if not action_id:
+            return
+        rank = {"started": 0, "completed": 1, "failed": 1}
+        for index, previous in enumerate(self.traceroutes):
+            if str(previous.get("action_id") or "") == action_id:
+                if rank.get(str(previous.get("status") or "started"), 0) > rank.get(
+                    str(action.get("status") or "started"),
+                    0,
+                ):
+                    return
+                self.traceroutes[index] = dict(action)
+                break
+        else:
+            self.traceroutes.append(dict(action))
+        self.traceroutes.sort(key=self._traceroute_sort_key)
+        if self.current_tab == "traceroute":
+            self._show_tab("traceroute")
+
+    def upsert_position(self, position: dict[str, Any]) -> None:
+        dedupe_key = str(position.get("dedupe_key") or "")
+        inserted = True
+        if dedupe_key:
+            for index, previous in enumerate(self.positions):
+                if str(previous.get("dedupe_key") or "") == dedupe_key:
+                    self.positions[index] = dict(position)
+                    inserted = False
+                    break
+        if inserted:
+            self.positions.append(dict(position))
+            counts = self.overview_data.setdefault("counts", {})
+            if isinstance(counts, dict):
+                counts["positions"] = int(counts.get("positions") or 0) + 1
+        self.positions.sort(key=self._observation_sort_key, reverse=True)
+        if self.positions:
+            self.overview_data["latest_position"] = dict(self.positions[0])
+        if self.current_tab in {"overview", "position"}:
+            self._show_tab(self.current_tab)
+
+    def upsert_telemetry(self, sample: dict[str, Any]) -> None:
+        dedupe_key = str(sample.get("dedupe_key") or "")
+        inserted = True
+        if dedupe_key:
+            for index, previous in enumerate(self.telemetry):
+                if str(previous.get("dedupe_key") or "") == dedupe_key:
+                    self.telemetry[index] = dict(sample)
+                    inserted = False
+                    break
+        if inserted:
+            self.telemetry.append(dict(sample))
+            counts = self.overview_data.setdefault("counts", {})
+            if isinstance(counts, dict):
+                counts["telemetry"] = int(counts.get("telemetry") or 0) + 1
+        self.telemetry.sort(key=self._observation_sort_key, reverse=True)
+        kind = str(sample.get("kind") or "telemetry")
+        newest = next(
+            (
+                candidate
+                for candidate in self.telemetry
+                if str(candidate.get("kind") or "telemetry") == kind
+            ),
+            None,
+        )
+        if newest is not None:
+            latest = self.overview_data.setdefault("latest_telemetry", {})
+            if isinstance(latest, dict):
+                latest[kind] = dict(newest)
+        if self.current_tab in {"overview", "telemetry"}:
+            self._show_tab(self.current_tab)
+
+    def _move_tab(self, direction: int) -> None:
+        current = self.TABS.index(self.current_tab)
+        self._show_tab(self.TABS[(current + direction) % len(self.TABS)])
+
+    def action_previous_tab(self) -> None:
+        self._move_tab(-1)
+
+    def action_next_tab(self) -> None:
+        self._move_tab(1)
+
+    def action_overview(self) -> None:
+        self._show_tab("overview")
+
+    def action_telemetry(self) -> None:
+        self._show_tab("telemetry")
+
+    def action_position(self) -> None:
+        self._show_tab("position")
+
+    def action_traceroute(self) -> None:
+        self._show_tab("traceroute")
+
+    def action_run_traceroute(self) -> None:
+        if self.current_tab != "traceroute":
+            self._show_tab("traceroute")
+            return
+        button = self.query_one("#node-info-run-traceroute", Button)
+        if button.disabled or not button.display:
+            return
+        self._action_cooldown_until["traceroute"] = time.monotonic() + 30
+        button.disabled = True
+        self.set_timer(30, lambda: self._end_action_cooldown("traceroute"))
+        self.action_callback("traceroute")
+
+    def action_exchange_position(self) -> None:
+        if self.current_tab != "position":
+            self._show_tab("position")
+            return
+        button = self.query_one("#node-info-exchange-position", Button)
+        if button.disabled or not button.display:
+            return
+        self._action_cooldown_until["position_exchange"] = time.monotonic() + 30
+        button.disabled = True
+        self.set_timer(
+            30,
+            lambda: self._end_action_cooldown("position_exchange"),
+        )
+        self.action_callback("position_exchange")
+
+    def _end_action_cooldown(self, action: str) -> None:
+        self._action_cooldown_until[action] = 0.0
+        if self.is_mounted:
+            self._refresh_action_buttons()
+
+    def clear_action_cooldown(self, action: str) -> None:
+        self._end_action_cooldown(action)
+
+    def action_open_map(self, url: str) -> None:
+        if not url.startswith("https://www.google.com/maps/search/?"):
+            self.notify("Ugyldig kartlenkje", severity="error")
+            return
+        if os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY"):
+            self.notify(
+                "Bruk Ctrl+klikk for å opne lenkja på maskina di.",
+                title="Google Maps over SSH",
+            )
+            return
+        self.app.open_url(url)
+
+    def action_close(self) -> None:
         self.dismiss(None)
 
 
@@ -777,7 +1529,7 @@ class MeshPiTUI(App[str | None]):
     #node-action-dialog {
         width: 58;
         max-width: 94%;
-        height: 25;
+        height: 29;
         padding: 1 2;
         border: round $accent;
         background: $panel;
@@ -803,6 +1555,68 @@ class MeshPiTUI(App[str | None]):
         height: 2;
         color: #8d9699;
         content-align: center middle;
+    }
+
+    NodeInfoScreen {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.72);
+    }
+
+    #node-info-dialog {
+        width: 112;
+        max-width: 96%;
+        height: 46;
+        max-height: 94%;
+        padding: 1 2;
+        border: round $accent;
+        background: $panel;
+    }
+
+    #node-info-title {
+        height: 2;
+        color: $accent;
+        text-style: bold;
+    }
+
+    #node-info-tabs {
+        height: 3;
+        margin-bottom: 1;
+    }
+
+    #node-info-tabs Button {
+        width: 1fr;
+        min-width: 10;
+    }
+
+    #node-info-footer {
+        height: 3;
+        margin-top: 1;
+    }
+
+    #node-info-footer Button {
+        width: auto;
+        min-width: 14;
+        margin-left: 1;
+    }
+
+    #node-info-close {
+        min-width: 10;
+    }
+
+    #node-info-log {
+        height: 1fr;
+        padding: 0 1;
+        border: round #394245;
+        background: $panel;
+        scrollbar-color: $accent;
+        scrollbar-background: $panel;
+    }
+
+    #node-info-help {
+        width: 1fr;
+        height: 3;
+        color: #8d9699;
+        content-align: left middle;
     }
 
     QuitScreen {
@@ -888,7 +1702,7 @@ class MeshPiTUI(App[str | None]):
         Binding("delete", "archive_conversation", "Lukk DM"),
         Binding("ctrl+r", "refresh", "Oppdater"),
         Binding("ctrl+u", "copy_update_command", "Kopier oppdatering", priority=True),
-        Binding("ctrl+q", "quit", "Avslutt"),
+        Binding("ctrl+q", "quit", "Avslutt", priority=True),
     ]
 
     def __init__(
@@ -903,6 +1717,7 @@ class MeshPiTUI(App[str | None]):
         self.requester = requester
         self.watcher = watcher
         self.update_checker = update_checker
+        self.host_name = _host_name()
         self.status_data: dict[str, Any] = {
             "state": "koplar til" if settings.meshtastic_host else "ingen node",
             "transport": "tcp" if settings.meshtastic_host else None,
@@ -1003,6 +1818,7 @@ class MeshPiTUI(App[str | None]):
         conversation_panel.display = width >= 62
         conversation_panel.styles.width = 34 if width >= 125 else 31 if width >= 90 else 25
         input_help.display = width >= 76
+        self._update_status_bar()
 
     def on_unmount(self) -> None:
         self._watch_stop.set()
@@ -1101,35 +1917,93 @@ class MeshPiTUI(App[str | None]):
     def _update_status_bar(self) -> None:
         if not self.is_mounted:
             return
+        try:
+            status_widget = self.query_one("#status-bar", Static)
+        except NoMatches:
+            # A timer may fire while Textual is dismantling the screen.
+            return
         status = self.status_data
         state = str(status.get("state", "ukjend"))
         state_style = "bold green" if state == "tilkopla" else "bold yellow"
         local_id = str(status.get("local_node_id") or "–")
         local_node = self.nodes.get(local_id, {})
         local_name = local_node.get("short_name") or local_node.get("long_name") or local_id
-        text = Text()
-        text.append(f"MeshPi {__version__}", style="bold green")
-        text.append("  │  ")
-        text.append("● ", style="green" if state == "tilkopla" else "yellow")
-        text.append(state.capitalize(), style=state_style)
-        text.append("  │  Lokal node: ")
-        text.append(f"{local_name} [{local_id[-4:]}]", style="green")
         transport = str(status.get("transport") or "").upper()
         endpoint = str(status.get("endpoint") or "")
-        if len(endpoint) > 46:
-            endpoint = "…" + endpoint[-45:]
-        if endpoint:
-            text.append(f"  │  {transport}: ")
-            text.append(endpoint, style="cyan")
-        else:
-            text.append("  │  Ingen Meshtastic-node vald", style="yellow")
-        text.append("  │  ")
-        text.append(datetime.now().astimezone().strftime("%H:%M:%S"), style="cyan")
-        try:
-            self.query_one("#status-bar", Static).update(text)
-        except NoMatches:
-            # A timer may fire while Textual is dismantling the screen.
-            return
+        clock = datetime.now().astimezone().strftime("%H:%M:%S")
+        width = status_widget.content_size.width
+        if width <= 0:
+            width = max(1, self.size.width - 6)
+
+        state_label = f"● {state.capitalize()}"
+        fixed: list[tuple[str, str | None]] = [
+            (state_label, state_style),
+            (clock, "cyan"),
+        ]
+        version: tuple[str, str | None] | None = None
+        local: tuple[str, str | None] | None = None
+        if width >= 125:
+            version = (f"MeshPi {__version__}", "bold green")
+            local_label = _fit_status_text(
+                f"Lokal: {local_name} [{local_id[-4:]}]",
+                28,
+            )
+            local = (local_label, "green")
+        elif width >= 88:
+            local = (f"L:{local_id[-4:]}", "green")
+
+        item_count = len(fixed) + 2 + int(version is not None) + int(local is not None)
+        separator_width = 3 * (item_count - 1)
+        fixed_width = sum(len(value) for value, _ in fixed)
+        if version is not None:
+            fixed_width += len(version[0])
+        if local is not None:
+            fixed_width += len(local[0])
+        dynamic_width = max(8, width - separator_width - fixed_width)
+        host_source = (
+            f"Vert: {self.host_name}" if width >= 125 else self.host_name
+        )
+        host_width = min(len(host_source), max(4, dynamic_width // 3))
+        endpoint_width = max(4, dynamic_width - host_width)
+        host = _fit_status_text(host_source, host_width)
+        endpoint_label = (
+            _fit_status_endpoint(transport, endpoint, endpoint_width)
+            if endpoint
+            else _fit_status_text("Ingen node", endpoint_width)
+        )
+
+        items: list[tuple[str, str | None]] = []
+        if version is not None:
+            items.append(version)
+        items.append((host, "bold cyan"))
+        items.append(
+            (
+                state_label,
+                state_style,
+            )
+        )
+        if local is not None:
+            items.append(local)
+        items.append(
+            (
+                endpoint_label,
+                "cyan" if endpoint else "yellow",
+            )
+        )
+        items.append((clock, "cyan"))
+
+        text = Text()
+        for index, (value, style) in enumerate(items):
+            if index:
+                text.append(" │ ")
+            if value.startswith("● "):
+                text.append("● ", style="green" if state == "tilkopla" else "yellow")
+                text.append(value[2:], style=style)
+            else:
+                text.append(value, style=style)
+        if text.cell_len > width:
+            text.truncate(width, overflow="ellipsis")
+        status_widget.update(text)
 
     def _with_public(self, conversations: list[dict[str, Any]]) -> list[dict[str, Any]]:
         public = next(
@@ -1544,6 +2418,59 @@ class MeshPiTUI(App[str | None]):
             expand=True,
         )
 
+    def _format_traceroute_table_row(
+        self,
+        action: dict[str, Any],
+    ) -> tuple[str, str, str, str, str]:
+        date_label, time_label = _message_time_parts(action.get("started_at"))
+        timestamp = f"{date_label or ''} {time_label}".strip()
+        status = str(action.get("status") or "started")
+        status_label = {
+            "started": "Ventar",
+            "completed": "Ferdig",
+            "failed": "Feila",
+        }.get(status, status)
+        if status == "failed":
+            return (
+                timestamp,
+                status_label,
+                "–",
+                "–",
+                sanitize_terminal_text(action.get("error") or "Ukjend feil"),
+            )
+        result = action.get("result")
+        if status != "completed" or not isinstance(result, dict):
+            return timestamp, status_label, "–", "Ventar på svar", "–"
+        return (
+            timestamp,
+            status_label,
+            self._traceroute_hop_summary(result),
+            self._traceroute_path_summary(result.get("forward")),
+            self._traceroute_path_summary(result.get("return")),
+        )
+
+    @staticmethod
+    def _traceroute_hop_summary(result: dict[str, Any]) -> str:
+        def count(path: Any) -> str:
+            return str(max(0, len(path) - 1)) if isinstance(path, list) else "–"
+
+        return f"{count(result.get('forward'))}/{count(result.get('return'))}"
+
+    def _traceroute_path_summary(self, path: Any) -> str:
+        if not isinstance(path, list) or not path:
+            return "Ikkje rapportert"
+        parts = []
+        for hop in path:
+            if not isinstance(hop, dict):
+                continue
+            node_id = str(hop.get("node_id") or "")
+            label = self._node_action_label(node_id)
+            snr = hop.get("snr")
+            if snr is not None:
+                label += f" ({snr:g} dB)"
+            parts.append(label)
+        return " → ".join(parts) or "Ikkje rapportert"
+
     def _show_node(self, node: dict[str, Any] | None) -> None:
         panel = self.query_one("#node-details", Static)
         if not node:
@@ -1688,6 +2615,28 @@ class MeshPiTUI(App[str | None]):
             return
         if event_type == "node_action":
             self._handle_node_action(event.get("data", {}))
+            return
+        if event_type == "position":
+            data = event.get("data", {})
+            screen = self.screen
+            if (
+                isinstance(data, dict)
+                and isinstance(screen, NodeInfoScreen)
+                and screen.overview_data.get("node", {}).get("node_id")
+                == data.get("node_id")
+            ):
+                screen.upsert_position(data)
+            return
+        if event_type == "telemetry":
+            data = event.get("data", {})
+            screen = self.screen
+            if (
+                isinstance(data, dict)
+                and isinstance(screen, NodeInfoScreen)
+                and screen.overview_data.get("node", {}).get("node_id")
+                == data.get("node_id")
+            ):
+                screen.upsert_telemetry(data)
             return
         if event_type != "message":
             return
@@ -1851,6 +2800,15 @@ class MeshPiTUI(App[str | None]):
     def _node_action_chosen(self, node_id: str, action: str | None) -> None:
         if action == "open_dm":
             self._open_node_dm(node_id, focus_input=False)
+        elif action == "node_info":
+            self.run_worker(
+                lambda: self._node_info_worker(node_id),
+                name=f"node-info-{node_id}",
+                group="node-info",
+                thread=True,
+                exclusive=True,
+                exit_on_error=False,
+            )
         elif action == "traceroute":
             self._open_node_dm(node_id, focus_input=False)
             self.run_worker(
@@ -1862,6 +2820,90 @@ class MeshPiTUI(App[str | None]):
                 exit_on_error=False,
             )
 
+    def _node_info_worker(self, node_id: str) -> None:
+        try:
+            overview = self._call(
+                {"command": "node_overview", "node_id": node_id}
+            )["data"]
+            latest = overview.get("latest_telemetry", {})
+            kinds = list(latest) if isinstance(latest, dict) else []
+            if kinds:
+                telemetry = []
+                for kind in kinds:
+                    telemetry.extend(
+                        self._call(
+                            {
+                                "command": "node_telemetry",
+                                "node_id": node_id,
+                                "kind": str(kind),
+                                "limit": 200,
+                            }
+                        )["data"]
+                    )
+            else:
+                telemetry = self._call(
+                    {
+                        "command": "node_telemetry",
+                        "node_id": node_id,
+                        "limit": 200,
+                    }
+                )["data"]
+            positions = self._call(
+                {
+                    "command": "node_positions",
+                    "node_id": node_id,
+                    "limit": 100,
+                }
+            )["data"]
+            traceroutes = self._call(
+                {
+                    "command": "node_actions",
+                    "action": "traceroute",
+                    "node_id": node_id,
+                    "limit": 100,
+                }
+            )["data"]
+            action_availability = {
+                action: self._call(
+                    {
+                        "command": "node_action_availability",
+                        "action": action,
+                        "node_id": node_id,
+                    }
+                )["data"]
+                for action in ("traceroute", "position_exchange")
+            }
+        except Exception as exc:
+            self.call_from_thread(
+                self.notify,
+                f"Klarte ikkje laste nodeinfo: {exc}",
+                severity="error",
+                timeout=8,
+            )
+            return
+        self.call_from_thread(
+            self.push_screen,
+            NodeInfoScreen(
+                overview,
+                telemetry,
+                positions,
+                traceroutes,
+                self._format_traceroute_table_row,
+                lambda action: self._node_info_action_requested(node_id, action),
+                action_availability,
+            ),
+        )
+
+    def _node_info_action_requested(self, node_id: str, action: str) -> None:
+        self.run_worker(
+            lambda: self._start_node_action_worker(node_id, action),
+            name=f"node-info-action-{action}",
+            group=f"node-info-action-{action}",
+            thread=True,
+            exclusive=True,
+            exit_on_error=False,
+        )
+
     def _start_node_action_worker(self, node_id: str, action: str) -> None:
         try:
             data = self._call(
@@ -1872,32 +2914,89 @@ class MeshPiTUI(App[str | None]):
                 }
             )["data"]
         except Exception as exc:
+            label = (
+                "traceroute"
+                if action == "traceroute"
+                else "posisjonsutveksling"
+            )
             self.call_from_thread(
                 self.notify,
-                f"Klarte ikkje starte traceroute: {exc}",
+                f"Klarte ikkje starte {label}: {exc}",
                 severity="error",
                 timeout=8,
+            )
+            self.call_from_thread(
+                self._clear_node_info_action_cooldown,
+                node_id,
+                action,
             )
             return
         self.call_from_thread(self._handle_node_action, data)
 
+    def _clear_node_info_action_cooldown(
+        self,
+        node_id: str,
+        action: str,
+    ) -> None:
+        screen = self.screen
+        if (
+            isinstance(screen, NodeInfoScreen)
+            and screen.overview_data.get("node", {}).get("node_id") == node_id
+        ):
+            screen.clear_action_cooldown(action)
+
     def _handle_node_action(self, action: dict[str, Any]) -> None:
-        if action.get("action") != "traceroute":
+        action_name = str(action.get("action") or "")
+        if action_name not in {"traceroute", "position_exchange"}:
             return
         action_id = str(action.get("action_id") or "")
         if not action_id:
             return
         status = str(action.get("status") or "started")
+        node_id = str(action.get("node_id") or "")
+        if action_name == "position_exchange":
+            label = self._node_action_label(node_id)
+            share_notice = self._position_share_notice(action)
+            if status == "started":
+                message = f"Posisjonsførespurnad til {label} er sendt."
+                if share_notice:
+                    message += f" {share_notice}"
+                self.notify(
+                    message,
+                    timeout=8,
+                )
+            elif status == "failed":
+                self.notify(
+                    f"Posisjonsutveksling feila: "
+                    f"{action.get('error', 'ukjend feil')}",
+                    severity="error",
+                    timeout=10,
+                )
+            else:
+                message = f"Posisjonssvar frå {label} er motteke."
+                if share_notice:
+                    message += f" {share_notice}"
+                self.notify(
+                    message,
+                    timeout=10,
+                )
+            return
+
         previous = self.node_action_entries.get(action_id)
         rank = {"started": 0, "completed": 1, "failed": 1}
         if previous is not None:
             previous_status = str(previous.get("status") or "started")
             if rank.get(previous_status, 0) > rank.get(status, 0):
                 return
-            if previous == action:
-                return
+        if previous == action:
+            return
         self.node_action_entries[action_id] = dict(action)
-        node_id = str(action.get("node_id") or "")
+        screen = self.screen
+        if (
+            isinstance(screen, NodeInfoScreen)
+            and screen.overview_data.get("node", {}).get("node_id") == node_id
+        ):
+            screen.upsert_traceroute(action)
         if node_id == self.current_conversation:
             self.select_conversation(node_id)
         if status == "started":
@@ -1918,6 +3017,26 @@ class MeshPiTUI(App[str | None]):
                 f"Traceroute til {self._node_action_label(node_id)} er ferdig",
                 timeout=7,
             )
+
+    @staticmethod
+    def _position_share_notice(action: dict[str, Any]) -> str:
+        result = action.get("result")
+        details = result if isinstance(result, dict) else action
+        if "local_position_shared" not in details:
+            return ""
+        if details.get("local_position_shared"):
+            precision = details.get("local_position_precision_bits")
+            if precision is not None:
+                return (
+                    "Eigen posisjon blei delt med "
+                    f"{precision} bits presisjon."
+                )
+            return "Eigen posisjon blei delt."
+        reason = sanitize_terminal_text(
+            details.get("local_position_share_reason") or ""
+        )
+        suffix = f" ({reason})" if reason else ""
+        return f"Eigen posisjon blei ikkje delt{suffix}."
 
     def action_new_dm(self) -> None:
         self.push_screen(NewDMScreen(list(self.nodes.values())), self._open_new_dm)
@@ -2016,6 +3135,8 @@ class MeshPiTUI(App[str | None]):
             self.push_screen(HelpScreen())
 
     def action_quit(self) -> None:
+        if isinstance(self.screen, QuitScreen):
+            return
         self.push_screen(QuitScreen(self.settings.background_mode), self._finish_quit)
 
     def _finish_quit(self, result: str | None) -> None:

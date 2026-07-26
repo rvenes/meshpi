@@ -5,6 +5,7 @@ import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +64,66 @@ CREATE TABLE IF NOT EXISTS node_actions (
 CREATE INDEX IF NOT EXISTS node_actions_node_time
 ON node_actions(node_id, started_at);
 
+CREATE TABLE IF NOT EXISTS telemetry_samples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dedupe_key TEXT NOT NULL UNIQUE,
+    packet_id INTEGER,
+    node_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    sample_time TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    metrics TEXT NOT NULL,
+    transport TEXT NOT NULL,
+    rssi INTEGER,
+    snr REAL,
+    hop_limit INTEGER,
+    hop_start INTEGER,
+    gateway_profile_id TEXT,
+    gateway_node_id TEXT,
+    gateway_transport TEXT
+);
+
+CREATE INDEX IF NOT EXISTS telemetry_node_kind_time
+ON telemetry_samples(node_id, kind, sample_time DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS positions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dedupe_key TEXT NOT NULL UNIQUE,
+    packet_id INTEGER,
+    node_id TEXT NOT NULL,
+    sample_time TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    altitude_msl INTEGER,
+    altitude_hae INTEGER,
+    geoidal_separation INTEGER,
+    pdop REAL,
+    hdop REAL,
+    vdop REAL,
+    gps_accuracy_mm INTEGER,
+    ground_speed REAL,
+    ground_track REAL,
+    fix_quality INTEGER,
+    fix_type INTEGER,
+    sats_in_view INTEGER,
+    location_source TEXT,
+    altitude_source TEXT,
+    precision_bits INTEGER,
+    metadata TEXT,
+    transport TEXT NOT NULL,
+    rssi INTEGER,
+    snr REAL,
+    hop_limit INTEGER,
+    hop_start INTEGER,
+    gateway_profile_id TEXT,
+    gateway_node_id TEXT,
+    gateway_transport TEXT
+);
+
+CREATE INDEX IF NOT EXISTS positions_node_time
+ON positions(node_id, sample_time DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS nodes (
     node_id TEXT PRIMARY KEY,
     node_num INTEGER,
@@ -85,10 +146,17 @@ CREATE TABLE IF NOT EXISTS nodes (
 
 
 class Database:
-    def __init__(self, path: str | Path, max_messages: int = 50_000):
+    def __init__(
+        self,
+        path: str | Path,
+        max_messages: int = 50_000,
+        observation_retention_days: int = 365,
+    ):
         self.path = Path(path)
         self.max_messages = max(1_000, max_messages)
+        self.observation_retention_days = max(1, observation_retention_days)
         self._inserts_since_prune = 0
+        self._observations_since_prune = 0
 
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -105,6 +173,7 @@ class Database:
                 (str(MessageStatus.ACKNOWLEDGED),),
             )
             self._prune_messages(connection)
+            self._prune_observations(connection)
 
     def _prune_messages(self, connection: sqlite3.Connection) -> None:
         connection.execute(
@@ -116,6 +185,26 @@ class Database:
             """,
             (self.max_messages,),
         )
+
+    def _prune_observations(self, connection: sqlite3.Connection) -> None:
+        cutoff = (
+            datetime.now(timezone.utc)
+            - timedelta(days=self.observation_retention_days)
+        ).isoformat(timespec="seconds")
+        connection.execute(
+            "DELETE FROM telemetry_samples WHERE received_at < ?",
+            (cutoff,),
+        )
+        connection.execute(
+            "DELETE FROM positions WHERE received_at < ?",
+            (cutoff,),
+        )
+
+    def _record_observation_insert(self, connection: sqlite3.Connection) -> None:
+        self._observations_since_prune += 1
+        if self._observations_since_prune >= 100:
+            self._prune_observations(connection)
+            self._observations_since_prune = 0
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -174,6 +263,230 @@ class Database:
                     self._prune_messages(connection)
                     self._inserts_since_prune = 0
             return inserted, cursor.lastrowid if inserted else None
+
+    def insert_telemetry(self, sample: dict[str, Any]) -> bool:
+        metrics = sample.get("metrics")
+        if not isinstance(metrics, dict) or not metrics:
+            raise ValueError("Telemetrimålinga manglar verdiar")
+        values = (
+            str(sample.get("dedupe_key") or ""),
+            sample.get("packet_id"),
+            str(sample.get("node_id") or ""),
+            str(sample.get("kind") or ""),
+            str(sample.get("sample_time") or ""),
+            str(sample.get("received_at") or ""),
+            json.dumps(metrics, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+            str(sample.get("transport") or "Ukjend"),
+            sample.get("rssi"),
+            sample.get("snr"),
+            sample.get("hop_limit"),
+            sample.get("hop_start"),
+            sample.get("gateway_profile_id"),
+            sample.get("gateway_node_id"),
+            sample.get("gateway_transport"),
+        )
+        if any(not values[index] for index in (0, 2, 3, 4, 5)):
+            raise ValueError("Telemetrimålinga manglar identitet eller tidspunkt")
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO telemetry_samples (
+                    dedupe_key, packet_id, node_id, kind, sample_time, received_at,
+                    metrics, transport, rssi, snr, hop_limit, hop_start,
+                    gateway_profile_id, gateway_node_id, gateway_transport
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                values,
+            )
+            inserted = cursor.rowcount == 1
+            if inserted:
+                self._record_observation_insert(connection)
+            return inserted
+
+    def insert_position(self, position: dict[str, Any]) -> bool:
+        values = (
+            str(position.get("dedupe_key") or ""),
+            position.get("packet_id"),
+            str(position.get("node_id") or ""),
+            str(position.get("sample_time") or ""),
+            str(position.get("received_at") or ""),
+            position.get("latitude"),
+            position.get("longitude"),
+            position.get("altitude_msl"),
+            position.get("altitude_hae"),
+            position.get("geoidal_separation"),
+            position.get("pdop"),
+            position.get("hdop"),
+            position.get("vdop"),
+            position.get("gps_accuracy_mm"),
+            position.get("ground_speed"),
+            position.get("ground_track"),
+            position.get("fix_quality"),
+            position.get("fix_type"),
+            position.get("sats_in_view"),
+            position.get("location_source"),
+            position.get("altitude_source"),
+            position.get("precision_bits"),
+            json.dumps(
+                position.get("metadata"),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            if position.get("metadata")
+            else None,
+            str(position.get("transport") or "Ukjend"),
+            position.get("rssi"),
+            position.get("snr"),
+            position.get("hop_limit"),
+            position.get("hop_start"),
+            position.get("gateway_profile_id"),
+            position.get("gateway_node_id"),
+            position.get("gateway_transport"),
+        )
+        if any(not values[index] for index in (0, 2, 3, 4)):
+            raise ValueError("Posisjonen manglar identitet eller tidspunkt")
+        if values[5] is None or values[6] is None:
+            raise ValueError("Posisjonen manglar koordinatar")
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO positions (
+                    dedupe_key, packet_id, node_id, sample_time, received_at,
+                    latitude, longitude, altitude_msl, altitude_hae,
+                    geoidal_separation, pdop, hdop, vdop, gps_accuracy_mm,
+                    ground_speed, ground_track, fix_quality, fix_type, sats_in_view,
+                    location_source, altitude_source, precision_bits, metadata,
+                    transport, rssi, snr, hop_limit, hop_start, gateway_profile_id,
+                    gateway_node_id, gateway_transport
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
+                """,
+                values,
+            )
+            inserted = cursor.rowcount == 1
+            if inserted:
+                self._record_observation_insert(connection)
+            return inserted
+
+    def list_telemetry(
+        self,
+        node_id: str,
+        *,
+        kind: str | None = None,
+        limit: int = 100,
+        before_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 1000))
+        where = ["node_id = ?"]
+        params: list[Any] = [node_id]
+        if kind:
+            where.append("kind = ?")
+            params.append(kind)
+        if before_id is not None:
+            where.append("id < ?")
+            params.append(before_id)
+        query = f"""
+            SELECT * FROM telemetry_samples
+            WHERE {' AND '.join(where)}
+            ORDER BY id DESC LIMIT ?
+        """  # nosec B608 -- berre faste lokale WHERE-ledd
+        with self._connect() as connection:
+            rows = connection.execute(query, (*params, limit)).fetchall()
+        return [self._telemetry_row(row) for row in rows]
+
+    def list_positions(
+        self,
+        node_id: str,
+        *,
+        limit: int = 100,
+        before_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 1000))
+        params: list[Any] = [node_id]
+        before = ""
+        if before_id is not None:
+            before = "AND id < ?"
+            params.append(before_id)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT * FROM positions
+                WHERE node_id = ? {before}
+                ORDER BY id DESC LIMIT ?
+                """,  # nosec B608 -- før-leddet er ein fast lokal konstant
+                (*params, limit),
+            ).fetchall()
+        return [self._position_row(row) for row in rows]
+
+    def node_observation_summary(self, node_id: str) -> dict[str, Any]:
+        with self._connect() as connection:
+            telemetry_rows = connection.execute(
+                """
+                SELECT current.* FROM telemetry_samples AS current
+                WHERE current.node_id = ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM telemetry_samples AS candidate
+                      WHERE candidate.node_id = current.node_id
+                        AND candidate.kind = current.kind
+                        AND (
+                            candidate.sample_time > current.sample_time
+                            OR (
+                                candidate.sample_time = current.sample_time
+                                AND candidate.id > current.id
+                            )
+                        )
+                  )
+                ORDER BY current.kind
+                """,
+                (node_id,),
+            ).fetchall()
+            position = connection.execute(
+                """
+                SELECT * FROM positions
+                WHERE node_id = ?
+                ORDER BY sample_time DESC, id DESC LIMIT 1
+                """,
+                (node_id,),
+            ).fetchone()
+            telemetry_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM telemetry_samples WHERE node_id = ?",
+                    (node_id,),
+                ).fetchone()[0]
+            )
+            position_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM positions WHERE node_id = ?",
+                    (node_id,),
+                ).fetchone()[0]
+            )
+            traceroute_count = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) FROM node_actions
+                    WHERE node_id = ? AND action = 'traceroute'
+                    """,
+                    (node_id,),
+                ).fetchone()[0]
+            )
+        latest = {
+            str(row["kind"]): self._telemetry_row(row)
+            for row in telemetry_rows
+        }
+        return {
+            "latest_telemetry": latest,
+            "latest_position": (
+                self._position_row(position) if position is not None else None
+            ),
+            "counts": {
+                "telemetry": telemetry_count,
+                "positions": position_count,
+                "traceroutes": traceroute_count,
+            },
+        }
 
     def update_message_status(self, packet_id: int, status: MessageStatus) -> bool:
         if status == MessageStatus.ACKNOWLEDGED:
@@ -383,6 +696,9 @@ class Database:
 
     def upsert_node(self, node: Node) -> None:
         node.updated_at = node.updated_at or now_iso()
+        # Manglande last_heard frå ein annan gateway er ikkje prov på at
+        # registerdataa er nyare. Bevar derfor siste tidsfesta observasjon,
+        # men fyll framleis inn felt som enno ikkje er kjende.
         values = (
             node.node_id,
             node.node_num,
@@ -410,22 +726,69 @@ class Database:
                     transport, can_receive_dm, is_local, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(node_id) DO UPDATE SET
-                    node_num=excluded.node_num,
-                    long_name=COALESCE(excluded.long_name, nodes.long_name),
-                    short_name=COALESCE(excluded.short_name, nodes.short_name),
-                    hw_model=COALESCE(excluded.hw_model, nodes.hw_model),
-                    role=COALESCE(excluded.role, nodes.role),
-                    last_heard=COALESCE(excluded.last_heard, nodes.last_heard),
-                    battery_level=COALESCE(excluded.battery_level, nodes.battery_level),
-                    voltage=COALESCE(excluded.voltage, nodes.voltage),
-                    snr=COALESCE(excluded.snr, nodes.snr),
-                    rssi=COALESCE(excluded.rssi, nodes.rssi),
-                    hops_away=COALESCE(excluded.hops_away, nodes.hops_away),
-                    transport=CASE WHEN excluded.transport = 'Ukjend'
-                                   THEN nodes.transport ELSE excluded.transport END,
-                    can_receive_dm=COALESCE(excluded.can_receive_dm, nodes.can_receive_dm),
+                    node_num=COALESCE(excluded.node_num, nodes.node_num),
+                    long_name=CASE
+                        WHEN nodes.long_name IS NULL THEN excluded.long_name
+                        WHEN excluded.long_name IS NOT NULL
+                         AND (nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard)
+                        THEN excluded.long_name ELSE nodes.long_name END,
+                    short_name=CASE
+                        WHEN nodes.short_name IS NULL THEN excluded.short_name
+                        WHEN excluded.short_name IS NOT NULL
+                         AND (nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard)
+                        THEN excluded.short_name ELSE nodes.short_name END,
+                    hw_model=CASE
+                        WHEN nodes.hw_model IS NULL THEN excluded.hw_model
+                        WHEN excluded.hw_model IS NOT NULL
+                         AND (nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard)
+                        THEN excluded.hw_model ELSE nodes.hw_model END,
+                    role=CASE
+                        WHEN nodes.role IS NULL THEN excluded.role
+                        WHEN excluded.role IS NOT NULL
+                         AND (nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard)
+                        THEN excluded.role ELSE nodes.role END,
+                    last_heard=CASE
+                        WHEN excluded.last_heard IS NULL THEN nodes.last_heard
+                        WHEN nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard
+                        THEN excluded.last_heard ELSE nodes.last_heard END,
+                    battery_level=CASE
+                        WHEN nodes.battery_level IS NULL THEN excluded.battery_level
+                        WHEN excluded.battery_level IS NOT NULL
+                         AND (nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard)
+                        THEN excluded.battery_level ELSE nodes.battery_level END,
+                    voltage=CASE
+                        WHEN nodes.voltage IS NULL THEN excluded.voltage
+                        WHEN excluded.voltage IS NOT NULL
+                         AND (nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard)
+                        THEN excluded.voltage ELSE nodes.voltage END,
+                    snr=CASE
+                        WHEN nodes.snr IS NULL THEN excluded.snr
+                        WHEN excluded.snr IS NOT NULL
+                         AND (nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard)
+                        THEN excluded.snr ELSE nodes.snr END,
+                    rssi=CASE
+                        WHEN nodes.rssi IS NULL THEN excluded.rssi
+                        WHEN excluded.rssi IS NOT NULL
+                         AND (nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard)
+                        THEN excluded.rssi ELSE nodes.rssi END,
+                    hops_away=CASE
+                        WHEN nodes.hops_away IS NULL THEN excluded.hops_away
+                        WHEN excluded.hops_away IS NOT NULL
+                         AND (nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard)
+                        THEN excluded.hops_away ELSE nodes.hops_away END,
+                    transport=CASE
+                        WHEN excluded.transport = 'Ukjend' THEN nodes.transport
+                        WHEN nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard
+                        THEN excluded.transport ELSE nodes.transport END,
+                    can_receive_dm=CASE
+                        WHEN nodes.can_receive_dm IS NULL THEN excluded.can_receive_dm
+                        WHEN excluded.can_receive_dm IS NOT NULL
+                         AND (nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard)
+                        THEN excluded.can_receive_dm ELSE nodes.can_receive_dm END,
                     is_local=excluded.is_local,
-                    updated_at=excluded.updated_at
+                    updated_at=CASE
+                        WHEN nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard
+                        THEN excluded.updated_at ELSE nodes.updated_at END
                 """,
                 values,
             )
@@ -494,4 +857,23 @@ class Database:
                 result["raw_metadata"] = json.loads(result["raw_metadata"])
             except json.JSONDecodeError:
                 result["raw_metadata"] = None
+        return result
+
+    @staticmethod
+    def _telemetry_row(row: sqlite3.Row) -> dict[str, Any]:
+        result = dict(row)
+        try:
+            result["metrics"] = json.loads(result["metrics"])
+        except (TypeError, json.JSONDecodeError):
+            result["metrics"] = {}
+        return result
+
+    @staticmethod
+    def _position_row(row: sqlite3.Row) -> dict[str, Any]:
+        result = dict(row)
+        if result.get("metadata"):
+            try:
+                result["metadata"] = json.loads(result["metadata"])
+            except (TypeError, json.JSONDecodeError):
+                result["metadata"] = None
         return result

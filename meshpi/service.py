@@ -33,12 +33,15 @@ from meshpi.models import (
     validate_message_text,
 )
 from meshpi.node_actions import NodeActionError, parse_traceroute_response
+from meshpi.observations import parse_position_packet, parse_telemetry_packet
 from meshpi.packet import node_from_registry, parse_text_packet
 
 LOG = logging.getLogger(__name__)
 RECONNECT_DELAYS = (2, 5, 10, 30)
 TRACEROUTE_TIMEOUT_SECONDS = 120
 TRACEROUTE_COOLDOWN_SECONDS = 30
+POSITION_EXCHANGE_TIMEOUT_SECONDS = 120
+POSITION_EXCHANGE_COOLDOWN_SECONDS = 30
 MAX_NODE_ACTIONS = 50
 
 
@@ -176,6 +179,7 @@ class MeshtasticService:
         self._node_actions: dict[str, dict[str, Any]] = {}
         self._node_action_timers: dict[str, threading.Timer] = {}
         self._traceroute_cooldown_until = 0.0
+        self._position_exchange_cooldown_until = 0.0
         profile_status = self._profile_status(self._profile) if self._profile else {
             "connection_id": None,
             "connection_name": None,
@@ -491,6 +495,7 @@ class MeshtasticService:
                     if interface is not self._interface:
                         return
             self._update_routing_ack(packet)
+            self._store_observations(packet)
             message = parse_text_packet(packet, self._local_node_id)
             if message is None:
                 if interface:
@@ -520,6 +525,40 @@ class MeshtasticService:
         except Exception:
             LOG.exception("Feil under handsaming av Meshtastic-pakke")
 
+    def _store_observations(self, packet: dict[str, Any]) -> None:
+        with self._lock:
+            profile = self._profile
+            gateway_node_id = self._local_node_id
+        gateway = {
+            "gateway_profile_id": profile.profile_id if profile else None,
+            "gateway_node_id": gateway_node_id,
+            "gateway_transport": profile.transport if profile else None,
+        }
+
+        for parsed in parse_telemetry_packet(packet):
+            sample = parsed | gateway
+            if not self.database.insert_telemetry(sample):
+                continue
+            self.events.publish({"type": "telemetry", "data": sample})
+            LOG.info(
+                "Lagra %s-telemetri frå %s via %s",
+                sample["kind"],
+                sample["node_id"],
+                gateway_node_id or "ukjend gateway",
+            )
+
+        parsed_position = parse_position_packet(packet)
+        if parsed_position is None:
+            return
+        position = parsed_position | gateway
+        if self.database.insert_position(position):
+            self.events.publish({"type": "position", "data": position})
+            LOG.info(
+                "Lagra posisjon frå %s via %s",
+                position["node_id"],
+                gateway_node_id or "ukjend gateway",
+            )
+
     def _update_routing_ack(self, packet: dict[str, Any]) -> None:
         request_id = _routing_request_id(packet)
         if request_id is None:
@@ -544,9 +583,12 @@ class MeshtasticService:
 
     def start_node_action(self, action: str, node_id: str) -> dict[str, Any]:
         normalized_action = action.strip().lower()
-        if normalized_action != "traceroute":
-            raise ValueError(f"Ukjend nodehandling: {action}")
-        return self._start_traceroute(normalize_node_id(node_id))
+        normalized_node_id = normalize_node_id(node_id)
+        if normalized_action == "traceroute":
+            return self._start_traceroute(normalized_node_id)
+        if normalized_action == "position_exchange":
+            return self._start_position_exchange(normalized_node_id)
+        raise ValueError(f"Ukjend nodehandling: {action}")
 
     def node_action_status(self, action_id: str) -> dict[str, Any]:
         with self._lock:
@@ -557,20 +599,33 @@ class MeshtasticService:
 
     def node_action_availability(self, action: str, node_id: str) -> dict[str, Any]:
         normalized_action = action.strip().lower()
-        if normalized_action != "traceroute":
+        if normalized_action not in {"traceroute", "position_exchange"}:
             raise ValueError(f"Ukjend nodehandling: {action}")
         normalized_node_id = normalize_node_id(node_id)
         with self._lock:
-            remaining = self._traceroute_cooldown_remaining()
+            remaining = (
+                self._traceroute_cooldown_remaining()
+                if normalized_action == "traceroute"
+                else self._position_exchange_cooldown_remaining()
+            )
             connected = self._interface is not None and self.status()["state"] == "tilkopla"
             local = normalized_node_id == self._local_node_id
+        label = (
+            "Traceroute"
+            if normalized_action == "traceroute"
+            else "Posisjonsutveksling"
+        )
         reason = None
         if not connected:
             reason = "Meshtastic-noden er ikkje tilkopla"
         elif local:
-            reason = "Kan ikkje køyre traceroute til den lokale noden"
+            reason = (
+                "Kan ikkje køyre traceroute til den lokale noden"
+                if normalized_action == "traceroute"
+                else "Kan ikkje utveksle posisjon med den lokale noden"
+            )
         elif remaining:
-            reason = f"Traceroute kan sendast igjen om {remaining} sekund"
+            reason = f"{label} kan sendast igjen om {remaining} sekund"
         return {
             "action": normalized_action,
             "node_id": normalized_node_id,
@@ -672,6 +727,241 @@ class MeshtasticService:
             LOG.info("Traceroute sendt til %s", node_id)
         return snapshot
 
+    def _start_position_exchange(self, node_id: str) -> dict[str, Any]:
+        from meshtastic.protobuf import mesh_pb2, portnums_pb2
+
+        with self._lock:
+            interface = self._interface
+            state = self.status()["state"]
+            if interface is None or state != "tilkopla":
+                raise RuntimeError("Meshtastic-noden er ikkje tilkopla")
+            local_node_id = self._local_node_id
+            if not local_node_id:
+                raise RuntimeError("Lokal node-ID er ikkje kjend enno")
+            if node_id == local_node_id:
+                raise ValueError(
+                    "Kan ikkje be den lokale noden utveksle posisjon med seg sjølv"
+                )
+            cooldown = self._position_exchange_cooldown_remaining()
+            if cooldown:
+                raise RuntimeError(
+                    "Posisjonsutveksling kan sendast igjen om "
+                    f"{cooldown} sekund"
+                )
+            local_position = self._local_position_for_exchange(
+                interface,
+                local_node_id,
+            )
+            precision = self._position_precision_bits(interface, local_position)
+            local_position_shared = local_position is not None and precision not in {
+                None,
+                0,
+            }
+            if local_position is None:
+                share_reason = "ingen lokal posisjon er tilgjengeleg"
+            elif precision is None:
+                share_reason = "posisjonspresisjonen er ukjend"
+            elif precision == 0:
+                share_reason = "posisjonsdeling er slått av for kanalen"
+            else:
+                share_reason = None
+
+            action_id = uuid.uuid4().hex
+            action = {
+                "action_id": action_id,
+                "action": "position_exchange",
+                "node_id": node_id,
+                "status": "started",
+                "started_at": now_iso(),
+                "packet_id": None,
+                "local_position_shared": local_position_shared,
+                "local_position_precision_bits": (
+                    precision if local_position_shared else None
+                ),
+                "local_position_share_reason": share_reason,
+            }
+            self._node_actions[action_id] = action
+            self._trim_node_actions()
+            self._position_exchange_cooldown_until = (
+                time.monotonic() + POSITION_EXCHANGE_COOLDOWN_SECONDS
+            )
+        self.database.upsert_node_action(action)
+
+        def on_response(packet: dict[str, Any]) -> None:
+            try:
+                with self._lock:
+                    current_interface = self._interface
+                if interface is not current_interface:
+                    raise NodeActionError("Meshtastic-sambandet blei bytt")
+                decoded = packet.get("decoded")
+                if not isinstance(decoded, dict):
+                    raise NodeActionError("Posisjonssvaret manglar dekoda data")
+                portnum = decoded.get("portnum")
+                if portnum in {"ROUTING_APP", 5}:
+                    routing = decoded.get("routing")
+                    reason = (
+                        routing.get("errorReason")
+                        if isinstance(routing, dict)
+                        else "UKJEND_FEIL"
+                    )
+                    raise NodeActionError(
+                        f"Posisjonsførespurnaden feila ({reason or 'UKJEND_FEIL'})"
+                    )
+                if portnum not in {"POSITION_APP", 3}:
+                    raise NodeActionError("Mottok feil svartype for posisjon")
+            except Exception as exc:
+                self._finish_node_action(action_id, error=str(exc))
+            else:
+                self._finish_node_action(
+                    action_id,
+                    result={
+                        "position_received": True,
+                        "local_position_shared": local_position_shared,
+                        "local_position_precision_bits": (
+                            precision if local_position_shared else None
+                        ),
+                        "local_position_share_reason": share_reason,
+                    },
+                )
+
+        payload = mesh_pb2.Position()
+        if local_position is not None and precision not in {None, 0}:
+            payload.latitude_i = self._mask_position_coordinate(
+                round(float(local_position["latitude"]) * 10**7),
+                precision,
+            )
+            payload.longitude_i = self._mask_position_coordinate(
+                round(float(local_position["longitude"]) * 10**7),
+                precision,
+            )
+            if local_position.get("altitude_msl") is not None:
+                payload.altitude = int(local_position["altitude_msl"])
+            payload.precision_bits = precision
+
+        try:
+            sent = interface.sendData(
+                payload,
+                destinationId=node_id,
+                portNum=portnums_pb2.PortNum.POSITION_APP,
+                wantResponse=True,
+                onResponse=on_response,
+                channelIndex=0,
+                hopLimit=self._traceroute_hop_limit(interface),
+            )
+        except Exception as exc:
+            with self._lock:
+                self._position_exchange_cooldown_until = 0.0
+            self._finish_node_action(
+                action_id,
+                error=f"Klarte ikkje sende posisjonsførespurnad: {exc}",
+            )
+            raise RuntimeError(
+                f"Klarte ikkje sende posisjonsførespurnad: {exc}"
+            ) from exc
+
+        packet_id = _sent_packet_id(sent)
+
+        def on_timeout() -> None:
+            self._discard_response_handler(interface, packet_id)
+            self._finish_node_action(
+                action_id,
+                error="Posisjonsførespurnaden fekk ikkje svar innan tidsfristen",
+            )
+
+        timer = threading.Timer(POSITION_EXCHANGE_TIMEOUT_SECONDS, on_timeout)
+        timer.daemon = True
+        start_timer = False
+        with self._lock:
+            current = self._node_actions.get(action_id)
+            if current is not None:
+                current["packet_id"] = packet_id
+            if current is not None and current.get("status") == "started":
+                self._node_action_timers[action_id] = timer
+                start_timer = True
+            snapshot = dict(current or action)
+            self.database.upsert_node_action(snapshot)
+            if snapshot.get("status") == "started":
+                self.events.publish({"type": "node_action", "data": snapshot})
+        if start_timer:
+            timer.start()
+            LOG.info("Posisjonsførespurnad sendt til %s", node_id)
+        return snapshot
+
+    def _local_position_for_exchange(
+        self,
+        interface: Interface,
+        local_node_id: str,
+    ) -> dict[str, Any] | None:
+        saved = self.database.node_observation_summary(local_node_id).get(
+            "latest_position"
+        )
+        if isinstance(saved, dict):
+            return saved
+        nodes = getattr(interface, "nodes", None)
+        if not isinstance(nodes, dict):
+            return None
+        local = nodes.get(local_node_id)
+        if not isinstance(local, dict):
+            return None
+        position = local.get("position")
+        if not isinstance(position, dict):
+            return None
+        return parse_position_packet(
+            {
+                "fromId": local_node_id,
+                "decoded": {
+                    "portnum": "POSITION_APP",
+                    "position": position,
+                },
+            }
+        )
+
+    @staticmethod
+    def _position_precision_bits(
+        interface: Interface,
+        position: dict[str, Any] | None,
+    ) -> int | None:
+        local_node = getattr(interface, "localNode", None)
+        channels = getattr(local_node, "channels", None)
+        if channels:
+            try:
+                settings = getattr(channels[0], "settings", None)
+                if settings is None:
+                    return 0
+                has_field = getattr(settings, "HasField", None)
+                if callable(has_field) and not has_field("module_settings"):
+                    # Meshtastic-fastvaren behandlar manglande
+                    # modulinnstillingar som avslått posisjonsdeling.
+                    return 0
+                module_settings = getattr(settings, "module_settings", None)
+                configured = getattr(
+                    module_settings,
+                    "position_precision",
+                    None,
+                )
+                if configured is not None:
+                    bits = int(configured)
+                    return max(0, min(bits, 32))
+            except (IndexError, TypeError, ValueError):
+                pass
+        if not isinstance(position, dict):
+            return None
+        try:
+            bits = int(position.get("precision_bits"))
+        except (TypeError, ValueError):
+            return None
+        return max(0, min(bits, 32))
+
+    @staticmethod
+    def _mask_position_coordinate(value: int, precision_bits: int) -> int:
+        if precision_bits >= 32:
+            return value
+        unsigned = value & 0xFFFFFFFF
+        mask = (0xFFFFFFFF << (32 - precision_bits)) & 0xFFFFFFFF
+        masked = unsigned & mask
+        masked = (masked + (1 << (31 - precision_bits))) & 0xFFFFFFFF
+        return masked - 0x100000000 if masked & 0x80000000 else masked
+
     @staticmethod
     def _traceroute_hop_limit(interface: Interface) -> int | None:
         local_node = getattr(interface, "localNode", None)
@@ -692,6 +982,14 @@ class MeshtasticService:
 
     def _traceroute_cooldown_remaining(self) -> int:
         return max(0, math.ceil(self._traceroute_cooldown_until - time.monotonic()))
+
+    def _position_exchange_cooldown_remaining(self) -> int:
+        return max(
+            0,
+            math.ceil(
+                self._position_exchange_cooldown_until - time.monotonic()
+            ),
+        )
 
     def _finish_node_action(
         self,
@@ -716,10 +1014,15 @@ class MeshtasticService:
             snapshot = dict(action)
         self.database.upsert_node_action(snapshot)
         self.events.publish({"type": "node_action", "data": snapshot})
+        label = (
+            "Traceroute"
+            if snapshot.get("action") == "traceroute"
+            else "Posisjonsførespurnad"
+        )
         if error:
-            LOG.warning("Traceroute til %s feila: %s", snapshot["node_id"], error)
+            LOG.warning("%s til %s feila: %s", label, snapshot["node_id"], error)
         else:
-            LOG.info("Traceroute til %s er ferdig", snapshot["node_id"])
+            LOG.info("%s til %s er ferdig", label, snapshot["node_id"])
 
     def _fail_pending_node_actions(self, error: str) -> None:
         with self._lock:

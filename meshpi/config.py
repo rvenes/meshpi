@@ -18,6 +18,7 @@ SETTING_ENV_KEYS = frozenset(
         "IPC_TOKEN",
         "IPC_TRANSPORT",
         "LOG_LEVEL",
+        "OBSERVATION_RETENTION_DAYS",
         "UPDATE_URL",
         "UPDATE_TIMEOUT",
         "BACKGROUND_MODE",
@@ -82,6 +83,7 @@ class Settings:
     ipc_socket_gid: int | None = None
     ipc_token: str = ""
     log_level: str = "INFO"
+    observation_retention_days: int = 365
     update_url: str = "https://venes.org/meshpi/version.json"
     update_timeout: float = 3.0
     background_mode: str = "always"
@@ -149,6 +151,13 @@ class Settings:
             ipc_socket_gid=ipc_socket_gid,
             ipc_token=values.get("IPC_TOKEN", "").strip(),
             log_level=level,
+            observation_retention_days=_env_int(
+                values,
+                "OBSERVATION_RETENTION_DAYS",
+                365,
+                1,
+                3650,
+            ),
             update_url=values.get(
                 "UPDATE_URL", "https://venes.org/meshpi/version.json"
             ).strip(),

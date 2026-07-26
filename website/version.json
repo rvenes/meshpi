@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.7.1",
-  "published_at": "2026-07-26T02:50:42Z",
+  "latest_version": "0.8.0",
+  "published_at": "2026-07-26T17:40:30Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.7.1",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.8.0",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.7.1-py3-none-any.whl",
-    "filename": "meshpi-0.7.1-py3-none-any.whl",
-    "sha256": "794906f1f62e962922516ca646c983bb5cb3261168a0e7155ae1b6f5627475dd",
-    "size": 87813,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.8.0-py3-none-any.whl",
+    "filename": "meshpi-0.8.0-py3-none-any.whl",
+    "sha256": "3bc5d32296dc19957078478b0d1178553c96cd5f2e4a6799b9867f2675034653",
+    "size": 103246,
     "format": "wheel"
   },
   "locks": {
@@ -49,17 +49,20 @@
     },
     "windows": {
       "url": "https://venes.org/meshpi/install-windows.ps1",
-      "sha256": "ff72a14d765d9f8ff6d82072e885fff6fb275adf32362ccf4f79823cdf57c5ba",
-      "size": 19448,
+      "sha256": "a7ff216facd491bfc9c28ebad36fe9d769bfcfe42cfe74dba3571ef0a8ebbb30",
+      "size": 19928,
       "update_command": "Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; .\\install-windows.ps1"
     }
   },
   "release_notes": [
-    "ACK og andre statusoppdateringar flyttar ikkje lenger meldingar forbi eldre traceroute-resultat i samtalen."
+    "Ny samla nodeinfo med oversikt, telemetri, posisjonar og traceroute-logg.",
+    "Telemetri og GPS-posisjonar blir lagra per kjeldenode i SQLite med automatisk opprydding.",
+    "Google Maps-lenkjer, posisjonsutveksling og traceroute kan brukast direkte frå nodeinfo.",
+    "Tabellvisingar, hopptal, musehandlingar, global Ctrl+Q og vertsnamn i statuslinja."
   ],
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "QXvyUqlag2WlJIZ4rujCy1qT57XocuWH+AQriyW26yF5GQwsE1v/HgO3di7V+8SjaA830rED4Wops3CUnQga2uqrsnh/vx3GW4t2njxrsGSb7+jfJEdo8JoyZnp1BwvPIOolqzYGAYnIqipbfMPCjzA4yT1NOXrvj3q2DF9psjjLrgiNJJ1zT/MKVKFoNNJIcQX8I8GzE2N6Xf3HoCjtxDVnKPNau3VTeGKxFD+Q9NA3xMrBWAGttuwBX10rkWm3JnPNbaaQGqJl9t2QYzLNnplii7Mqb8ah+pa7z+0+VkCxyEF4HXcSrZS78toAHj8YSg97XDQeOYfSfE6u6M4de3h0tpULqaqu5eDnsKWD5Z4t+C0r3xYbt1YwN+ptajqthk5FWx0v6tZEE2EpCajMyzXchnc/tnWx8x2a7s3SDERPg/7Tdxuy48Qy2qf7+4a5ciH89Av8uvBXAL5Nqd/ZqN1E62MQJWJuYatZgIdrXncYfnSQQePoLZmRDsNhUkSV"
+    "value": "S+C6qZpOAMIbxAodiNzKGQfdEbCWmq5KVLPUPzKJm9RSjDZM8dLM3k696mkVV2+F60lurW9bzJeBhT9mgdHhOrLA98NW9o0o693LKt7T3TFGzSDyQLaGg10XHOwTsL81Ut0L45ygeGuDOnpWsXVfAqXa327xfF8czUVXBxjFKV4w8UuufxJegERfWZZ9f+sULpmMjgn+2KpRbHquaBkzu18CJQBKFh72Td8fKyqxrs5kf30BMQUrzC3UdCpMKae9GP6E9DEIf9eCZIuNIQ9TO+17Uf2LAye3w+Add+KHAWXW+xgcQq0XGSPFCutHlzaF03PJGsefeWs9R+iQkEu3Tfuj0xlmW6pW8y5qxhMJnmBpjkXwAkoig6UflbAT4Y/aMvsnIVt62Bp+TCSlpQH26xEcAsJDVQaKB1zxehHTKQCxOeEtLkguMqpiWRdfSCcKzt2gYc+KnMlrg1nYGxiUacZm9vicj98BM9iqyg4F0PJNu6TdeKmvyfcweCCIs9np"
   }
 }

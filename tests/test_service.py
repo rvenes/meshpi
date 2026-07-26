@@ -125,6 +125,53 @@ def test_recipient_ack_after_implicit_ack_is_reported_as_delivered(service):
     assert row["status"] == str(MessageStatus.DELIVERED)
 
 
+def test_received_telemetry_and_position_are_logged_with_gateway(service):
+    value, interface, database = service
+    value._profile = ConnectionProfile.tcp("192.0.2.42", name="Heimenode")
+
+    value._on_receive(
+        {
+            "id": 501,
+            "fromId": "!11112222",
+            "rxTime": 1_700_000_000,
+            "decoded": {
+                "portnum": "TELEMETRY_APP",
+                "telemetry": {
+                    "deviceMetrics": {
+                        "batteryLevel": 82,
+                        "channelUtilization": 9.5,
+                    }
+                },
+            },
+        },
+        interface,
+    )
+    value._on_receive(
+        {
+            "id": 502,
+            "fromId": "!11112222",
+            "rxTime": 1_700_000_001,
+            "decoded": {
+                "portnum": "POSITION_APP",
+                "position": {
+                    "latitudeI": 601234567,
+                    "longitudeI": 51234567,
+                    "altitude": 104,
+                },
+            },
+        },
+        interface,
+    )
+
+    telemetry = database.list_telemetry("!11112222")
+    positions = database.list_positions("!11112222")
+    assert telemetry[0]["metrics"]["batteryLevel"] == 82
+    assert telemetry[0]["gateway_node_id"] == "!710365c8"
+    assert telemetry[0]["gateway_transport"] == "tcp"
+    assert positions[0]["latitude"] == 60.1234567
+    assert positions[0]["gateway_profile_id"] == value._profile.profile_id
+
+
 def test_dm_failure_status(service):
     value, interface, database = service
     value.send_dm("!11112222", "privat")
@@ -219,6 +266,186 @@ def test_traceroute_rejects_local_node_and_request_during_cooldown(service):
             }
         }
     )
+
+
+def test_position_exchange_requests_remote_position_asynchronously(service):
+    value, interface, database = service
+    interface.nodes["!710365c8"] = {
+        "position": {
+            "latitudeI": 602345678,
+            "longitudeI": 52345678,
+            "altitude": 88,
+            "precisionBits": 24,
+        }
+    }
+    with value.events.subscribe() as events:
+        started = value.start_node_action("position_exchange", "!11112222")
+        started_event = events.get(timeout=1)
+
+        assert started["status"] == "started"
+        assert started_event["type"] == "node_action"
+        payload, kwargs = interface.data_calls[0]
+        assert payload.latitude_i == 602345600
+        assert payload.longitude_i == 52345728
+        assert payload.altitude == 88
+        assert payload.precision_bits == 24
+        assert kwargs["destinationId"] == "!11112222"
+        assert kwargs["portNum"] == 3
+        assert kwargs["wantResponse"] is True
+        assert kwargs["channelIndex"] == 0
+        assert kwargs["hopLimit"] == 3
+
+        kwargs["onResponse"](
+            {
+                "decoded": {
+                    "portnum": "POSITION_APP",
+                    "position": {
+                        "latitudeI": 601234567,
+                        "longitudeI": 51234567,
+                    },
+                }
+            }
+        )
+        completed = events.get(timeout=1)["data"]
+
+    assert completed["status"] == "completed"
+    assert completed["result"]["position_received"] is True
+    assert completed["result"]["local_position_shared"] is True
+    assert completed["result"]["local_position_precision_bits"] == 24
+    saved = database.list_node_actions(
+        "!11112222",
+        action="position_exchange",
+    )
+    assert saved[0]["status"] == "completed"
+
+
+def test_position_exchange_rejects_local_node(service):
+    value, _, _ = service
+
+    with pytest.raises(ValueError, match="lokale noden"):
+        value.start_node_action("position_exchange", "!710365c8")
+
+
+def test_position_exchange_does_not_share_coordinates_without_known_precision(
+    service,
+):
+    value, interface, _ = service
+    interface.nodes["!710365c8"] = {
+        "position": {
+            "latitudeI": 602345678,
+            "longitudeI": 52345678,
+        }
+    }
+
+    value.start_node_action("position_exchange", "!11112222")
+
+    payload, _ = interface.data_calls[0]
+    assert payload.latitude_i == 0
+    assert payload.longitude_i == 0
+    assert payload.precision_bits == 0
+
+
+def test_position_exchange_uses_channel_precision_and_has_cooldown(service):
+    value, interface, _ = service
+    interface.localNode.channels = [
+        SimpleNamespace(
+            settings=SimpleNamespace(
+                module_settings=SimpleNamespace(position_precision=16)
+            )
+        )
+    ]
+    interface.nodes["!710365c8"] = {
+        "position": {
+            "latitudeI": 602345678,
+            "longitudeI": 52345678,
+            "precisionBits": 32,
+        }
+    }
+
+    value.start_node_action("position_exchange", "!11112222")
+
+    payload, _ = interface.data_calls[0]
+    assert payload.latitude_i == 602374144
+    assert payload.longitude_i == 52330496
+    assert payload.precision_bits == 16
+    with pytest.raises(RuntimeError, match="sendast igjen om 30 sekund"):
+        value.start_node_action("position_exchange", "!33334444")
+
+
+def test_position_exchange_missing_channel_settings_fail_closed(service):
+    from meshtastic.protobuf import channel_pb2
+
+    value, interface, _ = service
+    interface.localNode.channels = [channel_pb2.Channel()]
+    position = {"precision_bits": 24}
+
+    assert value._position_precision_bits(interface, position) == 0
+
+
+@pytest.mark.parametrize(
+    ("value", "bits", "expected"),
+    [
+        (602345678, 16, 602374144),
+        (-602345678, 16, -602374144),
+        (602345678, 24, 602345600),
+        (-602345678, 24, -602345600),
+        (602345678, 32, 602345678),
+    ],
+)
+def test_position_mask_uses_middle_of_meshtastic_precision_bucket(
+    service,
+    value,
+    bits,
+    expected,
+):
+    meshpi_service, _, _ = service
+
+    assert meshpi_service._mask_position_coordinate(value, bits) == expected
+
+
+def test_position_exchange_send_failure_does_not_consume_cooldown(service):
+    value, interface, _ = service
+    original_send = interface.sendData
+    attempts = 0
+
+    def fail_once(data, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OSError("radio nede")
+        return original_send(data, **kwargs)
+
+    interface.sendData = fail_once
+
+    with pytest.raises(RuntimeError, match="radio nede"):
+        value.start_node_action("position_exchange", "!11112222")
+    retry = value.start_node_action("position_exchange", "!33334444")
+
+    assert retry["status"] == "started"
+    assert len(interface.data_calls) == 1
+
+
+def test_position_exchange_availability_reports_daemon_cooldown(
+    service,
+    monkeypatch,
+):
+    clock = [100.0]
+    monkeypatch.setattr("meshpi.service.time.monotonic", lambda: clock[0])
+    value, _, _ = service
+
+    value.start_node_action("position_exchange", "!11112222")
+    availability = value.node_action_availability(
+        "position_exchange",
+        "!33334444",
+    )
+
+    assert availability["available"] is False
+    assert availability["cooldown_seconds"] == 30
+    clock[0] += 30
+    assert value.node_action_availability(
+        "position_exchange",
+        "!33334444",
+    )["available"] is True
 
 
 def test_traceroute_availability_counts_down_from_last_send(service, monkeypatch):

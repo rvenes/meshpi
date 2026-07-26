@@ -14,10 +14,13 @@ from meshpi.tui import (
     MeshPiTUI,
     NewDMScreen,
     NodeActionScreen,
+    NodeInfoScreen,
     NodePickerItem,
     NodeSidebarItem,
     QuitScreen,
+    _map_link,
     _message_time_parts,
+    _metric_label_and_value,
 )
 from meshpi.update import UpdateNotice
 
@@ -27,10 +30,13 @@ class FakeBackend:
         self.calls = []
         self.archived = set()
         self.traceroute_cooldown = 0
+        self.position_exchange_cooldown = 0
         self.status = {
             "state": "tilkopla",
             "host": "192.0.2.42",
             "port": 4403,
+            "transport": "tcp",
+            "endpoint": "192.0.2.42:4403",
             "local_node_id": "!040840a0",
         }
         self.conversations = [
@@ -111,6 +117,52 @@ class FakeBackend:
             "!710365c8": [],
             "!2f779c48": [],
         }
+        self.telemetry = {
+            "!710365c8": [
+                {
+                    "id": 1,
+                    "node_id": "!710365c8",
+                    "kind": "device",
+                    "sample_time": "2026-07-20T12:10:00+00:00",
+                    "metrics": {
+                        "batteryLevel": 75,
+                        "voltage": 4.1,
+                        "channelUtilization": 12.5,
+                    },
+                    "transport": "RF",
+                    "gateway_node_id": "!040840a0",
+                },
+                {
+                    "id": 2,
+                    "node_id": "!710365c8",
+                    "kind": "environment",
+                    "sample_time": "2026-07-20T12:11:00+00:00",
+                    "metrics": {"temperature": 18.75, "relativeHumidity": 72},
+                    "transport": "RF",
+                    "gateway_node_id": "!040840a0",
+                },
+            ],
+            "!2f779c48": [],
+            "!040840a0": [],
+        }
+        self.positions = {
+            "!710365c8": [
+                {
+                    "id": 1,
+                    "node_id": "!710365c8",
+                    "sample_time": "2026-07-20T12:12:00+00:00",
+                    "latitude": 60.1234567,
+                    "longitude": 5.1234567,
+                    "altitude_msl": 104,
+                    "gps_accuracy_mm": 3000,
+                    "sats_in_view": 9,
+                    "transport": "RF",
+                    "gateway_node_id": "!040840a0",
+                }
+            ],
+            "!2f779c48": [],
+            "!040840a0": [],
+        }
 
     def request(self, settings, payload):
         del settings
@@ -136,6 +188,34 @@ class FakeBackend:
             data = next(
                 node for node in self.nodes if node["node_id"] == payload["node_id"]
             )
+        elif command == "node_overview":
+            node = next(
+                node for node in self.nodes if node["node_id"] == payload["node_id"]
+            )
+            telemetry = self.telemetry[payload["node_id"]]
+            positions = self.positions[payload["node_id"]]
+            data = {
+                "node": node,
+                "latest_telemetry": {
+                    sample["kind"]: sample for sample in telemetry
+                },
+                "latest_position": positions[0] if positions else None,
+                "counts": {
+                    "telemetry": len(telemetry),
+                    "positions": len(positions),
+                    "traceroutes": len(self.node_actions.get(payload["node_id"], [])),
+                },
+            }
+        elif command == "node_telemetry":
+            data = self.telemetry[payload["node_id"]]
+            if payload.get("kind"):
+                data = [
+                    sample
+                    for sample in data
+                    if sample["kind"] == payload["kind"]
+                ]
+        elif command == "node_positions":
+            data = self.positions[payload["node_id"]]
         elif command == "node_actions":
             data = self.node_actions[payload["node_id"]]
         elif command == "archive_conversation":
@@ -155,16 +235,29 @@ class FakeBackend:
                 "started_at": "2026-07-20T12:02:00+00:00",
                 "cooldown_seconds": 30,
             }
+            if payload["action"] == "position_exchange":
+                data |= {
+                    "local_position_shared": False,
+                    "local_position_precision_bits": None,
+                    "local_position_share_reason": (
+                        "posisjonsdeling er slått av for kanalen"
+                    ),
+                }
         elif command == "node_action_availability":
+            cooldown = (
+                self.traceroute_cooldown
+                if payload["action"] == "traceroute"
+                else self.position_exchange_cooldown
+            )
             data = {
                 "action": payload["action"],
                 "node_id": payload["node_id"],
-                "available": self.traceroute_cooldown == 0,
-                "cooldown_seconds": self.traceroute_cooldown,
+                "available": cooldown == 0,
+                "cooldown_seconds": cooldown,
                 "reason": (
                     None
-                    if self.traceroute_cooldown == 0
-                    else f"Vent {self.traceroute_cooldown} sekund"
+                    if cooldown == 0
+                    else f"Vent {cooldown} sekund"
                 ),
             }
         else:
@@ -249,7 +342,9 @@ def test_tui_uses_enter_to_activate_and_tab_to_move_between_panes():
     run_scenario(scenario)
 
 
-def test_status_bar_shows_current_meshpi_version():
+def test_status_bar_shows_current_meshpi_version_and_host(monkeypatch):
+    monkeypatch.setattr("meshpi.tui.socket.gethostname", lambda: "testvert")
+
     async def scenario():
         backend = FakeBackend()
         app = MeshPiTUI(
@@ -259,7 +354,8 @@ def test_status_bar_shows_current_meshpi_version():
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.7.1" in text
+            assert "MeshPi 0.8.0" in text
+            assert "Vert: testvert" in text
 
     run_scenario(scenario)
 
@@ -652,6 +748,643 @@ def test_right_click_selects_node_and_opens_node_action_menu():
             assert not main_screen.selections
 
     run_scenario(scenario)
+
+
+def test_status_bar_budgets_long_host_and_endpoint_at_all_widths(monkeypatch):
+    async def scenario(width, host, transport, endpoint):
+        monkeypatch.setattr("meshpi.tui.socket.gethostname", lambda: host)
+        backend = FakeBackend()
+        backend.status |= {
+            "state": "koplar til",
+            "transport": transport,
+            "endpoint": endpoint,
+        }
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(width, 30)) as pilot:
+            await pilot.pause(0.3)
+            widget = app.query_one("#status-bar", Static)
+            rendered = widget.render()
+            text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
+            assert host[:4] in text
+            assert transport.upper() in text
+            assert endpoint[-8:] in text
+            assert len(text) <= widget.content_size.width
+            datetime.strptime(text[-8:], "%H:%M:%S")
+
+    cases = (
+        ("testvert", "tcp", "192.0.2.42:4403"),
+        (
+            "workstation-laboratory-01234567",
+            "serial",
+            "/dev/serial/by-id/usb-1a86_USB_Single_Serial_58FD012345-if00",
+        ),
+    )
+    for width in (60, 80, 100, 116, 130, 160):
+        for host, transport, endpoint in cases:
+            run_scenario(
+                lambda width=width, host=host, transport=transport, endpoint=endpoint: scenario(
+                    width,
+                    host,
+                    transport,
+                    endpoint,
+                )
+            )
+
+
+def test_node_info_uses_one_screen_for_metrics_position_and_traceroute():
+    async def scenario():
+        backend = FakeBackend()
+        backend.node_actions["!710365c8"] = [
+            {
+                "action_id": "trace-saved",
+                "action": "traceroute",
+                "node_id": "!710365c8",
+                "status": "completed",
+                "started_at": "2026-07-20T12:09:00+00:00",
+                "result": {
+                    "forward": [
+                        {"node_id": "!040840a0", "snr": None},
+                        {"node_id": "!710365c8", "snr": 6.0},
+                    ],
+                    "return": None,
+                },
+            }
+        ]
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 50)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("f3", "up", "down", "shift+f10")
+            await pilot.pause(0.2)
+            assert isinstance(app.screen, NodeActionScreen)
+
+            await pilot.press("i")
+            await pilot.pause(0.4)
+            assert isinstance(app.screen, NodeInfoScreen)
+            assert app.screen.overview_data["node"]["node_id"] == "!710365c8"
+            close_button = app.screen.query_one("#node-info-close", Button)
+            assert close_button.parent.id == "node-info-footer"
+
+            log = app.screen.query_one("#node-info-log", RichLog)
+            overview = "\n".join(line.text for line in log.lines)
+            assert "Siste telemetri" in overview
+            assert "Batteri 75%" in overview
+            assert "Google Maps" in overview
+            assert "Nodens plassering" in overview
+
+            await pilot.press("m")
+            await pilot.pause(0.1)
+            telemetry = "\n".join(line.text for line in log.lines)
+            assert "Kanalbruk" in telemetry
+            assert "Temperatur" in telemetry
+            assert telemetry.count("Eining") == 1
+            assert "┌" not in telemetry
+            assert "│" not in telemetry
+
+            await pilot.press("p")
+            await pilot.pause(0.1)
+            positions = "\n".join(line.text for line in log.lines)
+            assert "60.1234567" in positions
+            assert "5.1234567" in positions
+            assert "104 m" in positions
+            assert "api=1" in positions
+            assert "Posisjonslogg" in positions
+            assert "Kartlenkjer" in positions
+            exchange = app.screen.query_one(
+                "#node-info-exchange-position",
+                Button,
+            )
+            assert exchange.display is True
+            assert exchange.parent.id == "node-info-footer"
+            await pilot.click(exchange)
+            await pilot.pause(0.2)
+            assert {
+                "command": "node_action",
+                "action": "position_exchange",
+                "node_id": "!710365c8",
+            } in backend.calls
+            position_calls = [
+                call
+                for call in backend.calls
+                if call.get("command") == "node_action"
+                and call.get("action") == "position_exchange"
+            ]
+            await pilot.press("x")
+            await pilot.pause(0.1)
+            assert [
+                call
+                for call in backend.calls
+                if call.get("command") == "node_action"
+                and call.get("action") == "position_exchange"
+            ] == position_calls
+
+            opened = []
+            app.open_url = opened.append
+            url = (
+                "https://www.google.com/maps/search/"
+                "?api=1&query=60.1234567%2C5.1234567"
+            )
+            app.screen.action_open_map(url)
+            assert opened == [url]
+
+            await pilot.press("t")
+            await pilot.pause(0.1)
+            traceroutes = "\n".join(line.text for line in log.lines)
+            assert "Traceroute-logg" in traceroutes
+            assert "Ferdig" in traceroutes
+            assert "Hopp F/T" in traceroutes
+            assert "1/–" in traceroutes
+            assert "6 dB" in traceroutes
+            assert "┌" not in traceroutes
+            run_trace = app.screen.query_one(
+                "#node-info-run-traceroute",
+                Button,
+            )
+            assert run_trace.display is True
+            assert run_trace.parent.id == "node-info-footer"
+            await pilot.click(run_trace)
+            await pilot.pause(0.2)
+            assert {
+                "command": "node_action",
+                "action": "traceroute",
+                "node_id": "!710365c8",
+            } in backend.calls
+
+            await pilot.click("#node-info-close")
+            await pilot.pause(0.1)
+            assert not isinstance(app.screen, NodeInfoScreen)
+
+            assert {
+                "command": "node_telemetry",
+                "node_id": "!710365c8",
+                "kind": "device",
+                "limit": 200,
+            } in backend.calls
+            assert {
+                "command": "node_telemetry",
+                "node_id": "!710365c8",
+                "kind": "environment",
+                "limit": 200,
+            } in backend.calls
+
+    run_scenario(scenario)
+
+
+def test_node_info_tabs_fit_an_80_column_terminal():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(80, 24)) as pilot:
+            await pilot.pause(0.3)
+            overview = backend.request(
+                Settings(),
+                {"command": "node_overview", "node_id": "!710365c8"},
+            )["data"]
+            app.push_screen(
+                NodeInfoScreen(
+                    overview,
+                    backend.telemetry["!710365c8"],
+                    backend.positions["!710365c8"],
+                    [],
+                    app._format_traceroute_table_row,
+                    lambda _: None,
+                )
+            )
+            await pilot.pause(0.3)
+
+            assert isinstance(app.screen, NodeInfoScreen)
+            dialog = app.screen.query_one("#node-info-dialog")
+            for tab in NodeInfoScreen.TABS:
+                button = app.screen.query_one(f"#node-info-tab-{tab}", Button)
+                assert button.region.right <= dialog.content_region.right
+
+    run_scenario(scenario)
+
+
+def test_node_info_cooldown_refresh_keeps_scroll_position():
+    async def scenario():
+        backend = FakeBackend()
+        positions = [
+            {
+                "id": index,
+                "node_id": "!710365c8",
+                "dedupe_key": f"position-{index}",
+                "sample_time": f"2026-07-20T12:{index % 60:02d}:00+00:00",
+                "latitude": 60.0 + index / 10_000,
+                "longitude": 5.0,
+            }
+            for index in range(80)
+        ]
+        overview = backend.request(
+            Settings(),
+            {"command": "node_overview", "node_id": "!710365c8"},
+        )["data"]
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(100, 30)) as pilot:
+            app.push_screen(
+                NodeInfoScreen(
+                    overview,
+                    [],
+                    positions,
+                    [],
+                    app._format_traceroute_table_row,
+                    lambda _: None,
+                )
+            )
+            await pilot.pause(0.3)
+            assert isinstance(app.screen, NodeInfoScreen)
+            app.screen.action_position()
+            log = app.screen.query_one("#node-info-log", RichLog)
+            log.scroll_to(y=30, animate=False)
+            await pilot.pause(0.2)
+            before = log.scroll_offset
+
+            app.screen._end_action_cooldown("position_exchange")
+            await pilot.pause(0.1)
+
+            assert before.y > 0
+            assert log.scroll_offset == before
+            assert not app.screen.query_one(
+                "#node-info-exchange-position",
+                Button,
+            ).disabled
+
+    run_scenario(scenario)
+
+
+def test_reopened_node_info_uses_daemon_position_cooldown():
+    async def scenario():
+        backend = FakeBackend()
+        backend.position_exchange_cooldown = 25
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 50)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("f3", "up", "down", "shift+f10", "i")
+            await pilot.pause(0.4)
+            assert isinstance(app.screen, NodeInfoScreen)
+
+            await pilot.press("p")
+
+            assert app.screen.query_one(
+                "#node-info-exchange-position",
+                Button,
+            ).disabled
+            assert {
+                "command": "node_action_availability",
+                "action": "position_exchange",
+                "node_id": "!710365c8",
+            } in backend.calls
+
+    run_scenario(scenario)
+
+
+def test_position_exchange_notification_reports_whether_position_was_shared():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            notices = []
+            app.notify = lambda message, **_: notices.append(message)
+
+            app._handle_node_action(
+                {
+                    "action_id": "position-no-share",
+                    "action": "position_exchange",
+                    "node_id": "!710365c8",
+                    "status": "completed",
+                    "result": {
+                        "position_received": True,
+                        "local_position_shared": False,
+                        "local_position_share_reason": (
+                            "posisjonsdeling er slått av for kanalen"
+                        ),
+                    },
+                }
+            )
+            app._handle_node_action(
+                {
+                    "action_id": "position-shared",
+                    "action": "position_exchange",
+                    "node_id": "!710365c8",
+                    "status": "completed",
+                    "result": {
+                        "position_received": True,
+                        "local_position_shared": True,
+                        "local_position_precision_bits": 16,
+                    },
+                }
+            )
+
+            assert "Eigen posisjon blei ikkje delt" in notices[0]
+            assert "slått av for kanalen" in notices[0]
+            assert "delt med 16 bits presisjon" in notices[1]
+
+    run_scenario(scenario)
+
+
+def test_node_info_keyboard_actions_do_not_bypass_disabled_local_buttons():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 50)) as pilot:
+            await pilot.pause(0.3)
+            overview = backend.request(
+                Settings(),
+                {"command": "node_overview", "node_id": "!040840a0"},
+            )["data"]
+            app.push_screen(
+                NodeInfoScreen(
+                    overview,
+                    [],
+                    [],
+                    [],
+                    app._format_traceroute_table_row,
+                    lambda action: app._node_info_action_requested(
+                        "!040840a0",
+                        action,
+                    ),
+                )
+            )
+            await pilot.pause(0.2)
+            await pilot.press("p", "x", "t", "r")
+            await pilot.pause(0.2)
+
+            assert not any(
+                call.get("command") == "node_action" for call in backend.calls
+            )
+
+    run_scenario(scenario)
+
+
+def test_node_info_loads_telemetry_history_per_metric_kind():
+    async def scenario():
+        backend = FakeBackend()
+        backend.telemetry["!710365c8"] = [
+            {
+                "id": index,
+                "node_id": "!710365c8",
+                "kind": "device",
+                "sample_time": f"2026-07-20T12:{index % 60:02d}:00+00:00",
+                "metrics": {"batteryLevel": 75},
+            }
+            for index in range(1, 201)
+        ] + [
+            {
+                "id": 201,
+                "node_id": "!710365c8",
+                "kind": "environment",
+                "sample_time": "2026-07-20T11:00:00+00:00",
+                "metrics": {"temperature": 18.5},
+            }
+        ]
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 50)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("f3", "up", "down", "shift+f10", "i", "m")
+            await pilot.pause(0.5)
+
+            assert isinstance(app.screen, NodeInfoScreen)
+            kinds = {sample["kind"] for sample in app.screen.telemetry}
+            assert kinds == {"device", "environment"}
+
+    run_scenario(scenario)
+
+
+def test_node_info_tables_render_remote_markup_as_literal_text():
+    async def scenario():
+        backend = FakeBackend()
+        backend.nodes.extend(
+            [
+                {
+                    "node_id": "!1111abcd",
+                    "long_name": "[/b]x",
+                    "short_name": "abcd",
+                    "is_local": False,
+                },
+                {
+                    "node_id": "!2222cdef",
+                    "long_name": "[link=https://evil.example]a[/link]",
+                    "short_name": "cdef",
+                    "is_local": False,
+                },
+            ]
+        )
+        backend.telemetry["!710365c8"][0]["gateway_node_id"] = "!0408abcd"
+        backend.positions["!710365c8"][0]["gateway_node_id"] = "!0408abcd"
+        backend.node_actions["!710365c8"] = [
+            {
+                "action_id": "hostile-trace",
+                "action": "traceroute",
+                "node_id": "!710365c8",
+                "status": "completed",
+                "started_at": "2026-07-20T12:09:00+00:00",
+                "result": {
+                    "forward": [
+                        {"node_id": "!1111abcd", "snr": 4.0},
+                        {"node_id": "!2222cdef", "snr": 3.0},
+                        {"node_id": "!710365c8", "snr": 2.0},
+                    ],
+                    "return": None,
+                },
+            }
+        ]
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 50)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("f3", "up", "down", "shift+f10", "i", "m")
+            await pilot.pause(0.4)
+            log = app.screen.query_one("#node-info-log", RichLog)
+            assert "[abcd]" in "\n".join(line.text for line in log.lines)
+
+            await pilot.press("p")
+            await pilot.pause(0.1)
+            assert "[abcd]" in "\n".join(line.text for line in log.lines)
+
+            await pilot.press("t")
+            await pilot.pause(0.1)
+            rendered = "\n".join(line.text for line in log.lines)
+            assert "[/b]x" in rendered
+            assert "evil.example" in rendered
+            assert app.is_running
+            assert all(
+                segment.style is None or segment.style.link is None
+                for line in log.lines
+                for segment in line._segments
+            )
+
+    run_scenario(scenario)
+
+
+def test_open_node_info_updates_observations_chronologically():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 50)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("f3", "up", "down", "shift+f10", "i")
+            await pilot.pause(0.4)
+            assert isinstance(app.screen, NodeInfoScreen)
+            screen = app.screen
+
+            app.post_message(
+                LiveEvent(
+                    {
+                        "type": "position",
+                        "data": {
+                            "node_id": "!710365c8",
+                            "dedupe_key": "older-position",
+                            "sample_time": "2026-07-20T12:00:00+00:00",
+                            "latitude": 61.0,
+                            "longitude": 6.0,
+                        },
+                    }
+                )
+            )
+            app.post_message(
+                LiveEvent(
+                    {
+                        "type": "telemetry",
+                        "data": {
+                            "node_id": "!710365c8",
+                            "dedupe_key": "new-device",
+                            "kind": "device",
+                            "sample_time": "2026-07-20T12:15:00+00:00",
+                            "metrics": {"batteryLevel": 80},
+                        },
+                    }
+                )
+            )
+            app.post_message(
+                LiveEvent(
+                    {
+                        "type": "telemetry",
+                        "data": {
+                            "node_id": "!710365c8",
+                            "dedupe_key": "old-device",
+                            "kind": "device",
+                            "sample_time": "2026-07-20T12:01:00+00:00",
+                            "metrics": {"batteryLevel": 70},
+                        },
+                    }
+                )
+            )
+            await pilot.pause(0.2)
+
+            assert (
+                screen.overview_data["latest_position"]["sample_time"]
+                == "2026-07-20T12:12:00+00:00"
+            )
+            assert screen.positions[0]["sample_time"] == "2026-07-20T12:12:00+00:00"
+            assert (
+                screen.overview_data["latest_telemetry"]["device"]["metrics"][
+                    "batteryLevel"
+                ]
+                == 80
+            )
+            assert screen.overview_data["counts"]["positions"] == 2
+            assert screen.overview_data["counts"]["telemetry"] == 4
+
+    run_scenario(scenario)
+
+
+def test_completed_traceroute_cannot_be_reverted_and_order_stays_stable():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 50)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("f3", "up", "down", "shift+f10", "i")
+            await pilot.pause(0.4)
+            assert isinstance(app.screen, NodeInfoScreen)
+            completed = {
+                "action_id": "trace-race",
+                "action": "traceroute",
+                "node_id": "!710365c8",
+                "status": "completed",
+                "started_at": "2026-07-20T12:20:00+00:00",
+                "result": {"forward": [], "return": []},
+            }
+            app._handle_node_action(completed)
+            app._handle_node_action(completed | {"status": "started", "result": None})
+            app.screen.upsert_traceroute(
+                completed
+                | {
+                    "action_id": "trace-older",
+                    "started_at": "2026-07-20T12:19:00+00:00",
+                }
+            )
+
+            by_id = {
+                action["action_id"]: action for action in app.screen.traceroutes
+            }
+            assert by_id["trace-race"]["status"] == "completed"
+            assert [
+                action["action_id"] for action in app.screen.traceroutes
+            ] == ["trace-older", "trace-race"]
+
+    run_scenario(scenario)
+
+
+def test_environment_metric_units_match_the_protocol():
+    assert _metric_label_and_value("gasResistance", 12.3) == (
+        "Gassmotstand",
+        "12.3 MΩ",
+    )
+    assert _metric_label_and_value("distance", 1500) == (
+        "Avstand",
+        "1500 mm",
+    )
+
+
+def test_ctrl_q_opens_quit_dialog_above_node_info():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 50)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("f3", "up", "down", "shift+f10", "i")
+            await pilot.pause(0.4)
+            assert isinstance(app.screen, NodeInfoScreen)
+
+            await pilot.press("ctrl+q")
+            await pilot.pause(0.1)
+
+            assert isinstance(app.screen, QuitScreen)
+
+    run_scenario(scenario)
+
+
+def test_map_link_has_terminal_and_textual_click_targets():
+    url = "https://www.google.com/maps/search/?api=1&query=60%2C5"
+
+    link = _map_link(url)
+
+    assert link.style.link == url
+    assert link.style.meta["@click"] == f"screen.open_map({url!r})"
 
 
 def test_completed_traceroute_is_rendered_in_dm_without_blocking_the_app():

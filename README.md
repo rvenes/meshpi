@@ -18,6 +18,8 @@ likevel skilde frå CLI-en, slik at eit webgrensesnitt kan leggjast til seinare.
 - mottek og sender direkte meldingar
 - lagrar samtalehistorikk og ulest-status i SQLite
 - viser kjende nodar og tilgjengeleg nodeinformasjon
+- loggar motteken telemetri og GPS-posisjonar per kjeldenode i SQLite
+- samlar nodeinfo, telemetri, posisjonar og traceroute-logg i éi vising
 - kan byte mellom lagra, oppdaga eller manuelle TCP- og USB/serielle profilar
 - viser RF, MQTT eller «Ukjend» utan å gjette
 - viser RSSI, SNR og hoppinformasjon når ho finst
@@ -93,18 +95,27 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\install-windows.ps1
 ```
 
-Vel `session` dersom daemonen berre skal leve medan MeshPi er i bruk:
+Vel `session` dersom daemonen berre skal leve medan MeshPi er i bruk. MeshPi
+lagrar alle meldingar han faktisk tek imot i session-modus, men kan ikkje
+garantere at noden leverer meldingar som kom medan MeshPi var avslutta:
 
 ```bash
 # Linux
+curl -fLO https://venes.org/meshpi/install-linux.sh
 sh install-linux.sh --mode=session
 
 # macOS
+curl -fLO https://venes.org/meshpi/install-macos.sh
 sh install-macos.sh --mode=session
 ```
 
-På Windows lastar du ned skriptet som vist under og køyrer
-`.\install-windows.ps1 -Mode Session`.
+På Windows PowerShell:
+
+```powershell
+Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1
+Set-ExecutionPolicy -Scope Process Bypass
+.\install-windows.ps1 -Mode Session
+```
 
 Installasjonsskripta lastar ned versjonsmanifest, ei plattformspesifikk låsefil
 og MeshPi-pakken over HTTPS. Både låsefila og pakken blir kontrollerte med
@@ -290,10 +301,23 @@ høgrepanelet for å vise detaljane, og trykk Enter for å opne DM. «Ny DM» vi
 ein node, eller marker han og trykk `Shift+F10`, for å opne nodehandlingane.
 Her kan du mellom anna sende traceroute. Status og resultat kjem som ei tydeleg
 ramme i DM-samtalen med noden, slik at resten av appen kan brukast medan du
-ventar. Resultatet viser ruta fram, eventuell returrute og SNR per hopp når
-nodane rapporterer dette. Traceroute-forsøk og resultat blir lagra i den lokale
-loggen og viste igjen når DM-samtalen blir opna seinare. Fastvaren tillèt éin
-traceroute kvart 30. sekund;
+ventar. Vel «Nodeinfo og loggar» i den same menyen for ei samla vising med
+oversikt, telemetri, posisjonslogg og traceroute-logg. Posisjonane har ei
+Google Maps-lenkje som terminalen kan opne lokalt når han støttar lenkjer;
+heile URL-en blir òg vist slik at han kan kopierast over SSH.
+På posisjonsfana kan du uttrykkeleg velje «Utveksle posisjonsdata». Då sender
+MeshPi siste kjende posisjon for den lokale noden dersom ho finst og
+posisjonsdeling er slått på for kanalen. Koordinatane bruker den konfigurerte
+presisjonen. Dersom deling er slått av eller presisjonen er ukjend, blir berre
+førespurnaden send. Varselet fortel om eigen posisjon faktisk blei delt.
+Målnoden blir i begge tilfelle beden om å svare med sin posisjon. På
+traceroute-fana kan du starte ein ny traceroute direkte. Ingen av handlingane
+blir sende automatisk.
+
+Resultatet frå traceroute viser ruta fram, eventuell returrute og SNR per hopp
+når nodane rapporterer dette. Traceroute-forsøk og resultat blir lagra i den
+lokale loggen og viste igjen både i DM-samtalen og nodeinfo. Fastvaren tillèt
+éin traceroute kvart 30. sekund;
 nodehandlinga er sperra og viser ei nedteljing til neste forsøk kan sendast.
 Meldingar frå tidlegare datoar viser dato som `21.07.26` i svak grå tekst før
 klokkeslettet; meldingar frå i dag viser berre klokkeslett.
@@ -515,6 +539,7 @@ IPC_SOCKET_PATH=./data/meshpi.sock
 IPC_SOCKET_GID=
 IPC_TOKEN=replace-with-64-random-hex-characters
 LOG_LEVEL=INFO
+OBSERVATION_RETENTION_DAYS=365
 UPDATE_URL=https://venes.org/meshpi/version.json
 UPDATE_TIMEOUT=3
 BACKGROUND_MODE=always
@@ -527,6 +552,12 @@ Windows. `IPC_TRANSPORT=tcp` kan brukast uttrykkeleg på alle plattformer;
 plattformtilpassa sti. `IPC_SOCKET_GID` er valfri POSIX-gruppetilgang og bør
 berre setjast av installatøren eller ein administrator. `IPC_TOKEN` må vere
 minst 32 teikn og blir kontrollert før ein IPC-kommando blir utført.
+
+`OBSERVATION_RETENTION_DAYS` styrer kor lenge motteken telemetri og
+posisjonsdata blir tekne vare på, frå 1 til 3650 dagar. Standardverdien er 365.
+Data blir knytte til kjeldenoden, ikkje til den aktive tilkoplingsprofilen.
+MeshPi lagrar samstundes kva profil og lokal gateway som tok imot pakken, og
+fjernar duplikat dersom same pakke kjem inn via fleire gatewayar.
 
 Når `DISCOVERY_SUBNET` er tom, finn MeshPi det lokale IPv4-nettet automatisk
 og søkjer der. Set til dømes `DISCOVERY_SUBNET=192.168.1.0/24` for å avgrense

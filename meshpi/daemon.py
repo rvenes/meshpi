@@ -45,7 +45,10 @@ def _pid_exists(pid: int) -> bool:
 
 def run_daemon(settings: Settings, parent_pid: int | None = None) -> None:
     configure_logging(settings.log_level)
-    database = Database(settings.database_path)
+    database = Database(
+        settings.database_path,
+        observation_retention_days=settings.observation_retention_days,
+    )
     database.initialize()
     default_profile = (
         ConnectionProfile.tcp(settings.meshtastic_host, settings.meshtastic_port)

@@ -277,6 +277,64 @@ def test_nodes_are_upserted_and_sorted(tmp_path):
     assert database.list_nodes(search="Zulu")[0]["node_id"] == "!11112222"
 
 
+def test_older_gateway_registry_does_not_replace_newer_node_data(tmp_path):
+    database = Database(tmp_path / "nodes.db")
+    database.initialize()
+    database.upsert_node(
+        Node(
+            node_id="!11112222",
+            long_name="Nytt namn",
+            last_heard=200,
+            battery_level=80,
+            snr=9.0,
+        )
+    )
+    database.upsert_node(
+        Node(
+            node_id="!11112222",
+            long_name="Gamalt namn",
+            last_heard=100,
+            battery_level=20,
+            snr=1.0,
+        )
+    )
+
+    node = database.get_node("!11112222")
+    assert node["long_name"] == "Nytt namn"
+    assert node["last_heard"] == 200
+    assert node["battery_level"] == 80
+    assert node["snr"] == 9.0
+
+
+def test_gateway_registry_without_timestamp_only_fills_unknown_node_fields(
+    tmp_path,
+):
+    database = Database(tmp_path / "nodes.db")
+    database.initialize()
+    database.upsert_node(
+        Node(
+            node_id="!11112222",
+            long_name="Tidsfesta namn",
+            last_heard=200,
+            battery_level=80,
+        )
+    )
+    database.upsert_node(
+        Node(
+            node_id="!11112222",
+            long_name="Ukjend alder",
+            short_name="NY",
+            last_heard=None,
+            battery_level=20,
+        )
+    )
+
+    node = database.get_node("!11112222")
+    assert node["long_name"] == "Tidsfesta namn"
+    assert node["short_name"] == "NY"
+    assert node["battery_level"] == 80
+
+
 def test_node_search_treats_sql_wildcards_as_text(tmp_path):
     database = Database(tmp_path / "db.sqlite")
     database.initialize()
@@ -290,3 +348,111 @@ def test_node_search_treats_sql_wildcards_as_text(tmp_path):
     assert [item["node_id"] for item in database.list_nodes(search="_")] == [
         "!33334444"
     ]
+
+
+def test_telemetry_and_positions_are_deduplicated_and_summarized(tmp_path):
+    database = Database(tmp_path / "observations.db")
+    database.initialize()
+    common = {
+        "node_id": "!11112222",
+        "sample_time": "2026-07-26T12:00:00+00:00",
+        "received_at": "2026-07-26T12:00:01+00:00",
+        "packet_id": 42,
+        "transport": "RF",
+        "rssi": -90,
+        "snr": 7.5,
+        "hop_limit": 3,
+        "hop_start": 3,
+        "gateway_profile_id": "tcp-home",
+        "gateway_node_id": "!aaaaaaaa",
+        "gateway_transport": "tcp",
+    }
+    telemetry = common | {
+        "dedupe_key": "telemetry-42",
+        "kind": "device",
+        "metrics": {"batteryLevel": 75, "channelUtilization": 12.5},
+    }
+    position = common | {
+        "dedupe_key": "position-42",
+        "latitude": 60.123,
+        "longitude": 5.456,
+        "altitude_msl": 104,
+        "altitude_hae": None,
+        "geoidal_separation": None,
+        "pdop": None,
+        "hdop": None,
+        "vdop": None,
+        "gps_accuracy_mm": 3000,
+        "ground_speed": None,
+        "ground_track": None,
+        "fix_quality": None,
+        "fix_type": 3,
+        "sats_in_view": 9,
+        "location_source": "LOC_INTERNAL",
+        "altitude_source": "ALT_INTERNAL",
+        "precision_bits": 32,
+        "metadata": {},
+    }
+
+    assert database.insert_telemetry(telemetry) is True
+    assert database.insert_telemetry(telemetry) is False
+    assert database.insert_position(position) is True
+    assert database.insert_position(position) is False
+
+    assert database.list_telemetry("!11112222")[0]["metrics"]["batteryLevel"] == 75
+    assert database.list_positions("!11112222")[0]["altitude_msl"] == 104
+    summary = database.node_observation_summary("!11112222")
+    assert summary["counts"] == {
+        "telemetry": 1,
+        "positions": 1,
+        "traceroutes": 0,
+    }
+    assert summary["latest_telemetry"]["device"]["gateway_node_id"] == "!aaaaaaaa"
+
+    older = common | {
+        "packet_id": 43,
+        "sample_time": "2025-07-26T12:00:00+00:00",
+        "received_at": "2026-07-26T12:01:00+00:00",
+    }
+    database.insert_telemetry(
+        older
+        | {
+            "dedupe_key": "telemetry-43",
+            "kind": "device",
+            "metrics": {"batteryLevel": 10},
+        }
+    )
+    database.insert_position(
+        older
+        | {
+            "dedupe_key": "position-43",
+            "latitude": 61.0,
+            "longitude": 6.0,
+            "altitude_msl": 5,
+        }
+    )
+
+    summary = database.node_observation_summary("!11112222")
+    assert summary["latest_telemetry"]["device"]["metrics"]["batteryLevel"] == 75
+    assert summary["latest_position"]["altitude_msl"] == 104
+
+
+def test_observation_retention_prunes_expired_samples_on_initialize(tmp_path):
+    path = tmp_path / "retention.db"
+    database = Database(path, observation_retention_days=1)
+    database.initialize()
+    database.insert_telemetry(
+        {
+            "dedupe_key": "expired-telemetry",
+            "node_id": "!11112222",
+            "kind": "device",
+            "sample_time": "2000-01-01T00:00:00+00:00",
+            "received_at": "2000-01-01T00:00:01+00:00",
+            "metrics": {"batteryLevel": 50},
+        }
+    )
+    assert len(database.list_telemetry("!11112222")) == 1
+
+    database.initialize()
+
+    assert database.list_telemetry("!11112222") == []

@@ -495,6 +495,20 @@ h3 {
   color: var(--muted);
 }
 
+.install-options {
+  display: grid;
+  min-width: 0;
+  gap: 1.25rem;
+}
+
+.install-option {
+  min-width: 0;
+}
+
+.install-option p {
+  margin: 0 0 0.55rem;
+}
+
 .command-box {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

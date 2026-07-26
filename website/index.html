@@ -30,7 +30,7 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.7.1</div>
+        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.8.0</div>
         <h1>Meshtastic-chat.<br><span>Rett i terminalen.</span></h1>
         <p class="lead">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
@@ -55,7 +55,7 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.7.1</b><i>●</i> Tilkopla
+          <b>MeshPi 0.8.0</b><i>●</i> Tilkopla
           <span>TCP meshtastic.local:4403</span>
         </div>
         <div class="terminal-grid">
@@ -125,7 +125,9 @@
         <p>
           Standard er <strong>always</strong>: meldingar kjem inn også når
           terminalgrensesnittet er lukka. Vel <strong>session</strong> dersom
-          daemonen berre skal køyre medan du bruker MeshPi.
+          daemonen berre skal køyre medan du bruker MeshPi. MeshPi lagrar alle
+          meldingar han tek imot i session-modus, men kan ikkje garantere at
+          noden leverer meldingar som kom medan MeshPi var avslutta.
         </p>
       </div>
 
@@ -141,11 +143,22 @@
           <p>Installerer under <code>/opt/meshpi</code> og set opp ei avgrensa systemd-teneste (always).</p>
           <p>Minimal Debian/Ubuntu kan først trenge <code>sudo apt install curl python3-venv</code>. Installatøren viser rett versjonspakke dersom den valde Python-versjonen manglar venv.</p>
         </div>
-        <div class="command-box">
-          <code id="install-linux-command">curl -fLO https://venes.org/meshpi/install-linux.sh &amp;&amp; sudo sh install-linux.sh</code>
-          <button data-copy-target="install-linux-command">Kopier</button>
+        <div class="install-options">
+          <div class="install-option">
+            <p><strong>Always – køyrer òg når terminalen er lukka:</strong></p>
+            <div class="command-box">
+              <code id="install-linux-command">curl -fLO https://venes.org/meshpi/install-linux.sh &amp;&amp; sudo sh install-linux.sh</code>
+              <button data-copy-target="install-linux-command">Kopier</button>
+            </div>
+          </div>
+          <div class="install-option">
+            <p><strong>Session – køyrer berre medan MeshPi er i bruk, utan sudo:</strong></p>
+            <div class="command-box">
+              <code id="install-linux-session-command">curl -fLO https://venes.org/meshpi/install-linux.sh &amp;&amp; sh install-linux.sh --mode=session</code>
+              <button data-copy-target="install-linux-session-command">Kopier</button>
+            </div>
+          </div>
         </div>
-        <p>Session (utan sudo): <code>sh install-linux.sh --mode=session</code></p>
       </div>
 
       <div class="platform-panel" data-platform-panel="macos" hidden>
@@ -153,11 +166,22 @@
           <h3>macOS</h3>
           <p>Installerer for gjeldande brukar og held daemonen i gang med launchd (always).</p>
         </div>
-        <div class="command-box">
-          <code id="install-macos-command">curl -fLO https://venes.org/meshpi/install-macos.sh &amp;&amp; sh install-macos.sh</code>
-          <button data-copy-target="install-macos-command">Kopier</button>
+        <div class="install-options">
+          <div class="install-option">
+            <p><strong>Always – køyrer òg når terminalen er lukka:</strong></p>
+            <div class="command-box">
+              <code id="install-macos-command">curl -fLO https://venes.org/meshpi/install-macos.sh &amp;&amp; sh install-macos.sh</code>
+              <button data-copy-target="install-macos-command">Kopier</button>
+            </div>
+          </div>
+          <div class="install-option">
+            <p><strong>Session – køyrer berre medan MeshPi er i bruk:</strong></p>
+            <div class="command-box">
+              <code id="install-macos-session-command">curl -fLO https://venes.org/meshpi/install-macos.sh &amp;&amp; sh install-macos.sh --mode=session</code>
+              <button data-copy-target="install-macos-session-command">Kopier</button>
+            </div>
+          </div>
         </div>
-        <p>Session: <code>sh install-macos.sh --mode=session</code></p>
       </div>
 
       <div class="platform-panel" data-platform-panel="windows" hidden>
@@ -165,9 +189,21 @@
           <h3>Windows PowerShell</h3>
           <p>Installerer per brukar og bruker ein prosessvakt som startar daemonen ved innlogging og etter krasj.</p>
         </div>
-        <div class="command-box">
-          <code id="install-windows-command">Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; .\install-windows.ps1</code>
-          <button data-copy-target="install-windows-command">Kopier</button>
+        <div class="install-options">
+          <div class="install-option">
+            <p><strong>Always – startar ved innlogging og køyrer i bakgrunnen:</strong></p>
+            <div class="command-box">
+              <code id="install-windows-command">Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; .\install-windows.ps1</code>
+              <button data-copy-target="install-windows-command">Kopier</button>
+            </div>
+          </div>
+          <div class="install-option">
+            <p><strong>Session – køyrer berre medan MeshPi er i bruk:</strong></p>
+            <div class="command-box">
+              <code id="install-windows-session-command">Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; .\install-windows.ps1 -Mode Session</code>
+              <button data-copy-target="install-windows-session-command">Kopier</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -339,17 +375,20 @@
       </div>
     </section>
 
-    <section id="release-0.7.1" class="section release-section">
+    <section id="release-0.8.0" class="section release-section">
       <div class="section-heading">
         <span>Siste versjon</span>
-        <h2>MeshPi 0.7.1</h2>
+        <h2>MeshPi 0.8.0</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li>ACK og andre statusoppdateringar flyttar ikkje lenger meldingar forbi eldre traceroute-resultat i samtalen</li>
+          <li>Ny samla nodeinfo med oversikt, telemetri, posisjonar og traceroute-logg</li>
+          <li>Telemetri og GPS-posisjonar blir lagra per kjeldenode i SQLite med automatisk opprydding</li>
+          <li>Google Maps-lenkjer, posisjonsutveksling og traceroute kan brukast direkte frå nodeinfo</li>
+          <li>Tabellvisingar, hopptal, musehandlingar, global Ctrl+Q og vertsnamn i statuslinja</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.7.1-py3-none-any.whl">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.8.0-py3-none-any.whl">Last ned Python-pakken</a>
           <a href="https://github.com/rvenes/meshpi">Kjeldekode på GitHub</a>
         </div>
       </div>
