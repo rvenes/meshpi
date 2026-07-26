@@ -1,11 +1,14 @@
 import json
 import os
 import socket
+import tempfile
 import threading
+import time
+from pathlib import Path
 
 import pytest
 
-from meshpi.client import CLIError, CLIUnavailableError, request
+from meshpi.client import CLIError, CLIUnavailableError, open_watch, request
 from meshpi.config import Settings
 from meshpi.database import Database
 from meshpi.events import EventHub
@@ -61,7 +64,7 @@ def test_client_connection_error_uses_cross_platform_service_hint(monkeypatch):
     monkeypatch.setattr("meshpi.client.socket.create_connection", fail_connection)
 
     with pytest.raises(CLIUnavailableError, match="meshpi service status"):
-        request(Settings(), {"command": "status"})
+        request(Settings(ipc_transport="tcp"), {"command": "status"})
 
 
 def test_client_does_not_report_reset_connection_as_stopped_service(monkeypatch):
@@ -97,7 +100,7 @@ def test_client_does_not_report_reset_connection_as_stopped_service(monkeypatch)
     )
 
     with pytest.raises(CLIError, match="ikkje starta på nytt") as error:
-        request(Settings(), {"command": "status"})
+        request(Settings(ipc_transport="tcp"), {"command": "status"})
     assert not isinstance(error.value, CLIUnavailableError)
 
 
@@ -125,7 +128,10 @@ def test_settings_load_env_file(tmp_path, monkeypatch):
         "DISCOVERY_SUBNET",
         "IPC_HOST",
         "IPC_PORT",
+        "IPC_SOCKET_GID",
+        "IPC_SOCKET_PATH",
         "IPC_TOKEN",
+        "IPC_TRANSPORT",
         "LOG_LEVEL",
         "UPDATE_URL",
         "UPDATE_TIMEOUT",
@@ -145,12 +151,44 @@ def test_settings_load_env_file(tmp_path, monkeypatch):
     assert settings.update_url == "https://venes.org/meshpi/version.json"
     assert settings.update_timeout == 3
     assert settings.background_mode == "always"
+    assert settings.ipc_transport == "auto"
+    assert settings.ipc_socket_path == settings.database_path.with_name("meshpi.sock")
     assert "PYTHONPATH" not in settings.__dataclass_fields__
 
 
 def test_settings_reject_non_loopback_ipc(monkeypatch):
     monkeypatch.setenv("IPC_HOST", "0.0.0.0")
     with pytest.raises(ValueError):
+        Settings.load("missing")
+
+
+def test_settings_load_explicit_ipc_transport(tmp_path, monkeypatch):
+    socket_path = tmp_path / "run" / "meshpi.sock"
+    monkeypatch.setenv("IPC_TRANSPORT", "tcp")
+    monkeypatch.setenv("IPC_SOCKET_PATH", str(socket_path))
+    monkeypatch.setenv("IPC_SOCKET_GID", "1234")
+
+    settings = Settings.load(tmp_path / "missing.env")
+
+    assert settings.ipc_transport == "tcp"
+    assert settings.ipc_socket_path == socket_path
+    assert settings.ipc_socket_gid == 1234
+    assert settings.ipc_uses_unix is False
+
+
+def test_empty_ipc_socket_path_uses_database_sibling(tmp_path, monkeypatch):
+    database_path = tmp_path / "state" / "meshpi.db"
+    monkeypatch.setenv("DATABASE_PATH", str(database_path))
+    monkeypatch.setenv("IPC_SOCKET_PATH", "")
+
+    settings = Settings.load(tmp_path / "missing.env")
+
+    assert settings.ipc_socket_path == database_path.with_name("meshpi.sock")
+
+
+def test_settings_reject_unknown_ipc_transport(monkeypatch):
+    monkeypatch.setenv("IPC_TRANSPORT", "radio")
+    with pytest.raises(ValueError, match="IPC_TRANSPORT"):
         Settings.load("missing")
 
 
@@ -277,7 +315,12 @@ def test_ipc_shutdown_starts_only_after_response_is_completed(tmp_path):
 def test_ipc_socket_roundtrip(tmp_path):
     database = Database(tmp_path / "db.sqlite")
     database.initialize()
-    settings = Settings(database_path=database.path, ipc_port=0, ipc_token="a" * 64)
+    settings = Settings(
+        database_path=database.path,
+        ipc_port=0,
+        ipc_token="a" * 64,
+        ipc_transport="tcp",
+    )
     stopped = threading.Event()
     app = IPCApplication(
         settings,
@@ -312,7 +355,12 @@ def test_ipc_socket_roundtrip(tmp_path):
 def test_ipc_rejects_missing_token(tmp_path):
     database = Database(tmp_path / "db.sqlite")
     database.initialize()
-    settings = Settings(database_path=database.path, ipc_port=0, ipc_token="b" * 64)
+    settings = Settings(
+        database_path=database.path,
+        ipc_port=0,
+        ipc_token="b" * 64,
+        ipc_transport="tcp",
+    )
     server = IPCServer(settings, IPCApplication(settings, database, FakeService(), EventHub()))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -326,6 +374,187 @@ def test_ipc_rejects_missing_token(tmp_path):
     finally:
         server.shutdown()
         thread.join(timeout=2)
+
+
+def test_watchers_have_a_separate_quota_from_regular_requests(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    settings = Settings(
+        database_path=database.path,
+        ipc_port=0,
+        ipc_token="w" * 64,
+        ipc_transport="tcp",
+    )
+    server = IPCServer(
+        settings,
+        IPCApplication(settings, database, FakeService(), EventHub()),
+    )
+    settings = Settings(
+        database_path=database.path,
+        ipc_host=server.address[0],
+        ipc_port=server.address[1],
+        ipc_token=settings.ipc_token,
+        ipc_transport="tcp",
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    watchers = []
+    try:
+        for _ in range(8):
+            watchers.append(open_watch(settings))
+        with pytest.raises(CLIError, match="For mange aktive overvakingar"):
+            open_watch(settings)
+        assert request(settings, {"command": "status"})["data"]["state"] == "tilkopla"
+    finally:
+        for sock, stream in watchers:
+            stream.close()
+            sock.close()
+        server.shutdown()
+        thread.join(timeout=2)
+
+
+@pytest.mark.parametrize("close_mode", ["close", "shutdown"])
+def test_closed_watcher_releases_watcher_and_client_slots(
+    tmp_path, monkeypatch, close_mode
+):
+    monkeypatch.setattr("meshpi.ipc.IPC_WATCH_HEARTBEAT", 0.05)
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    server_settings = Settings(
+        database_path=database.path,
+        ipc_port=0,
+        ipc_token="r" * 64,
+        ipc_transport="tcp",
+    )
+    events = EventHub()
+    server = IPCServer(
+        server_settings,
+        IPCApplication(server_settings, database, FakeService(), events),
+    )
+    client_settings = Settings(
+        database_path=database.path,
+        ipc_host=server.address[0],
+        ipc_port=server.address[1],
+        ipc_token=server_settings.ipc_token,
+        ipc_transport="tcp",
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    sock = stream = replacement_sock = replacement_stream = None
+    try:
+        sock, stream = open_watch(client_settings)
+        if close_mode == "shutdown":
+            sock.shutdown(socket.SHUT_RDWR)
+        stream.close()
+        sock.close()
+        stream = sock = None
+        events.publish({"type": "message", "data": {"kind": "public"}})
+
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            if (
+                server._server._watcher_slots._value == 8
+                and server._server._client_slots._value == 40
+            ):
+                break
+            time.sleep(0.01)
+
+        assert server._server._watcher_slots._value == 8
+        assert server._server._client_slots._value == 40
+        replacement_sock, replacement_stream = open_watch(client_settings)
+        assert request(client_settings, {"command": "status"})["ok"] is True
+    finally:
+        if stream is not None:
+            stream.close()
+        if sock is not None:
+            sock.close()
+        if replacement_stream is not None:
+            replacement_stream.close()
+        if replacement_sock is not None:
+            replacement_sock.close()
+        server.shutdown()
+        thread.join(timeout=2)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX Unix-socket")
+def test_posix_ipc_uses_private_unix_socket():
+    with tempfile.TemporaryDirectory(prefix="meshpi-ipc-", dir="/tmp") as temporary:
+        root = Path(temporary)
+        database = Database(root / "db.sqlite")
+        database.initialize()
+        socket_path = root / "run" / "meshpi.sock"
+        settings = Settings(
+            database_path=database.path,
+            ipc_token="u" * 64,
+            ipc_transport="unix",
+            ipc_socket_path=socket_path,
+        )
+        server = IPCServer(
+            settings,
+            IPCApplication(settings, database, FakeService(), EventHub()),
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            assert socket_path.stat().st_mode & 0o777 == 0o600
+            assert request(settings, {"command": "status"})["data"]["state"] == "tilkopla"
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
+        assert not socket_path.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX Unix-socket")
+def test_posix_ipc_rejects_unsafe_socket_path():
+    with tempfile.TemporaryDirectory(prefix="meshpi-ipc-", dir="/tmp") as temporary:
+        root = Path(temporary)
+        database = Database(root / "db.sqlite")
+        database.initialize()
+        socket_path = root / "meshpi.sock"
+        socket_path.write_text("ikkje ein socket", encoding="utf-8")
+        settings = Settings(
+            database_path=database.path,
+            ipc_token="u" * 64,
+            ipc_transport="unix",
+            ipc_socket_path=socket_path,
+        )
+
+        with pytest.raises(PermissionError, match="trygg"):
+            IPCServer(
+                settings,
+                IPCApplication(settings, database, FakeService(), EventHub()),
+            )
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX Unix-socket")
+def test_posix_shutdown_does_not_remove_replacement_socket():
+    with tempfile.TemporaryDirectory(prefix="meshpi-ipc-", dir="/tmp") as temporary:
+        root = Path(temporary)
+        database = Database(root / "db.sqlite")
+        database.initialize()
+        socket_path = root / "meshpi.sock"
+        settings = Settings(
+            database_path=database.path,
+            ipc_token="u" * 64,
+            ipc_transport="unix",
+            ipc_socket_path=socket_path,
+        )
+        server = IPCServer(
+            settings,
+            IPCApplication(settings, database, FakeService(), EventHub()),
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        socket_path.unlink()
+        replacement = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        replacement.bind(str(socket_path))
+        replacement.listen()
+        try:
+            server.shutdown()
+            thread.join(timeout=2)
+            assert socket_path.exists()
+        finally:
+            replacement.close()
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows-spesifikk socketåtferd")

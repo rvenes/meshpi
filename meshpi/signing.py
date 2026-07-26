@@ -13,6 +13,10 @@ PUBLIC_MODULUS = int(
     "c1370fa9e2eb0d22e354c58594e369f9db44156f834522bf69a8da523a30ac0d4539e08a30d76e854b40ae693da388af11ca62ee24c1e6f43ec128be550e8b7655d86955ae858b9f30237ba02e2773e9ad2fcfe1644484e909a8805a6c8a289dda69cedbc973d7427278442d8acb1d00a0c5cd242c34404843ea684ece7ad40a59d902633624ae36ae3f4e8c9e401bb887ef650f1fe001f9fd7661841b98a95f67aea496c05054a4c41c287c09d1dd1e94e9c01cc997162a50e02df6d28645d268cceb35daf7ad1e4202b2b1714a71e2b18d0564f12a468c2bb4d7e678a1c4c493de0c945f0f2665efb658238dd4dd617b73acd8e20e4c5f440d2d4ee13617f2c2857c0457e0a3a73aac43d0e23f5c0f56f9042a6d1e6221383481a9bcc952576904895e013a5f12b6c0aa08b9ba911df7be42a4d0a3c31ca98111b4344d8079fdb55a43379fde9968edf9ce7b3554333d5819ad196935e928012d1b20b4aed5ee48d8851dd69458b15998712530b4d91228b06ae109741c0cf4ab723f092e49",
     16,
 )
+TRUSTED_KEYS = {
+    SIGNING_KEY_ID: (PUBLIC_EXPONENT, PUBLIC_MODULUS),
+}
+REVOKED_KEY_IDS: frozenset[str] = frozenset()
 _SHA256_DIGEST_INFO = bytes.fromhex("3031300d060960864801650304020105000420")
 
 
@@ -31,23 +35,35 @@ def canonical_manifest_bytes(manifest: dict[str, Any]) -> bytes:
     ).encode("utf-8")
 
 
-def verify_manifest_signature(manifest: dict[str, Any]) -> None:
+def verify_manifest_signature(
+    manifest: dict[str, Any],
+    *,
+    trusted_keys: dict[str, tuple[int, int]] | None = None,
+    revoked_key_ids: frozenset[str] | None = None,
+) -> None:
     signature = manifest.get("signature")
     if not isinstance(signature, dict):
         raise SignatureError("Versjonsmanifestet manglar signatur")
     if signature.get("algorithm") != SIGNATURE_ALGORITHM:
         raise SignatureError("Versjonsmanifestet bruker ukjend signaturalgoritme")
-    if signature.get("key_id") != SIGNING_KEY_ID:
+    key_id = str(signature.get("key_id", ""))
+    revoked = REVOKED_KEY_IDS if revoked_key_ids is None else revoked_key_ids
+    if key_id in revoked:
+        raise SignatureError("Versjonsmanifestet bruker ei tilbakekalla signeringsnøkkel")
+    keys = TRUSTED_KEYS if trusted_keys is None else trusted_keys
+    key = keys.get(key_id)
+    if key is None:
         raise SignatureError("Versjonsmanifestet bruker ukjend signeringsnøkkel")
+    public_exponent, public_modulus = key
     try:
         raw_signature = base64.b64decode(str(signature["value"]), validate=True)
     except (KeyError, ValueError) as exc:
         raise SignatureError("Versjonsmanifestet har ugyldig signatur") from exc
 
-    size = (PUBLIC_MODULUS.bit_length() + 7) // 8
+    size = (public_modulus.bit_length() + 7) // 8
     if len(raw_signature) != size:
         raise SignatureError("Versjonsmanifestet har feil signaturlengd")
-    encoded = pow(int.from_bytes(raw_signature, "big"), PUBLIC_EXPONENT, PUBLIC_MODULUS)
+    encoded = pow(int.from_bytes(raw_signature, "big"), public_exponent, public_modulus)
     actual = encoded.to_bytes(size, "big")
     digest = hashlib.sha256(canonical_manifest_bytes(manifest)).digest()
     padding_size = size - len(_SHA256_DIGEST_INFO) - len(digest) - 3
@@ -60,4 +76,3 @@ def verify_manifest_signature(manifest: dict[str, Any]) -> None:
     )
     if padding_size < 8 or not hmac.compare_digest(actual, expected):
         raise SignatureError("Signaturen på versjonsmanifestet stemmer ikkje")
-

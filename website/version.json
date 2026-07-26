@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.6.4",
-  "published_at": "2026-07-25T04:28:01Z",
+  "latest_version": "0.7.0",
+  "published_at": "2026-07-26T02:09:27Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.6.4",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.7.0",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.6.4-py3-none-any.whl",
-    "filename": "meshpi-0.6.4-py3-none-any.whl",
-    "sha256": "83dcc1e28d8c4f566b841be26c1817d822afe03bb4a32c2276661e2c392c2b95",
-    "size": 81686,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.7.0-py3-none-any.whl",
+    "filename": "meshpi-0.7.0-py3-none-any.whl",
+    "sha256": "95362432fbca013d23bc6dd217769f8818dd425e2c88d2f028fe6cf4c6aad1cf",
+    "size": 87696,
     "format": "wheel"
   },
   "locks": {
@@ -37,32 +37,33 @@
   "installers": {
     "linux": {
       "url": "https://venes.org/meshpi/install-linux.sh",
-      "sha256": "f3400177c3ed1c44213712ea567cf6322ffae268aba2f770d3378dc3c752c879",
-      "size": 13515,
+      "sha256": "c61d246491a666737ce980d0698c3211e951db7cc3f5a1714024e0f0fa41fbc1",
+      "size": 16263,
       "update_command": "curl -fLO https://venes.org/meshpi/install-linux.sh && sudo sh install-linux.sh"
     },
     "macos": {
       "url": "https://venes.org/meshpi/install-macos.sh",
-      "sha256": "cfa48142a034d3a5402e6368e443865d84e62c8dfb37a2b22f18c45599894221",
-      "size": 12205,
+      "sha256": "8d885fc8a121fdadbd2e9b5aa34a7adb23a97ad0043720e917fa414a801f3f06",
+      "size": 13511,
       "update_command": "curl -fLO https://venes.org/meshpi/install-macos.sh && sh install-macos.sh"
     },
     "windows": {
       "url": "https://venes.org/meshpi/install-windows.ps1",
-      "sha256": "2454be892fbc61641ad031327d7acf96243c359d4b1dcdb42ff4178b9fc45d2b",
-      "size": 18491,
+      "sha256": "ff72a14d765d9f8ff6d82072e885fff6fb275adf32362ccf4f79823cdf57c5ba",
+      "size": 19448,
       "update_command": "Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; .\\install-windows.ps1"
     }
   },
   "release_notes": [
-    "Fiendtlege nodenamn blir viste bokstavleg og kan ikkje lenger krasje eller styre TUI-en med markup.",
-    "Linux-installatøren kontrollerer venv før nedlasting og held ukjende miljøvariablar borte frå systemd-tenesta.",
-    "Relevante USB-portar blir prioriterte; fråkopla profilar blir merkte, og innebygde ttyS-portar kan visast med F4.",
-    "Windows reserverer IPC-porten eksklusivt, og lokale database- og profilfiler får private POSIX-rettar."
+    "Den innebygde oppdateraren verifiserer signatur, storleik og SHA-256 før han køyrer ein lokal installatør.",
+    "Linux og macOS bruker privat Unix-socket; Windows held fram med eksklusiv loopback-TCP.",
+    "Sanntidsovervaking har eiga kvote, og fråkopla klientar frigjer plassen automatisk.",
+    "Utgjevingsnøklar kan roterast og tilbakekallast gjennom allowlista nøkkelregister.",
+    "Tenestekommandoar bruker kontrollerte absolutte programstiar, og nodesøk behandlar jokerteikn bokstavleg."
   ],
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "eR8N/JaqWg8AmWd4KLJuf4bJWPFcOQuWjtL11ja4KtgbOx2yj47KJrq7Y34RsHamp4KBf2p4DERE5iRr6LY22PSFpCylArK5J1+KZlhxdOuHesT56jUr6gffAh9QOSzLbo3YK3WPzOJmnFGpnxAWlrn4lYl6u46NT0+mRgO4+GV0D1UjWIRvdEy1vrnCw6fir4FX0t2QTxyeq5X+N/DMfNJjQ4eJwvY8vkjP1dfMxQ6/e8qIyDgWmr4tvUrqVgDF/L70nmRPt6cox/4XHYoBWvYM3ydzQ6TJoVFqFvzwJ3AJKbw3/b3YPMMw415UyCdcreeImJtz/HHIzbIpo9mbjhe+HFYojzt2p9GXM1z41AOgX9USlwA69veMYDJS1uYT3l+z1qlJfEQ5qLBO3vppr3+m7BVhiym81Sa6DpaGlc6WdubG28CbOguqwKkJkB9Jhpld94/GbuuvvKaquh+caXh+qa0zCEnQ2xkV5rpiAM0D8HP6kcGZzwmf7y/wNfhU"
+    "value": "sUNa/Z8gBO+d0pLt+ZImZaPGl62wpM09NHNqshhd4/YGwbb6NXX0bqkW/3XrwT4Bgl6V0IWJBGzvjmqO36yl+Aj4NIYOwWRwLB0cJN6+f9ubNMGitjJBI8IN6U7Rl3ouSxDQWjqD4tMmbw9Jgc/0/3U8/369wmY5YpWwFdyVCwkp+KE7f6ehINNRvJdBi3tIjd+rV4A0xTT7XsEuMlMPLQLZVoppcMJ0VRCI+TWSE9SzO9hYoBkg31D8ImuovuwA9X5KTbF/shyzwXgvgjkIyYvzUFiy3Sm2QgrVFTXfPM7azJ+hcrKjLuvlqeu75ZY7TglJYtFGeTt9NeO1+3gb/TKiM+YlE5y5/A7dfRk3AXgaWNzMJ5t4OSHNYK6TZGTSNKnOFKmzt6eiIBdTCn4Z6mxfjgN2yOzYfwi8lDl2DtrXah42sNr2yEfKOOhf4HsYismPGOWFrXgzclouUJy8XL0PShFGTGQgR5vES1YJ6pLZjFgIo6yqYWdDj5h9GXby"
   }
 }

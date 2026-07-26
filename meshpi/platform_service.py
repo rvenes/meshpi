@@ -10,6 +10,7 @@ from meshpi.config import Settings
 from meshpi.lifecycle import daemon_status, start_session_daemon, stop_daemon
 
 LAUNCHCTL = "/bin/launchctl"
+SYSTEMCTL_PATHS = (Path("/usr/bin/systemctl"), Path("/bin/systemctl"))
 
 
 def _run(command: list[str], hint: str | None = None) -> None:
@@ -23,8 +24,38 @@ def _system() -> str:
     return platform.system().lower()
 
 
+def _systemctl_path() -> str:
+    for path in SYSTEMCTL_PATHS:
+        if path.is_file():
+            return str(path)
+    raise RuntimeError("Fann ikkje systemctl på ein godkjend systemsti")
+
+
+def windows_powershell_path() -> str:
+    if os.name != "nt":
+        raise RuntimeError("Windows PowerShell er berre tilgjengeleg på Windows")
+    import ctypes
+
+    windows_directory = ctypes.create_unicode_buffer(32768)
+    if not ctypes.windll.kernel32.GetSystemWindowsDirectoryW(
+        windows_directory,
+        len(windows_directory),
+    ):
+        raise RuntimeError("Fann ikkje den godkjende Windows-systemmappa")
+    powershell = (
+        Path(windows_directory.value)
+        / "System32"
+        / "WindowsPowerShell"
+        / "v1.0"
+        / "powershell.exe"
+    )
+    if not powershell.is_file():
+        raise RuntimeError(f"Fann ikkje Windows PowerShell: {powershell}")
+    return str(powershell)
+
+
 def _linux_action(action: str) -> None:
-    command = ["systemctl", action, "meshpi.service"]
+    command = [_systemctl_path(), action, "meshpi.service"]
     hint = f"sudo {' '.join(command)}" if os.geteuid() != 0 else None
     _run(command, hint)
 
@@ -71,7 +102,7 @@ def _windows_action(action: str) -> None:
         raise RuntimeError(f"Fann ikkje Windows-tenestestyringa: {manager}")
     _run(
         [
-            "powershell.exe",
+            windows_powershell_path(),
             "-NoProfile",
             "-ExecutionPolicy",
             "Bypass",

@@ -11,6 +11,42 @@ install_step() {
     printf '[%s/8] %s\n' "$1" "$2"
 }
 
+set_env_value() {
+    key="$1"
+    value="$2"
+    awk -v key="$key" -v value="$value" '
+        BEGIN { found = 0 }
+        index($0, key "=") == 1 {
+            if (!found) print key "=" value
+            found = 1
+            next
+        }
+        { print }
+        END { if (!found) print key "=" value }
+    ' "$CONFIG_FILE" >"$TMP_DIR/config-update"
+    cat "$TMP_DIR/config-update" >"$CONFIG_FILE"
+}
+
+resolve_ipc_socket_gid() {
+    ipc_client_user="$1"
+    ipc_gid="$(id -g "$ipc_client_user")"
+    case "$ipc_gid" in
+        *[!0-9]* | 0) return 0 ;;
+    esac
+
+    ipc_gid_users="$(
+        getent passwd |
+            awk -F: -v gid="$ipc_gid" \
+                '$4 == gid { count++ } END { print count + 0 }'
+    )"
+    if [ "$ipc_gid_users" -gt 1 ]; then
+        echo "Primærgruppa til $ipc_client_user er delt av fleire kontoar." >&2
+        echo "MeshPi krev ei privat primærgruppe for trygg IPC-tilgang." >&2
+        return 1
+    fi
+    printf '%s\n' "$ipc_gid"
+}
+
 for argument in "$@"; do
     case "$argument" in
         --mode=always) MODE=always ;;
@@ -26,7 +62,7 @@ if [ "$MODE" != "always" ] && [ "$MODE" != "session" ]; then
 fi
 if [ "$MODE" = "always" ] && [ "$(id -u)" -ne 0 ] && [ "$TEST_MODE" != "1" ]; then
     echo "Køyr installasjonen som root." >&2
-    echo "Døme: curl -fsSL $BASE_URL/install-linux.sh | sudo bash" >&2
+    echo "Last ned install-linux.sh og køyr: sudo sh install-linux.sh" >&2
     exit 1
 fi
 if [ "$MODE" = "session" ] && [ "$(id -u)" -eq 0 ] && [ "$TEST_MODE" != "1" ]; then
@@ -35,14 +71,45 @@ if [ "$MODE" = "session" ] && [ "$(id -u)" -eq 0 ] && [ "$TEST_MODE" != "1" ]; t
 fi
 
 install_step 1 "Kontrollerer Python 3.11 eller nyare …"
-for command in curl sha256sum awk; do
+for command in sha256sum awk; do
     command -v "$command" >/dev/null 2>&1 || {
         echo "Manglar kommandoen «$command»." >&2
         exit 1
     }
 done
+if {
+    [ -z "${MESHPI_MANIFEST_FILE:-}" ] ||
+    [ -z "${MESHPI_PACKAGE_FILE:-}" ] ||
+    [ -z "${MESHPI_LOCK_FILE:-}" ]
+} && ! command -v curl >/dev/null 2>&1
+then
+    echo "Manglar kommandoen «curl»." >&2
+    exit 1
+fi
+
+SYSTEMCTL=
+if [ "$MODE" = "always" ] && [ "$SKIP_SERVICE" != "1" ]; then
+    for candidate in /usr/bin/systemctl /bin/systemctl; do
+        if [ -x "$candidate" ]; then
+            SYSTEMCTL="$candidate"
+            break
+        fi
+    done
+    if [ -z "$SYSTEMCTL" ]; then
+        echo "Always-modus krev systemd og ein godkjend systemctl-sti." >&2
+        exit 1
+    fi
+fi
 
 find_python() {
+    if [ -n "${MESHPI_PYTHON:-}" ] &&
+        [ -x "$MESHPI_PYTHON" ] &&
+        "$MESHPI_PYTHON" -c \
+            'import sys; raise SystemExit(sys.version_info < (3, 11))'
+    then
+        printf '%s\n' "$MESHPI_PYTHON"
+        return 0
+    fi
     for candidate in python3.14 python3.13 python3.12 python3.11 python3; do
         if command -v "$candidate" >/dev/null 2>&1 &&
             "$candidate" -c 'import sys; raise SystemExit(sys.version_info < (3, 11))'
@@ -99,6 +166,25 @@ UNIT_FILE="${MESHPI_UNIT_FILE:-/etc/systemd/system/meshpi.service}"
 RELEASES_DIR="$PREFIX/releases"
 CURRENT_LINK="$PREFIX/current"
 PREVIOUS_LINK="$PREFIX/previous"
+CLIENT_USER="$INSTALL_USER"
+if [ "$MODE" = "always" ] && [ -f "$CONFIG_FILE" ]; then
+    EXISTING_OWNER="$(stat -c %U "$CONFIG_FILE" 2>/dev/null || true)"
+    if [ -n "$EXISTING_OWNER" ] &&
+        [ "$EXISTING_OWNER" != "root" ] &&
+        getent passwd "$EXISTING_OWNER" >/dev/null 2>&1
+    then
+        CLIENT_USER="$EXISTING_OWNER"
+    fi
+fi
+if [ "$MODE" = "always" ]; then
+    IPC_TRANSPORT_VALUE=unix
+    IPC_SOCKET_PATH_VALUE=/run/meshpi/meshpi.sock
+    IPC_SOCKET_GID_VALUE="$(resolve_ipc_socket_gid "$CLIENT_USER")"
+else
+    IPC_TRANSPORT_VALUE=unix
+    IPC_SOCKET_PATH_VALUE="$STATE_DIR/meshpi.sock"
+    IPC_SOCKET_GID_VALUE=
+fi
 
 MANIFEST="$TMP_DIR/version.json"
 
@@ -117,8 +203,10 @@ import hmac
 import json
 import sys
 
-modulus = int("c1370fa9e2eb0d22e354c58594e369f9db44156f834522bf69a8da523a30ac0d4539e08a30d76e854b40ae693da388af11ca62ee24c1e6f43ec128be550e8b7655d86955ae858b9f30237ba02e2773e9ad2fcfe1644484e909a8805a6c8a289dda69cedbc973d7427278442d8acb1d00a0c5cd242c34404843ea684ece7ad40a59d902633624ae36ae3f4e8c9e401bb887ef650f1fe001f9fd7661841b98a95f67aea496c05054a4c41c287c09d1dd1e94e9c01cc997162a50e02df6d28645d268cceb35daf7ad1e4202b2b1714a71e2b18d0564f12a468c2bb4d7e678a1c4c493de0c945f0f2665efb658238dd4dd617b73acd8e20e4c5f440d2d4ee13617f2c2857c0457e0a3a73aac43d0e23f5c0f56f9042a6d1e6221383481a9bcc952576904895e013a5f12b6c0aa08b9ba911df7be42a4d0a3c31ca98111b4344d8079fdb55a43379fde9968edf9ce7b3554333d5819ad196935e928012d1b20b4aed5ee48d8851dd69458b15998712530b4d91228b06ae109741c0cf4ab723f092e49", 16)
+current_modulus = int("c1370fa9e2eb0d22e354c58594e369f9db44156f834522bf69a8da523a30ac0d4539e08a30d76e854b40ae693da388af11ca62ee24c1e6f43ec128be550e8b7655d86955ae858b9f30237ba02e2773e9ad2fcfe1644484e909a8805a6c8a289dda69cedbc973d7427278442d8acb1d00a0c5cd242c34404843ea684ece7ad40a59d902633624ae36ae3f4e8c9e401bb887ef650f1fe001f9fd7661841b98a95f67aea496c05054a4c41c287c09d1dd1e94e9c01cc997162a50e02df6d28645d268cceb35daf7ad1e4202b2b1714a71e2b18d0564f12a468c2bb4d7e678a1c4c493de0c945f0f2665efb658238dd4dd617b73acd8e20e4c5f440d2d4ee13617f2c2857c0457e0a3a73aac43d0e23f5c0f56f9042a6d1e6221383481a9bcc952576904895e013a5f12b6c0aa08b9ba911df7be42a4d0a3c31ca98111b4344d8079fdb55a43379fde9968edf9ce7b3554333d5819ad196935e928012d1b20b4aed5ee48d8851dd69458b15998712530b4d91228b06ae109741c0cf4ab723f092e49", 16)
 exponent = 65537
+trusted_keys = {"meshpi-release-2026-01": (exponent, current_modulus)}
+revoked_key_ids = set()
 with open(sys.argv[1], encoding="utf-8") as handle:
     manifest = json.load(handle)
 signature = manifest.pop("signature", None)
@@ -126,8 +214,13 @@ if not isinstance(signature, dict):
     raise SystemExit("Versjonsmanifestet manglar signatur")
 if signature.get("algorithm") != "rsa-pkcs1v15-sha256":
     raise SystemExit("Ukjend signaturalgoritme")
-if signature.get("key_id") != "meshpi-release-2026-01":
+key_id = str(signature.get("key_id", ""))
+if key_id in revoked_key_ids:
+    raise SystemExit("Tilbakekalla signeringsnøkkel")
+key = trusted_keys.get(key_id)
+if key is None:
     raise SystemExit("Ukjend signeringsnøkkel")
+exponent, modulus = key
 try:
     raw = base64.b64decode(signature["value"], validate=True)
 except (KeyError, ValueError) as exc:
@@ -214,10 +307,6 @@ ACTUAL_LOCK_SHA256="$(sha256sum "$LOCK_FILE" | awk '{print $1}')"
 }
 
 if [ "$MODE" = "always" ] && [ "$SKIP_SERVICE" != "1" ]; then
-    command -v systemctl >/dev/null 2>&1 || {
-        echo "Always-modus krev systemd." >&2
-        exit 1
-    }
     getent group dialout >/dev/null 2>&1 || groupadd --system dialout
     if ! id meshpi >/dev/null 2>&1; then
         useradd --system --home-dir "$STATE_DIR" --shell /usr/sbin/nologin --user-group meshpi
@@ -238,6 +327,9 @@ CONNECTIONS_PATH=$STATE_DIR/connections.json
 DISCOVERY_SUBNET=
 IPC_HOST=127.0.0.1
 IPC_PORT=$IPC_PORT_VALUE
+IPC_TRANSPORT=$IPC_TRANSPORT_VALUE
+IPC_SOCKET_PATH=$IPC_SOCKET_PATH_VALUE
+IPC_SOCKET_GID=$IPC_SOCKET_GID_VALUE
 IPC_TOKEN=$IPC_TOKEN
 LOG_LEVEL=INFO
 UPDATE_URL=$BASE_URL/version.json
@@ -245,12 +337,10 @@ UPDATE_TIMEOUT=3
 BACKGROUND_MODE=$MODE
 EOF
 else
-    if grep -q '^BACKGROUND_MODE=' "$CONFIG_FILE"; then
-        sed "s/^BACKGROUND_MODE=.*/BACKGROUND_MODE=$MODE/" "$CONFIG_FILE" >"$TMP_DIR/config"
-        cat "$TMP_DIR/config" >"$CONFIG_FILE"
-    else
-        printf '\nBACKGROUND_MODE=%s\n' "$MODE" >>"$CONFIG_FILE"
-    fi
+    set_env_value BACKGROUND_MODE "$MODE"
+    set_env_value IPC_TRANSPORT "$IPC_TRANSPORT_VALUE"
+    set_env_value IPC_SOCKET_PATH "$IPC_SOCKET_PATH_VALUE"
+    set_env_value IPC_SOCKET_GID "$IPC_SOCKET_GID_VALUE"
     if grep -Eq '^IPC_TOKEN=[0-9a-fA-F]{64}$' "$CONFIG_FILE"; then
         :
     elif grep -q '^IPC_TOKEN=' "$CONFIG_FILE"; then
@@ -262,7 +352,7 @@ else
 fi
 
 if [ "$MODE" = "always" ] && [ "$SKIP_SERVICE" != "1" ]; then
-    chown "$INSTALL_USER:meshpi" "$CONFIG_FILE"
+    chown "$CLIENT_USER:meshpi" "$CONFIG_FILE"
     chmod 0640 "$CONFIG_FILE"
     chown -R meshpi:meshpi "$STATE_DIR"
     chmod 0750 "$STATE_DIR"
@@ -302,7 +392,7 @@ switch_link() {
 
 install_step 7 "Aktiverer MeshPi og konfigurerer bakgrunnstenesta …"
 if [ "$MODE" = "always" ] && [ "$SKIP_SERVICE" != "1" ]; then
-    systemctl stop meshpi.service >/dev/null 2>&1 || true
+    "$SYSTEMCTL" stop meshpi.service >/dev/null 2>&1 || true
 elif [ -x "$BIN_FILE" ]; then
     "$BIN_FILE" service stop >/dev/null 2>&1 || true
 fi
@@ -349,10 +439,12 @@ Wants=network-online.target
 Type=simple
 User=meshpi
 Group=meshpi
-SupplementaryGroups=dialout
+SupplementaryGroups=dialout $IPC_SOCKET_GID_VALUE
 WorkingDirectory=$STATE_DIR
 Environment=PYTHONDONTWRITEBYTECODE=1
 UMask=0077
+RuntimeDirectory=meshpi
+RuntimeDirectoryMode=0711
 ExecStart=$CURRENT_LINK/.venv/bin/meshpi --env-file $CONFIG_FILE daemon
 Restart=on-failure
 RestartSec=5
@@ -360,15 +452,15 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=$STATE_DIR
+ReadWritePaths=$STATE_DIR /run/meshpi
 
 [Install]
 WantedBy=multi-user.target
 EOF
     chmod 0644 "$UNIT_FILE"
-    systemctl daemon-reload
-    systemctl enable meshpi.service >/dev/null
-    systemctl start meshpi.service
+    "$SYSTEMCTL" daemon-reload
+    "$SYSTEMCTL" enable meshpi.service >/dev/null
+    "$SYSTEMCTL" start meshpi.service
 
     READY=0
     i=0
@@ -383,10 +475,10 @@ EOF
         sleep 0.25
     done
     if [ "$READY" != "1" ]; then
-        systemctl stop meshpi.service >/dev/null 2>&1 || true
+        "$SYSTEMCTL" stop meshpi.service >/dev/null 2>&1 || true
         if [ -n "$OLD_RELEASE" ] && [ -d "$OLD_RELEASE" ]; then
             switch_link "$OLD_RELEASE"
-            systemctl start meshpi.service || true
+            "$SYSTEMCTL" start meshpi.service || true
             echo "Oppdateringa feila. Førre versjon er sett tilbake." >&2
         else
             echo "Oppdateringa feila, og ingen førre versjon finst." >&2

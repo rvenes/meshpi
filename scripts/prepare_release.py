@@ -21,6 +21,8 @@ from pathlib import Path
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
+from meshpi.signing import SignatureError, verify_manifest_signature
+
 ROOT = Path(__file__).resolve().parents[1]
 LOCKS = ("linux", "macos", "windows")
 INSTALLERS = {
@@ -59,6 +61,26 @@ def canonical_manifest_bytes(manifest: dict) -> bytes:
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
+
+
+def sign_manifest(manifest: dict, private_key, key_id: str = SIGNING_KEY_ID) -> None:
+    signature = private_key.sign(
+        canonical_manifest_bytes(manifest),
+        padding.PKCS1v15(),
+        hashes.SHA256(),
+    )
+    manifest["signature"] = {
+        "algorithm": SIGNATURE_ALGORITHM,
+        "key_id": key_id,
+        "value": base64.b64encode(signature).decode("ascii"),
+    }
+    try:
+        verify_manifest_signature(manifest)
+    except SignatureError as exc:
+        raise SystemExit(
+            "Den valde private nøkkelen samsvarar ikkje med key_id "
+            f"«{key_id}» i det tiltrudde nøkkelregisteret"
+        ) from exc
 
 
 def main() -> None:
@@ -138,16 +160,7 @@ def main() -> None:
         Path(args.signing_key).read_bytes(),
         password=None,
     )
-    signature = private_key.sign(
-        canonical_manifest_bytes(manifest),
-        padding.PKCS1v15(),
-        hashes.SHA256(),
-    )
-    manifest["signature"] = {
-        "algorithm": SIGNATURE_ALGORITHM,
-        "key_id": SIGNING_KEY_ID,
-        "value": base64.b64encode(signature).decode("ascii"),
-    }
+    sign_manifest(manifest, private_key)
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",

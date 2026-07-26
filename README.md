@@ -24,6 +24,8 @@ likevel skilde frå CLI-en, slik at eit webgrensesnitt kan leggjast til seinare.
 - skil vanleg/implisitt ACK frå ende-til-ende-ACK til DM-mottakaren
 - koplar automatisk til på nytt etter sambandsbrot
 - har fullskjerms TUI, vanlege kommandoar og enkel interaktiv chat
+- kan laste ned og installere ei fullstendig signatur- og hashkontrollert
+  oppdatering utan å køyre ein kommando frå manifestet
 - kan køyre kontinuerleg som systemd-teneste, LaunchAgent eller
   per-brukar-autostart på Windows
 
@@ -33,8 +35,10 @@ meldingar automatisk.
 ## Arkitektur
 
 `meshpi daemon` er bakgrunnstenesta. Ho eig Meshtastic-sambandet og SQLite-fila.
-CLI-kommandoane snakkar med tenesta over ein lokal TCP-socket på
-`127.0.0.1:8765`. Socketen kan ikkje bindast til ei ekstern adresse.
+På Linux og macOS snakkar CLI-kommandoane med tenesta over ein privat
+Unix-socket. På Windows bruker MeshPi ein eksklusivt reservert TCP-socket på
+`127.0.0.1:8765`. TCP-socketen kan ikkje bindast til ei ekstern adresse.
+IPC-tokenet blir kontrollert for begge transportane.
 
 Dette gjer at meldingar blir tekne imot sjølv om ingen er SSH-innlogga, og at
 berre eitt program om gongen bruker TCP-sambandet til radioen.
@@ -77,6 +81,9 @@ macOS:
 curl -fLO https://venes.org/meshpi/install-macos.sh
 sh install-macos.sh
 ```
+
+Køyr aldri macOS-installatøren med `sudo`; han avviser root for å hindre ei
+utilsikta installering under `/var/root`.
 
 Windows PowerShell:
 
@@ -145,10 +152,32 @@ Meshtastic sitt vanlege TCP-grensesnitt på port 4403 er ukryptert. Bruk TCP
 berre på eit nett du stoler på, eller over VPN/SSH-tunnel. USB/seriell sender
 ikkje trafikken over lokalnettet.
 
-Køyr den same kommandoen på nytt for å oppdatere. TUI-en sjekkar
-`https://venes.org/meshpi/version.json` ved oppstart. Dersom ein ny versjon
-finst, viser chatloggen ei lokal systemmelding med rett kommando. Kommandoen
-blir aldri lagd i sendefeltet eller sendt over Meshtastic.
+Etter første installasjon bruker du den innebygde, kontrollerte oppdateraren:
+
+```bash
+# Linux, always-modus
+sudo meshpi update
+
+# Linux session-modus og macOS
+meshpi update
+```
+
+```powershell
+# Windows
+meshpi update
+```
+
+Bruk `meshpi update --check` for berre å sjekke. Sjølve installasjonen krev at
+du skriv `OPPDATER`, eller at du legg til `--yes` for ei uttrykkeleg
+ikkje-interaktiv stadfesting.
+
+TUI-en sjekkar `https://venes.org/meshpi/version.json` ved oppstart og viser
+`meshpi update` i ei lokal systemmelding når ein ny versjon finst. Kommandoen
+blir aldri lagd i sendefeltet eller sendt over Meshtastic. Oppdateraren
+verifiserer manifestsignaturen, lastar ned installatøren, låsefila og
+wheel-pakken til ei privat mellombels mappe, kontrollerer signert storleik og
+SHA-256 og køyrer berre den lokalt verifiserte installatøren. Kommandoar i
+manifestet blir aldri køyrde.
 
 Oppdateringa blir bygd i ei ny versjonsmappe og testa offline før daemonen blir
 stoppa. Etter eit atomisk byte blir den nye daemonen helsesjekka. Dersom
@@ -319,6 +348,7 @@ Alle CLI-kommandoane:
 | `meshpi daemon` | Køyr bakgrunnstenesta i framgrunnen; mest for feilsøking og tenesteoppsett. |
 | `meshpi doctor [--offline]` | Køyr sjølvtest; `--offline` krev ikkje ein tilgjengeleg node. |
 | `meshpi service {status,start,stop,enable,disable}` | Vis eller styr bakgrunnstenesta og autostart. |
+| `meshpi update [--check] [--yes]` | Sjekk eller installer ei signert og hashkontrollert oppdatering. |
 | `meshpi status` | Vis sambands- og tilkoplingsstatus. |
 | `meshpi nodes [--search TEKST] [--sort name\|seen\|id]` | Vis, filtrer og sorter kjende nodar. |
 | `meshpi node NODE-ID` | Vis alle lagra detaljar om éin node. |
@@ -478,22 +508,33 @@ MESHTASTIC_PORT=4403
 DATABASE_PATH=./data/meshtastic.db
 CONNECTIONS_PATH=./data/connections.json
 DISCOVERY_SUBNET=
+IPC_TRANSPORT=auto
 IPC_HOST=127.0.0.1
 IPC_PORT=8765
+IPC_SOCKET_PATH=./data/meshpi.sock
+IPC_SOCKET_GID=
+IPC_TOKEN=replace-with-64-random-hex-characters
 LOG_LEVEL=INFO
 UPDATE_URL=https://venes.org/meshpi/version.json
 UPDATE_TIMEOUT=3
 BACKGROUND_MODE=always
 ```
 
-`IPC_HOST` godtek berre `127.0.0.1`, `::1` eller `localhost`. IPC-tenesta har
-ikkje eiga innlogging og skal derfor berre vere tilgjengeleg for lokale,
-betrodde brukarar.
+`IPC_TRANSPORT=auto` vel Unix-socket på Linux/macOS og loopback-TCP på
+Windows. `IPC_TRANSPORT=tcp` kan brukast uttrykkeleg på alle plattformer;
+`IPC_HOST` godtek då berre `127.0.0.1`, `::1` eller `localhost`.
+`IPC_SOCKET_PATH` vel Unix-socketen. Installatørane set ein privat
+plattformtilpassa sti. `IPC_SOCKET_GID` er valfri POSIX-gruppetilgang og bør
+berre setjast av installatøren eller ein administrator. `IPC_TOKEN` må vere
+minst 32 teikn og blir kontrollert før ein IPC-kommando blir utført.
 
 Når `DISCOVERY_SUBNET` er tom, finn MeshPi det lokale IPv4-nettet automatisk
 og søkjer der. Set til dømes `DISCOVERY_SUBNET=192.168.1.0/24` for å avgrense
 TCP-søket manuelt. Nettet kan maksimalt vere `/22`. Seriell oppdaging brukar
 systemet si portliste og føretrekkjer stabile stiar under `/dev/serial/by-id`.
+To elles like USB-einingar utan serienummer eller annan stabil maskinvare-ID
+kan byte portnamn etter fråkopling eller omstart. Gi slike profilar tydelege
+namn og kontroller porten før bruk.
 
 Set `UPDATE_URL` til tom verdi dersom automatisk oppdateringssjekk skal vere
 av. Nettverksfeil under sjekken blir ignorerte og hindrar aldri oppstart.
@@ -522,10 +563,18 @@ ut den plattformstyrte tenesta slik at ho ikkje startar daemonen opp att.
 
 - programversjonar: `/opt/meshpi/releases/`
 - aktiv og førre versjon: `/opt/meshpi/current` og `/opt/meshpi/previous`
-- konfigurasjon: `/etc/meshpi.env` (`root:meshpi`, `0640`)
+- konfigurasjon: `/etc/meshpi.env` (installasjonsbrukaren:`meshpi`, `0640`)
 - database og profilar: `/var/lib/meshpi` (`meshpi:meshpi`, `0750`)
+- IPC-socket: `/run/meshpi/meshpi.sock` (privat, med tilgang for
+  installasjonsbrukaren)
 - logg: `journalctl -u meshpi -f`
 - teneste: `sudo systemctl status|start|stop|restart meshpi`
+
+Always-installasjonen bruker installasjonsbrukaren si private primærgruppe for
+sockettilgang utan å krevje ny innlogging. Installatøren avviser ei primærgruppe
+som er delt av fleire kontoar. På system med felles `users`- eller
+`staff`-gruppe kan du bruke session-modus eller få administratoren til å gi
+kontoen ei privat primærgruppe før always-installasjon.
 
 Avinstaller og bevar data:
 
@@ -597,6 +646,16 @@ ruff check .
 
 Testane dekkjer mellom anna kanal 0, DM, node-ID, RF/MQTT, duplikatkontroll,
 SQLite, sending, ACK/NAK, reconnect og inputvalidering.
+
+## Utgjevingsnøklar
+
+Manifestet oppgir ein `key_id`. Appen og alle tre installatørane har eit
+allowlista nøkkelregister og ei eiga tilbakekallingsliste. Ein ny nøkkel skal
+først leggjast inn i ei utgiving som framleis er signert med ein allereie
+tiltrudd nøkkel. Først etter at denne overgangsutgivinga er tilgjengeleg, kan
+seinare manifest signerast med den nye nøkkelen. Ein kompromittert nøkkel blir
+lagd i tilbakekallingslista i neste trygt distribuerte utgiving. Sjå
+[`SECURITY.md`](SECURITY.md) for prosedyre og avgrensingar.
 
 ## Trygg live-test
 

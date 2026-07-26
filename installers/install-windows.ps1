@@ -30,6 +30,13 @@ function Test-PythonCommand {
 }
 
 function Find-MeshPiPython {
+    if (
+        $env:MESHPI_PYTHON -and
+        (Test-Path -LiteralPath $env:MESHPI_PYTHON -PathType Leaf) -and
+        (Test-PythonCommand $env:MESHPI_PYTHON @())
+    ) {
+        return @{ Exe = $env:MESHPI_PYTHON; Prefix = @() }
+    }
     $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
     if ($launcher) {
         foreach ($version in @("-3.14", "-3.13", "-3.12", "-3.11")) {
@@ -183,19 +190,28 @@ try {
     }
     $verifier = @'
 import base64, hashlib, hmac, json, sys
-modulus = int("c1370fa9e2eb0d22e354c58594e369f9db44156f834522bf69a8da523a30ac0d4539e08a30d76e854b40ae693da388af11ca62ee24c1e6f43ec128be550e8b7655d86955ae858b9f30237ba02e2773e9ad2fcfe1644484e909a8805a6c8a289dda69cedbc973d7427278442d8acb1d00a0c5cd242c34404843ea684ece7ad40a59d902633624ae36ae3f4e8c9e401bb887ef650f1fe001f9fd7661841b98a95f67aea496c05054a4c41c287c09d1dd1e94e9c01cc997162a50e02df6d28645d268cceb35daf7ad1e4202b2b1714a71e2b18d0564f12a468c2bb4d7e678a1c4c493de0c945f0f2665efb658238dd4dd617b73acd8e20e4c5f440d2d4ee13617f2c2857c0457e0a3a73aac43d0e23f5c0f56f9042a6d1e6221383481a9bcc952576904895e013a5f12b6c0aa08b9ba911df7be42a4d0a3c31ca98111b4344d8079fdb55a43379fde9968edf9ce7b3554333d5819ad196935e928012d1b20b4aed5ee48d8851dd69458b15998712530b4d91228b06ae109741c0cf4ab723f092e49", 16)
+current_modulus = int("c1370fa9e2eb0d22e354c58594e369f9db44156f834522bf69a8da523a30ac0d4539e08a30d76e854b40ae693da388af11ca62ee24c1e6f43ec128be550e8b7655d86955ae858b9f30237ba02e2773e9ad2fcfe1644484e909a8805a6c8a289dda69cedbc973d7427278442d8acb1d00a0c5cd242c34404843ea684ece7ad40a59d902633624ae36ae3f4e8c9e401bb887ef650f1fe001f9fd7661841b98a95f67aea496c05054a4c41c287c09d1dd1e94e9c01cc997162a50e02df6d28645d268cceb35daf7ad1e4202b2b1714a71e2b18d0564f12a468c2bb4d7e678a1c4c493de0c945f0f2665efb658238dd4dd617b73acd8e20e4c5f440d2d4ee13617f2c2857c0457e0a3a73aac43d0e23f5c0f56f9042a6d1e6221383481a9bcc952576904895e013a5f12b6c0aa08b9ba911df7be42a4d0a3c31ca98111b4344d8079fdb55a43379fde9968edf9ce7b3554333d5819ad196935e928012d1b20b4aed5ee48d8851dd69458b15998712530b4d91228b06ae109741c0cf4ab723f092e49", 16)
+trusted_keys = {"meshpi-release-2026-01": (65537, current_modulus)}
+revoked_key_ids = set()
 with open(sys.argv[1], encoding="utf-8") as handle:
     manifest = json.load(handle)
 signature = manifest.pop("signature", None)
-if not isinstance(signature, dict) or signature.get("algorithm") != "rsa-pkcs1v15-sha256" or signature.get("key_id") != "meshpi-release-2026-01":
+if not isinstance(signature, dict) or signature.get("algorithm") != "rsa-pkcs1v15-sha256":
     raise SystemExit("Versjonsmanifestet manglar ein gyldig signatur")
+key_id = str(signature.get("key_id", ""))
+if key_id in revoked_key_ids:
+    raise SystemExit("Tilbakekalla signeringsnøkkel")
+key = trusted_keys.get(key_id)
+if key is None:
+    raise SystemExit("Ukjend signeringsnøkkel")
+exponent, modulus = key
 try:
     raw = base64.b64decode(signature["value"], validate=True)
 except (KeyError, ValueError) as exc:
     raise SystemExit("Ugyldig manifestsignatur") from exc
 canonical = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
 size = (modulus.bit_length() + 7) // 8
-actual = pow(int.from_bytes(raw, "big"), 65537, modulus).to_bytes(size, "big")
+actual = pow(int.from_bytes(raw, "big"), exponent, modulus).to_bytes(size, "big")
 digest_info = bytes.fromhex("3031300d060960864801650304020105000420")
 digest = hashlib.sha256(canonical).digest()
 pad = size - len(digest_info) - len(digest) - 3
@@ -256,6 +272,9 @@ CONNECTIONS_PATH=$dataDir\connections.json
 DISCOVERY_SUBNET=
 IPC_HOST=127.0.0.1
 IPC_PORT=$ipcPort
+IPC_TRANSPORT=tcp
+IPC_SOCKET_PATH=
+IPC_SOCKET_GID=
 IPC_TOKEN=$ipcToken
 LOG_LEVEL=INFO
 UPDATE_URL=$BaseUrl/version.json
@@ -265,6 +284,9 @@ BACKGROUND_MODE=$modeValue
         Write-Utf8NoBom $configFile $configText
     } else {
         Set-EnvValue $configFile "BACKGROUND_MODE" $modeValue
+        Set-EnvValue $configFile "IPC_TRANSPORT" "tcp"
+        Set-EnvValue $configFile "IPC_SOCKET_PATH" ""
+        Set-EnvValue $configFile "IPC_SOCKET_GID" ""
         $ipcToken = Get-EnvValue $configFile "IPC_TOKEN"
         if ($ipcToken -notmatch "^[0-9a-fA-F]{64}$") {
             $tokenBytes = New-Object byte[] 32
@@ -349,7 +371,11 @@ set /p MESHPI_CURRENT=<"$currentFile"
 "@ | Set-Content -Encoding ASCII $daemonCmd
     $supervisorFile = Join-Path $binDir "meshpi-supervisor.ps1"
     $managerFile = Join-Path $binDir "meshpi-service.ps1"
-    $powerShellExe = (Get-Command powershell.exe).Source
+    $powerShellExe = Join-Path ([Environment]::SystemDirectory) `
+        "WindowsPowerShell\v1.0\powershell.exe"
+    if (-not (Test-Path -LiteralPath $powerShellExe -PathType Leaf)) {
+        throw "Fann ikkje Windows PowerShell på den godkjende systemstien."
+    }
     @"
 `$ErrorActionPreference = "Continue"
 while (`$true) {

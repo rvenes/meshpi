@@ -1,7 +1,34 @@
 from pathlib import Path
 
 from meshpi.config import Settings
-from meshpi.platform_service import _macos_action, manage_service
+from meshpi.platform_service import _linux_action, _macos_action, manage_service
+
+
+def test_linux_service_action_uses_approved_absolute_systemctl(monkeypatch):
+    commands = []
+    monkeypatch.setenv("PATH", "/tmp/forgifta")
+    monkeypatch.setattr(
+        "meshpi.platform_service._systemctl_path",
+        lambda: "/usr/bin/systemctl",
+    )
+    monkeypatch.setattr(
+        "meshpi.platform_service._run",
+        lambda command, hint=None: commands.append((command, hint)),
+    )
+    monkeypatch.setattr(
+        "meshpi.platform_service.os.geteuid",
+        lambda: 1000,
+        raising=False,
+    )
+
+    _linux_action("start")
+
+    assert commands == [
+        (
+            ["/usr/bin/systemctl", "start", "meshpi.service"],
+            "sudo /usr/bin/systemctl start meshpi.service",
+        )
+    ]
 
 
 def test_macos_start_bootstraps_an_unloaded_launchagent(monkeypatch):

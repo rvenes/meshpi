@@ -438,18 +438,20 @@ class Database:
         }.get(sort)
         if order is None:
             raise ValueError("Sortering må vere name, seen eller id")
-        pattern = f"%{search.strip()}%"
+        term = search.strip()
+        escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
         with self._connect() as connection:
             query = f"""
                 SELECT * FROM nodes
-                WHERE ? = '%%'
-                   OR node_id LIKE ? COLLATE NOCASE
-                   OR long_name LIKE ? COLLATE NOCASE
-                   OR short_name LIKE ? COLLATE NOCASE
+                WHERE ? = ''
+                   OR node_id LIKE ? ESCAPE '\\' COLLATE NOCASE
+                   OR long_name LIKE ? ESCAPE '\\' COLLATE NOCASE
+                   OR short_name LIKE ? ESCAPE '\\' COLLATE NOCASE
                 ORDER BY {order}
                 """  # nosec B608
             rows = connection.execute(
-                query, (pattern, pattern, pattern, pattern)
+                query, (term, pattern, pattern, pattern)
             ).fetchall()
         result = []
         for row in rows:

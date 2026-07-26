@@ -275,3 +275,18 @@ def test_nodes_are_upserted_and_sorted(tmp_path):
     assert nodes[0]["is_local"] is True
     assert database.get_node("!11112222")["can_receive_dm"] is True
     assert database.list_nodes(search="Zulu")[0]["node_id"] == "!11112222"
+
+
+def test_node_search_treats_sql_wildcards_as_text(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    database.upsert_node(Node(node_id="!11112222", long_name="Prosent%node"))
+    database.upsert_node(Node(node_id="!33334444", long_name="Under_strek"))
+    database.upsert_node(Node(node_id="!55556666", long_name="Vanleg node"))
+
+    assert [item["node_id"] for item in database.list_nodes(search="%")] == [
+        "!11112222"
+    ]
+    assert [item["node_id"] for item in database.list_nodes(search="_")] == [
+        "!33334444"
+    ]

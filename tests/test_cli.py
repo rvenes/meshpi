@@ -8,6 +8,7 @@ from meshpi.cli import (
     run,
 )
 from meshpi.config import Settings
+from meshpi.update import UpdateNotice
 
 
 def test_battery_display_handles_external_power():
@@ -97,6 +98,63 @@ def test_cli_accepts_connection_shortcuts():
 def test_cli_has_new_connection_dialog_command():
     args = build_parser().parse_args(["new"])
     assert args.command == "new"
+
+
+def test_cli_has_verified_update_command():
+    args = build_parser().parse_args(["update", "--check"])
+    assert args.command == "update"
+    assert args.check is True
+
+
+def test_update_command_does_not_start_daemon(monkeypatch):
+    calls = []
+    monkeypatch.setattr("meshpi.cli.Settings.load", lambda _path: Settings())
+    monkeypatch.setattr(
+        "meshpi.cli.daemon_status",
+        lambda _settings: (_ for _ in ()).throw(AssertionError("daemon")),
+    )
+    monkeypatch.setattr(
+        "meshpi.cli.run",
+        lambda args, _settings: calls.append(args.command),
+    )
+
+    main(["update", "--check"])
+
+    assert calls == ["update"]
+
+
+def test_update_command_requires_explicit_confirmation(monkeypatch, capsys):
+    calls = []
+    notice = UpdateNotice("0.6.4", "0.7.0", "meshpi update")
+    monkeypatch.setattr("meshpi.cli.check_for_update", lambda _settings: notice)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "nei")
+    monkeypatch.setattr(
+        "meshpi.cli.apply_update",
+        lambda *_args, **_kwargs: calls.append(True),
+    )
+
+    run(build_parser().parse_args(["update"]), Settings())
+
+    assert calls == []
+    assert "avbroten" in capsys.readouterr().out
+
+
+def test_update_command_installs_confirmed_version(monkeypatch, capsys):
+    notice = UpdateNotice("0.6.4", "0.7.0", "meshpi update")
+    calls = []
+    monkeypatch.setattr("meshpi.cli.check_for_update", lambda _settings: notice)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "OPPDATER")
+
+    def update(_settings, *, expected_version):
+        calls.append(expected_version)
+        return "0.7.0"
+
+    monkeypatch.setattr("meshpi.cli.apply_update", update)
+
+    run(build_parser().parse_args(["update"]), Settings())
+
+    assert calls == ["0.7.0"]
+    assert "0.7.0 er installert" in capsys.readouterr().out
 
 
 def test_main_starts_stopped_always_service_before_running_command(monkeypatch):

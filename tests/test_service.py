@@ -287,7 +287,10 @@ def test_traceroute_timeout_fails_action_and_discards_response_handler(
     assert interface.responseHandlers == {}
 
 
-def test_service_switches_connection_profile_and_closes_old_interface(service):
+def test_service_switches_connection_profile_and_closes_old_interface(
+    service, monkeypatch
+):
+    monkeypatch.setattr("meshpi.service.discover_serial", lambda: [])
     value, interface, database = service
 
     status = value.connect(target="/dev/ttyACM0", name="USB-node")
@@ -396,6 +399,7 @@ def test_running_service_switches_from_tcp_to_serial_without_backoff(
     tmp_path, monkeypatch
 ):
     monkeypatch.setattr("meshpi.service.RECONNECT_DELAYS", (0, 0, 0, 0))
+    monkeypatch.setattr("meshpi.service.discover_serial", lambda: [])
     database = Database(tmp_path / "db.sqlite")
     database.initialize()
     attempts = []

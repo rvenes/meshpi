@@ -5,9 +5,26 @@ BASE_URL="${MESHPI_BASE_URL:-https://venes.org/meshpi}"
 MODE="${MESHPI_MODE:-always}"
 IPC_PORT_VALUE="${MESHPI_IPC_PORT:-8765}"
 SKIP_SERVICE="${MESHPI_SKIP_SERVICE:-0}"
+TEST_MODE="${MESHPI_TEST_MODE:-0}"
 
 install_step() {
     printf '[%s/8] %s\n' "$1" "$2"
+}
+
+set_env_value() {
+    key="$1"
+    value="$2"
+    awk -v key="$key" -v value="$value" '
+        BEGIN { found = 0 }
+        index($0, key "=") == 1 {
+            if (!found) print key "=" value
+            found = 1
+            next
+        }
+        { print }
+        END { if (!found) print key "=" value }
+    ' "$CONFIG_FILE" >"$TMP_DIR/config-update"
+    cat "$TMP_DIR/config-update" >"$CONFIG_FILE"
 }
 
 for argument in "$@"; do
@@ -21,16 +38,37 @@ done
     echo "Modus må vere «always» eller «session»." >&2
     exit 2
 }
+if [ "$(id -u)" -eq 0 ] && [ "$TEST_MODE" != "1" ]; then
+    echo "macOS-installasjonen skal køyrast utan sudo." >&2
+    exit 1
+fi
 
 install_step 1 "Kontrollerer Python 3.11 eller nyare …"
-for command in curl shasum; do
+for command in shasum; do
     command -v "$command" >/dev/null 2>&1 || {
         echo "Manglar kommandoen «$command»." >&2
         exit 1
     }
 done
+if {
+    [ -z "${MESHPI_MANIFEST_FILE:-}" ] ||
+    [ -z "${MESHPI_PACKAGE_FILE:-}" ] ||
+    [ -z "${MESHPI_LOCK_FILE:-}" ]
+} && ! command -v curl >/dev/null 2>&1
+then
+    echo "Manglar kommandoen «curl»." >&2
+    exit 1
+fi
 
 find_python() {
+    if [ -n "${MESHPI_PYTHON:-}" ] &&
+        [ -x "$MESHPI_PYTHON" ] &&
+        "$MESHPI_PYTHON" -c \
+            'import sys; raise SystemExit(sys.version_info < (3, 11))'
+    then
+        printf '%s\n' "$MESHPI_PYTHON"
+        return 0
+    fi
     for candidate in python3.14 python3.13 python3.12 python3.11 python3; do
         if command -v "$candidate" >/dev/null 2>&1 &&
             "$candidate" -c 'import sys; raise SystemExit(sys.version_info < (3, 11))'
@@ -72,19 +110,28 @@ fi
 verify_manifest_signature() {
     "$PYTHON" - "$MANIFEST" <<'PY'
 import base64, hashlib, hmac, json, sys
-modulus = int("c1370fa9e2eb0d22e354c58594e369f9db44156f834522bf69a8da523a30ac0d4539e08a30d76e854b40ae693da388af11ca62ee24c1e6f43ec128be550e8b7655d86955ae858b9f30237ba02e2773e9ad2fcfe1644484e909a8805a6c8a289dda69cedbc973d7427278442d8acb1d00a0c5cd242c34404843ea684ece7ad40a59d902633624ae36ae3f4e8c9e401bb887ef650f1fe001f9fd7661841b98a95f67aea496c05054a4c41c287c09d1dd1e94e9c01cc997162a50e02df6d28645d268cceb35daf7ad1e4202b2b1714a71e2b18d0564f12a468c2bb4d7e678a1c4c493de0c945f0f2665efb658238dd4dd617b73acd8e20e4c5f440d2d4ee13617f2c2857c0457e0a3a73aac43d0e23f5c0f56f9042a6d1e6221383481a9bcc952576904895e013a5f12b6c0aa08b9ba911df7be42a4d0a3c31ca98111b4344d8079fdb55a43379fde9968edf9ce7b3554333d5819ad196935e928012d1b20b4aed5ee48d8851dd69458b15998712530b4d91228b06ae109741c0cf4ab723f092e49", 16)
+current_modulus = int("c1370fa9e2eb0d22e354c58594e369f9db44156f834522bf69a8da523a30ac0d4539e08a30d76e854b40ae693da388af11ca62ee24c1e6f43ec128be550e8b7655d86955ae858b9f30237ba02e2773e9ad2fcfe1644484e909a8805a6c8a289dda69cedbc973d7427278442d8acb1d00a0c5cd242c34404843ea684ece7ad40a59d902633624ae36ae3f4e8c9e401bb887ef650f1fe001f9fd7661841b98a95f67aea496c05054a4c41c287c09d1dd1e94e9c01cc997162a50e02df6d28645d268cceb35daf7ad1e4202b2b1714a71e2b18d0564f12a468c2bb4d7e678a1c4c493de0c945f0f2665efb658238dd4dd617b73acd8e20e4c5f440d2d4ee13617f2c2857c0457e0a3a73aac43d0e23f5c0f56f9042a6d1e6221383481a9bcc952576904895e013a5f12b6c0aa08b9ba911df7be42a4d0a3c31ca98111b4344d8079fdb55a43379fde9968edf9ce7b3554333d5819ad196935e928012d1b20b4aed5ee48d8851dd69458b15998712530b4d91228b06ae109741c0cf4ab723f092e49", 16)
+trusted_keys = {"meshpi-release-2026-01": (65537, current_modulus)}
+revoked_key_ids = set()
 with open(sys.argv[1], encoding="utf-8") as handle:
     manifest = json.load(handle)
 signature = manifest.pop("signature", None)
-if not isinstance(signature, dict) or signature.get("algorithm") != "rsa-pkcs1v15-sha256" or signature.get("key_id") != "meshpi-release-2026-01":
+if not isinstance(signature, dict) or signature.get("algorithm") != "rsa-pkcs1v15-sha256":
     raise SystemExit("Versjonsmanifestet manglar ein gyldig signatur")
+key_id = str(signature.get("key_id", ""))
+if key_id in revoked_key_ids:
+    raise SystemExit("Tilbakekalla signeringsnøkkel")
+key = trusted_keys.get(key_id)
+if key is None:
+    raise SystemExit("Ukjend signeringsnøkkel")
+exponent, modulus = key
 try:
     raw = base64.b64decode(signature["value"], validate=True)
 except (KeyError, ValueError) as exc:
     raise SystemExit("Ugyldig manifestsignatur") from exc
 canonical = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
 size = (modulus.bit_length() + 7) // 8
-actual = pow(int.from_bytes(raw, "big"), 65537, modulus).to_bytes(size, "big")
+actual = pow(int.from_bytes(raw, "big"), exponent, modulus).to_bytes(size, "big")
 digest_info = bytes.fromhex("3031300d060960864801650304020105000420")
 digest = hashlib.sha256(canonical).digest()
 pad = size - len(digest_info) - len(digest) - 3
@@ -173,6 +220,9 @@ CONNECTIONS_PATH=$DATA_DIR/connections.json
 DISCOVERY_SUBNET=
 IPC_HOST=127.0.0.1
 IPC_PORT=$IPC_PORT_VALUE
+IPC_TRANSPORT=unix
+IPC_SOCKET_PATH=$DATA_DIR/meshpi.sock
+IPC_SOCKET_GID=
 IPC_TOKEN=$IPC_TOKEN
 LOG_LEVEL=INFO
 UPDATE_URL=$BASE_URL/version.json
@@ -180,12 +230,10 @@ UPDATE_TIMEOUT=3
 BACKGROUND_MODE=$MODE
 EOF
 else
-    if grep -q '^BACKGROUND_MODE=' "$CONFIG_FILE"; then
-        sed "s/^BACKGROUND_MODE=.*/BACKGROUND_MODE=$MODE/" "$CONFIG_FILE" >"$TMP_DIR/config"
-        cat "$TMP_DIR/config" >"$CONFIG_FILE"
-    else
-        printf '\nBACKGROUND_MODE=%s\n' "$MODE" >>"$CONFIG_FILE"
-    fi
+    set_env_value BACKGROUND_MODE "$MODE"
+    set_env_value IPC_TRANSPORT unix
+    set_env_value IPC_SOCKET_PATH "$DATA_DIR/meshpi.sock"
+    set_env_value IPC_SOCKET_GID ""
     if grep -Eq '^IPC_TOKEN=[0-9a-fA-F]{64}$' "$CONFIG_FILE"; then
         :
     elif grep -q '^IPC_TOKEN=' "$CONFIG_FILE"; then

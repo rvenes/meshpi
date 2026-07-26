@@ -25,10 +25,12 @@ from meshpi.lifecycle import (
 )
 from meshpi.models import normalize_node_id, sanitize_terminal_text
 from meshpi.platform_service import manage_service
+from meshpi.update import apply_update, check_for_update
 
 EXIT_ERROR = 1
 COMMANDS = {
     "tui",
+    "update",
     "new",
     "connect",
     "connections",
@@ -407,6 +409,20 @@ def build_parser() -> argparse.ArgumentParser:
         "action",
         choices=("status", "start", "stop", "enable", "disable"),
     )
+    update = sub.add_parser(
+        "update",
+        help="last ned og installer ei signert MeshPi-oppdatering",
+    )
+    update.add_argument(
+        "--check",
+        action="store_true",
+        help="sjekk berre om ei ny utgåve finst",
+    )
+    update.add_argument(
+        "--yes",
+        action="store_true",
+        help="stadfest installasjonen utan interaktivt spørsmål",
+    )
     sub.add_parser("status", help="vis tilkoplingsstatus")
 
     nodes = sub.add_parser("nodes", help="vis kjende nodar")
@@ -501,6 +517,47 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
         print(json.dumps(data, ensure_ascii=False)) if args.json else _print_service(
             data, args.action
         )
+    elif command == "update":
+        notice = check_for_update(settings)
+        if notice is None:
+            result = {"updated": False, "version": __version__}
+            if args.json:
+                print(json.dumps(result, ensure_ascii=False))
+            else:
+                print(f"MeshPi {__version__} er allereie oppdatert.")
+            return None
+        if args.check:
+            result = {
+                "updated": False,
+                "current_version": notice.current_version,
+                "latest_version": notice.latest_version,
+            }
+            if args.json:
+                print(json.dumps(result, ensure_ascii=False))
+            else:
+                print(
+                    f"MeshPi {notice.latest_version} er tilgjengeleg "
+                    f"(installert: {notice.current_version})."
+                )
+            return None
+        if args.json and not args.yes:
+            raise ValueError("Bruk --yes saman med --json for å stadfeste oppdateringa")
+        if not args.yes:
+            answer = input(
+                f"Installer MeshPi {notice.latest_version}? Skriv OPPDATER for å halde fram: "
+            )
+            if answer.strip() != "OPPDATER":
+                print("Oppdateringa blei avbroten.")
+                return None
+        installed = apply_update(settings, expected_version=notice.latest_version)
+        result = {
+            "updated": installed is not None,
+            "version": installed or __version__,
+        }
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False))
+        else:
+            print(f"MeshPi {result['version']} er installert.")
     elif command == "status":
         data = _request(settings, {"command": "status"})["data"]
         print(json.dumps(data, ensure_ascii=False)) if args.json else _print_status(data)
@@ -587,7 +644,7 @@ def main(argv: list[str] | None = None) -> None:
     try:
         settings = Settings.load(args.env_file)
         handle = DaemonHandle()
-        needs_daemon = args.command not in {"daemon", "doctor", "service"}
+        needs_daemon = args.command not in {"daemon", "doctor", "service", "update"}
         if needs_daemon:
             if settings.background_mode == "session":
                 handle = start_session_daemon(settings, args.env_file)

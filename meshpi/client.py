@@ -17,13 +17,27 @@ class CLIUnavailableError(CLIError):
     """IPC-tenesta lyttar ikkje, så ho kan trygt startast."""
 
 
+def _connect(settings: Settings, timeout: float) -> socket.socket:
+    if settings.ipc_uses_unix:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        try:
+            sock.connect(str(settings.ipc_socket_path))
+        except OSError:
+            sock.close()
+            raise
+        return sock
+    return socket.create_connection(
+        (settings.ipc_host, settings.ipc_port),
+        timeout=timeout,
+    )
+
+
 def request(
     settings: Settings, payload: dict[str, Any], timeout: float = 10
 ) -> dict[str, Any]:
     try:
-        sock = socket.create_connection(
-            (settings.ipc_host, settings.ipc_port), timeout=timeout
-        )
+        sock = _connect(settings, timeout)
     except OSError as exc:
         raise CLIUnavailableError(
             "Får ikkje kontakt med meshpi-tenesta. "
@@ -57,8 +71,10 @@ def request(
 def open_watch(
     settings: Settings, conversation: str = "all"
 ) -> tuple[socket.socket, BinaryIO]:
+    sock: socket.socket | None = None
+    stream: BinaryIO | None = None
     try:
-        sock = socket.create_connection((settings.ipc_host, settings.ipc_port), timeout=10)
+        sock = _connect(settings, 10)
         sock.settimeout(None)
         stream = sock.makefile("rwb")
         stream.write(
@@ -81,5 +97,13 @@ def open_watch(
         if not response.get("ok"):
             raise CLIError(str(response.get("error", "Klarte ikkje starte overvaking")))
         return sock, stream
-    except OSError as exc:
-        raise CLIError("Får ikkje kontakt med meshpi-tenesta") from exc
+    except Exception as exc:
+        if stream is not None:
+            stream.close()
+        if sock is not None:
+            sock.close()
+        if isinstance(exc, CLIError):
+            raise
+        if isinstance(exc, OSError):
+            raise CLIError("Får ikkje kontakt med meshpi-tenesta") from exc
+        raise
