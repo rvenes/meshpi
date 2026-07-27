@@ -26,7 +26,14 @@ class FakeInterface:
         self.responseHandlers = {}
         self.closed = False
         self.localNode = SimpleNamespace(
-            localConfig=SimpleNamespace(lora=SimpleNamespace(hop_limit=3))
+            localConfig=SimpleNamespace(lora=SimpleNamespace(hop_limit=3)),
+            channels=[
+                SimpleNamespace(
+                    index=0,
+                    role=1,
+                    settings=SimpleNamespace(name="", id=0),
+                )
+            ],
         )
 
     def sendText(self, text, **kwargs):
@@ -53,6 +60,7 @@ def service(tmp_path):
     interface = FakeInterface()
     value._interface = interface
     value._local_node_id = "!710365c8"
+    value._sync_channels(interface)
     value._set_status("tilkopla")
     return value, interface, database
 
@@ -67,6 +75,208 @@ def test_send_public_channel_zero(service):
     assert kwargs["wantAck"] is False
     assert result["packet_id"] == 991
     assert database.list_messages("public")[0]["text"] == "hei"
+
+
+def test_channel_inventory_never_reads_psk_and_sends_on_selected_channel(service):
+    value, interface, database = service
+
+    class SafeSettings:
+        name = "Ops"
+        id = 1234
+
+        @property
+        def psk(self):
+            raise AssertionError("PSK skal aldri lesast")
+
+    interface.localNode.channels = [
+        SimpleNamespace(
+            index=2,
+            role=2,
+            settings=SafeSettings(),
+        )
+    ]
+    value._sync_channels(interface)
+    channel = value.list_channels()[0]
+
+    result = value.send_public(
+        "fleirkanal",
+        conversation=channel["conversation"],
+    )
+
+    assert interface.calls[0][1]["channelIndex"] == 2
+    assert result["conversation_id"] == channel["conversation"]
+    stored = database.list_messages(
+        "public",
+        conversation_id=channel["conversation"],
+    )
+    assert stored[0]["channel"] == 2
+
+
+def test_selected_channel_must_exist_on_active_node(service):
+    value, interface, _ = service
+
+    with pytest.raises(RuntimeError, match="finst ikkje"):
+        value.send_public(
+            "feil kanal",
+            conversation="channel:global:anna:999",
+        )
+    assert interface.calls == []
+
+
+def test_invalid_or_historical_routes_never_fall_back_to_channel_zero(service):
+    value, interface, _ = service
+
+    with pytest.raises(ValueError, match="channel:"):
+        value.send_public("feil kanal", conversation="Ops")
+    with pytest.raises(RuntimeError, match="finst ikkje"):
+        value.send_dm(
+            "!11112222",
+            "feil kanal",
+            conversation=(
+                "dm:!710365c8:!11112222:global:Borte:999"
+            ),
+        )
+    with pytest.raises(RuntimeError, match="annan lokal node"):
+        value.send_dm(
+            "!11112222",
+            "feil node",
+            conversation=(
+                "dm:!aaaaaaaa:!11112222:local:!710365c8:0:"
+            ),
+        )
+    with pytest.raises(ValueError, match="Mottakaren"):
+        value.send_dm(
+            "!11112222",
+            "feil mottakar",
+            conversation=(
+                "dm:!710365c8:!33334444:local:!710365c8:0:"
+            ),
+        )
+
+    assert interface.calls == []
+
+
+def test_unknown_received_channel_is_not_sendable_and_is_rebound(service):
+    value, interface, database = service
+
+    value._on_receive(
+        {
+            "id": 810,
+            "fromId": "!11112222",
+            "toId": "!ffffffff",
+            "channel": 5,
+            "decoded": {
+                "portnum": "TEXT_MESSAGE_APP",
+                "text": "Kom før kanaloversikta",
+            },
+        },
+        interface,
+    )
+
+    assert [item["channel_index"] for item in value.list_channels()] == [0]
+    provisional = database.list_messages(
+        "public",
+        conversation_id="channel:provisional:!710365c8:5",
+    )
+    assert provisional[0]["text"] == "Kom før kanaloversikta"
+    with pytest.raises(RuntimeError, match="finst ikkje"):
+        value.send_public("skal stoppast", channel_index=5)
+    assert interface.calls == []
+
+    interface.localNode.channels = [
+        SimpleNamespace(
+            index=5,
+            role=2,
+            settings=SimpleNamespace(name="Sein kanal", id=555),
+        )
+    ]
+    value._sync_channels(interface)
+    channel = value.list_channels()[0]
+    rebound = database.list_messages(
+        "public",
+        conversation_id=str(channel["conversation"]),
+    )
+
+    assert channel["channel_index"] == 5
+    assert rebound[0]["text"] == "Kom før kanaloversikta"
+    assert database.list_messages(
+        "public",
+        conversation_id="channel:provisional:!710365c8:5",
+    ) == []
+
+
+def test_received_public_message_on_secondary_channel_is_logged(service):
+    value, interface, database = service
+    interface.localNode.channels = [
+        SimpleNamespace(
+            index=3,
+            role=2,
+            settings=SimpleNamespace(name="Vakt", id=4567),
+        )
+    ]
+    value._sync_channels(interface)
+    conversation = value.list_channels()[0]["conversation"]
+
+    value._on_receive(
+        {
+            "id": 808,
+            "fromId": "!11112222",
+            "toId": "!ffffffff",
+            "channel": 3,
+            "decoded": {
+                "portnum": "TEXT_MESSAGE_APP",
+                "text": "På kanal tre",
+            },
+        },
+        interface,
+    )
+
+    rows = database.list_messages(
+        "public",
+        conversation_id=str(conversation),
+    )
+    assert rows[0]["text"] == "På kanal tre"
+    assert rows[0]["local_node_id"] == "!710365c8"
+    assert rows[0]["channel"] == 3
+
+
+def test_dm_conversation_keeps_local_node_and_channel_route(service):
+    value, interface, database = service
+    interface.localNode.channels = [
+        SimpleNamespace(
+            index=2,
+            role=2,
+            settings=SimpleNamespace(name="Privat", id=7654),
+        )
+    ]
+    value._sync_channels(interface)
+    value._on_receive(
+        {
+            "id": 809,
+            "fromId": "!11112222",
+            "toId": "!710365c8",
+            "channel": 2,
+            "decoded": {
+                "portnum": "TEXT_MESSAGE_APP",
+                "text": "DM på kanal to",
+            },
+        },
+        interface,
+    )
+    conversation = database.conversations()[0]["conversation"]
+
+    assert conversation.startswith("dm:!710365c8:!11112222:")
+    value.send_dm(
+        "!11112222",
+        "Svar på same rute",
+        conversation=conversation,
+    )
+    assert interface.calls[0][1]["channelIndex"] == 2
+    rows = database.list_messages(
+        "dm",
+        conversation_id=conversation,
+    )
+    assert [row["channel"] for row in rows] == [2, 2]
 
 
 def test_send_dm_requests_ack_and_updates_status(service):

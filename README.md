@@ -9,13 +9,16 @@ og gir eit nynorsk fullskjermsgrensesnitt og vanlege CLI-kommandoar over SSH.
 > konfigurasjon og lagringsformat kan endre seg, og prosjektet bør testast nøye
 > før det blir brukt i kritiske eller produksjonsnære miljø.
 
+Sjå [DEVELOPMENT.md](DEVELOPMENT.md) for utviklingshistorikk, arkitekturval og
+prioritert roadmap for mellom anna fleirkanalar og Blåtann/BLE.
+
 Første utgåve har ikkje webgrensesnitt. Kjernen og den lokale IPC-protokollen er
 likevel skilde frå CLI-en, slik at eit webgrensesnitt kan leggjast til seinare.
 
 ## Funksjonar
 
-- mottek og sender tekst på public kanal 0
-- mottek og sender direkte meldingar
+- mottek og sender tekst på alle aktiverte Meshtastic-kanalar
+- mottek og sender direkte meldingar på ei tydeleg kanalrute
 - lagrar samtalehistorikk og ulest-status i SQLite
 - viser kjende nodar og tilgjengeleg nodeinformasjon
 - loggar motteken telemetri og GPS-posisjonar per kjeldenode i SQLite
@@ -283,8 +286,16 @@ meshpi connections
 
 Daemonen eig framleis berre eitt radiosamband om gongen. Profilbyte lukkar det
 gamle sambandet kontrollert og koplar til det nye utan systemd-omstart.
-Meldingshistorikken er felles, medan kvar melding får lagra kva gatewayprofil
-ho kom gjennom.
+Meldingshistorikken ligg i éin database. Kanalar blir berre samla når ein trygg
+Meshtastic-kanal-ID viser at dei er den same logiske kanalen. Kvar melding får
+dessutan lagra lokal node, gatewayprofil og kanalrute. Same melding motteken
+via fleire gatewayar blir vist éin gong, men alle mottaka blir logga.
+
+MeshPi sender berre på kanalar som er stadfesta i kanaloversikta til den aktive
+noden. Ei historisk, ukjend eller mellombels rute er lesbar, men ikkje sendbar,
+og fell aldri stille tilbake til kanal 0. Dersom ei melding kjem før
+kanaloversikta er klar, blir ho lagra på ei mellombels rute og automatisk bunden
+om når noden leverer den verkelege kanalbindinga.
 
 Bluetooth/BLE er ikkje aktivert i denne versjonen. Det blir ei eiga seinare
 fase, sidan Linux-tenesta då òg må handtere Bluetooth-oppdaging, paring og
@@ -377,13 +388,14 @@ Alle CLI-kommandoane:
 | `meshpi nodes [--search TEKST] [--sort name\|seen\|id]` | Vis, filtrer og sorter kjende nodar. |
 | `meshpi node NODE-ID` | Vis alle lagra detaljar om éin node. |
 | `meshpi conversations` | Vis samtalar og talet på uleste meldingar. |
+| `meshpi channels` | Vis trygge kanalnamn, indeksar og samtale-ID-ar på aktiv node. |
 | `meshpi delete-messages {public,dm,all} [--yes]` | Slett meldingar i valt omfang. |
-| `meshpi public [--limit TAL]` | Vis meldingar frå public kanal 0. |
-| `meshpi dm NODE-ID [--limit TAL]` | Vis DM-historikken med éin node. |
-| `meshpi send-public TEKST` | Send ei melding til public kanal 0. |
-| `meshpi send-dm NODE-ID TEKST` | Send ei direkte melding til éin node. |
-| `meshpi watch [all\|public\|NODE-ID]` | Følg nye meldingar i sanntid. |
-| `meshpi chat {public\|NODE-ID} [--limit TAL]` | Start interaktiv linjebasert chat. |
+| `meshpi public [--channel INDEKS\|SAMTALE-ID] [--limit TAL]` | Vis meldingar frå ein public-kanal. |
+| `meshpi dm NODE-ID [--channel INDEKS] [--limit TAL]` | Vis DM-historikken med éin node. |
+| `meshpi send-public TEKST [--channel INDEKS\|SAMTALE-ID]` | Send til vald public-kanal. |
+| `meshpi send-dm NODE-ID TEKST [--channel INDEKS]` | Send ein DM via vald kanal. |
+| `meshpi watch [all\|public\|SAMTALE-ID\|NODE-ID]` | Følg nye meldingar i sanntid. |
+| `meshpi chat {public\|SAMTALE-ID\|NODE-ID} [--limit TAL]` | Start interaktiv linjebasert chat. |
 
 Globale val skal stå før kommandoen:
 
@@ -427,12 +439,14 @@ Ei stjerne i nodelista markerer den lokale Meshtastic-noden.
 
 ```bash
 meshpi conversations
+meshpi channels
 meshpi public
+meshpi public --channel 2
 meshpi public --limit 200
 meshpi dm 710365c8
 ```
 
-Slett public kanal 0, alle DM-ar eller begge delar med éin kommando:
+Slett alle public-kanalar, alle DM-ar eller begge delar med éin kommando:
 
 ```bash
 meshpi delete-messages public
@@ -450,8 +464,9 @@ Ingenting blir sendt før ein eksplisitt sendekommando eller Enter i interaktiv
 chat:
 
 ```bash
-meshpi send-public "Test på public kanal 0"
-meshpi send-dm 710365c8 "Direkte testmelding"
+meshpi send-public "Test på primærkanalen"
+meshpi send-public "Test på kanal 2" --channel 2
+meshpi send-dm 710365c8 "Direkte testmelding" --channel 2
 ```
 
 Tekst blir validert som UTF-8 og kan vere maksimalt 237 byte. DM-node-ID må
@@ -465,10 +480,12 @@ Følg alle nye meldingar:
 meshpi watch
 ```
 
-Følg berre public kanal 0 eller ein DM:
+Følg primærkanalen, ein kanalspesifikk samtale-ID eller ein DM. `public` tyder
+berre den aktive primærkanalen; bruk `all` for alle kanalar og DM-ar:
 
 ```bash
 meshpi watch public
+meshpi watch channel:global:Ops:1234
 meshpi watch 710365c8
 ```
 
@@ -675,8 +692,9 @@ pytest --cov=meshpi --cov-report=term-missing
 ruff check .
 ```
 
-Testane dekkjer mellom anna kanal 0, DM, node-ID, RF/MQTT, duplikatkontroll,
-SQLite, sending, ACK/NAK, reconnect og inputvalidering.
+Testane dekkjer mellom anna fleire kanalar og gatewayar, DM-ruter, node-ID,
+RF/MQTT, duplikatkontroll, SQLite-migrering, sending, ACK/NAK, reconnect og
+inputvalidering.
 
 ## Utgjevingsnøklar
 

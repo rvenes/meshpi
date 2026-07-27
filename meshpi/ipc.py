@@ -14,6 +14,12 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
+from meshpi.channels import (
+    dm_conversation_id,
+    parse_dm_conversation_id,
+    parse_public_conversation_id,
+    public_conversation_id,
+)
 from meshpi.config import Settings
 from meshpi.database import Database
 from meshpi.events import EventHub
@@ -42,6 +48,63 @@ class IPCApplication:
         self.service = service
         self.events = events
         self.shutdown_callback = shutdown_callback
+
+    def active_channels(self) -> list[dict[str, Any]]:
+        channel_lister = getattr(self.service, "list_channels", None)
+        return channel_lister() if callable(channel_lister) else []
+
+    def active_channel(self, channel_index: int) -> dict[str, Any] | None:
+        return next(
+            (
+                channel
+                for channel in self.active_channels()
+                if int(channel.get("channel_index", -1)) == channel_index
+            ),
+            None,
+        )
+
+    def matches_message_event(
+        self,
+        event: dict[str, Any],
+        conversation: str,
+    ) -> bool:
+        if conversation == "all" or event.get("type") != "message":
+            return True
+        data = event.get("data", {})
+        if conversation == "public":
+            primary = self.active_channel(0)
+            return bool(
+                primary
+                and data.get("conversation_id") == primary.get("conversation")
+            )
+        if conversation.startswith(("channel:", "dm:")):
+            return data.get("conversation_id") == conversation
+        return data.get("kind") == "dm" and data.get("peer_node") == conversation
+
+    @staticmethod
+    def _validated_archived_route(
+        node_id: str,
+        value: Any,
+    ) -> str | None:
+        conversation = str(value or "").strip()
+        if not conversation:
+            return None
+        if not conversation.startswith("dm:"):
+            try:
+                legacy_peer = normalize_node_id(conversation)
+            except ValueError as exc:
+                raise ValueError(
+                    "Ugyldig samtale-ID for direkte melding"
+                ) from exc
+            if legacy_peer == node_id:
+                return None
+            raise ValueError("Ugyldig samtale-ID for direkte melding")
+        _, route_peer, _ = parse_dm_conversation_id(conversation)
+        if route_peer != node_id:
+            raise ValueError(
+                "Samtaleruta samsvarar ikkje med noden som skal arkiverast"
+            )
+        return conversation
 
     def is_authenticated(self, request: dict[str, Any]) -> bool:
         candidate = request.get("token")
@@ -135,7 +198,72 @@ class IPCApplication:
                 ),
             }
         if command == "conversations":
-            return {"ok": True, "data": self.database.conversations()}
+            conversations = self.database.conversations()
+            channels = self.active_channels()
+            by_id = {
+                str(item["conversation"]): item for item in conversations
+            }
+            for channel in channels:
+                conversation = str(channel["conversation"])
+                if conversation in by_id:
+                    by_id[conversation].update(
+                        {
+                            "channel": channel.get("channel_index"),
+                            "channel_key": channel.get("channel_key"),
+                            "channel_name": channel.get("name"),
+                            "local_node_id": channel.get("local_node_id"),
+                            "sendable": True,
+                        }
+                    )
+                    continue
+                item = {
+                    "conversation": conversation,
+                    "kind": "public",
+                    "channel": channel.get("channel_index"),
+                    "channel_key": channel.get("channel_key"),
+                    "channel_name": channel.get("name"),
+                    "local_node_id": channel.get("local_node_id"),
+                    "last_timestamp": None,
+                    "last_text": None,
+                    "unread": 0,
+                    "sendable": True,
+                }
+                conversations.append(item)
+                by_id[conversation] = item
+            for item in conversations:
+                dm_sendable = False
+                if item["kind"] == "dm" and str(item["conversation"]).startswith(
+                    "dm:"
+                ):
+                    try:
+                        route_local, route_peer, route_key = (
+                            parse_dm_conversation_id(str(item["conversation"]))
+                        )
+                        dm_sendable = route_peer == item.get("peer_node") and any(
+                            channel.get("channel_key") == route_key
+                            and channel.get("local_node_id") == route_local
+                            for channel in channels
+                        )
+                    except ValueError:
+                        dm_sendable = False
+                item.setdefault(
+                    "sendable",
+                    (
+                        item["conversation"] == "public"
+                        and any(
+                            int(channel.get("channel_index", -1)) == 0
+                            for channel in channels
+                        )
+                    )
+                    or dm_sendable,
+                )
+            return {"ok": True, "data": conversations}
+        if command == "channels":
+            channel_lister = getattr(self.service, "list_channels", None)
+            return {
+                "ok": True,
+                "data": channel_lister() if callable(channel_lister) else [],
+            }
         if command == "delete_messages":
             scope = str(request.get("scope", ""))
             return {
@@ -147,31 +275,115 @@ class IPCApplication:
             }
         if command == "archive_conversation":
             node_id = normalize_node_id(str(request.get("node_id", "")))
-            self.database.archive_conversation(node_id)
+            conversation = self._validated_archived_route(
+                node_id,
+                request.get("conversation"),
+            )
+            self.database.archive_conversation(node_id, conversation)
             return {"ok": True, "data": {"node_id": node_id, "archived": True}}
         if command == "unarchive_conversation":
             node_id = normalize_node_id(str(request.get("node_id", "")))
-            self.database.unarchive_conversation(node_id)
+            conversation = self._validated_archived_route(
+                node_id,
+                request.get("conversation"),
+            )
+            self.database.unarchive_conversation(node_id, conversation)
             return {"ok": True, "data": {"node_id": node_id, "archived": False}}
         if command == "messages":
             conversation = str(request.get("conversation", "public"))
             limit = int(request.get("limit", 100))
             mark_read = bool(request.get("mark_read", False))
             if conversation == "public":
-                data = self.database.list_messages("public", limit=limit, mark_read=mark_read)
+                primary = self.active_channel(
+                    int(request.get("channel_index", 0))
+                )
+                if request.get("channel_index") is not None and primary is None:
+                    raise ValueError(
+                        "Kanalindeksen finst ikkje på den aktive noden"
+                    )
+                data = (
+                    self.database.list_messages(
+                        "public",
+                        conversation_id=str(primary["conversation"]),
+                        limit=limit,
+                        mark_read=mark_read,
+                    )
+                    if primary
+                    else []
+                )
+            elif conversation.startswith("channel:"):
+                channel_key = parse_public_conversation_id(conversation)
+                data = self.database.list_messages(
+                    "public",
+                    conversation_id=public_conversation_id(channel_key),
+                    limit=limit,
+                    mark_read=mark_read,
+                )
+            elif conversation.startswith("dm:"):
+                route_local, route_peer, route_key = parse_dm_conversation_id(
+                    conversation
+                )
+                data = self.database.list_messages(
+                    "dm",
+                    conversation_id=dm_conversation_id(
+                        route_local,
+                        route_peer,
+                        route_key,
+                    ),
+                    limit=limit,
+                    mark_read=mark_read,
+                )
             else:
                 node_id = normalize_node_id(conversation)
-                data = self.database.list_messages(
-                    "dm", peer_node=node_id, limit=limit, mark_read=mark_read
-                )
+                if request.get("channel_index") is None:
+                    data = self.database.list_messages(
+                        "dm",
+                        peer_node=node_id,
+                        limit=limit,
+                        mark_read=mark_read,
+                    )
+                else:
+                    channel = self.active_channel(int(request["channel_index"]))
+                    if channel is None:
+                        raise ValueError(
+                            "Kanalindeksen finst ikkje på den aktive noden"
+                        )
+                    data = self.database.list_messages(
+                        "dm",
+                        conversation_id=dm_conversation_id(
+                            str(channel["local_node_id"]),
+                            node_id,
+                            str(channel["channel_key"]),
+                        ),
+                        limit=limit,
+                        mark_read=mark_read,
+                    )
             return {"ok": True, "data": data}
         if command == "send_public":
-            return {"ok": True, "data": self.service.send_public(str(request.get("text", "")))}
+            send_options: dict[str, Any] = {}
+            if str(request.get("conversation", "")).strip():
+                send_options["conversation"] = str(request["conversation"]).strip()
+            if request.get("channel_index") is not None:
+                send_options["channel_index"] = int(request["channel_index"])
+            return {
+                "ok": True,
+                "data": self.service.send_public(
+                    str(request.get("text", "")),
+                    **send_options,
+                ),
+            }
         if command == "send_dm":
+            send_options = {}
+            if str(request.get("conversation", "")).strip():
+                send_options["conversation"] = str(request["conversation"]).strip()
+            if request.get("channel_index") is not None:
+                send_options["channel_index"] = int(request["channel_index"])
             return {
                 "ok": True,
                 "data": self.service.send_dm(
-                    str(request.get("node_id", "")), str(request.get("text", ""))
+                    str(request.get("node_id", "")),
+                    str(request.get("text", "")),
+                    **send_options,
                 ),
             }
         if command == "node_action":
@@ -313,7 +525,10 @@ class _IPCHandler(socketserver.StreamRequestHandler):
             raise RuntimeError("For mange aktive overvakingar; prøv igjen seinare")
         conversation = str(request.get("conversation", "all"))
         try:
-            if conversation not in {"all", "public"}:
+            if (
+                conversation not in {"all", "public"}
+                and not conversation.startswith(("channel:", "dm:"))
+            ):
                 conversation = normalize_node_id(conversation)
             self._write({"ok": True, "data": {"watching": conversation}})
             with self.server.app.events.subscribe() as subscriber:
@@ -327,7 +542,7 @@ class _IPCHandler(socketserver.StreamRequestHandler):
                         continue
                     if self._peer_closed():
                         raise ConnectionResetError
-                    if self._matches(event, conversation):
+                    if self.server.app.matches_message_event(event, conversation):
                         self._write(event)
         finally:
             self.server._watcher_slots.release()
@@ -344,16 +559,6 @@ class _IPCHandler(socketserver.StreamRequestHandler):
                 return True
         finally:
             self.request.settimeout(timeout)
-
-    @staticmethod
-    def _matches(event: dict[str, Any], conversation: str) -> bool:
-        if conversation == "all" or event.get("type") != "message":
-            return True
-        data = event.get("data", {})
-        if conversation == "public":
-            return data.get("kind") == "public"
-        return data.get("kind") == "dm" and data.get("peer_node") == conversation
-
 
 class IPCServer:
     def __init__(self, settings: Settings, app: IPCApplication):

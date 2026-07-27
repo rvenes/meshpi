@@ -180,6 +180,7 @@ def parse_update_manifest(
     *,
     current_version: str = __version__,
     platform_name: str | None = None,
+    background_mode: str = "always",
 ) -> UpdateNotice | None:
     raw = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
     plan = _parse_update_plan(
@@ -196,7 +197,11 @@ def parse_update_manifest(
     return UpdateNotice(
         current_version=current_version,
         latest_version=plan.latest_version,
-        command="meshpi update",
+        command=(
+            "sudo meshpi update"
+            if plan.platform == "linux" and background_mode == "always"
+            else "meshpi update"
+        ),
         release_notes_url=notes,
     )
 
@@ -239,7 +244,10 @@ def check_for_update(settings: Settings) -> UpdateNotice | None:
     if not settings.update_url.strip():
         return None
     manifest, _raw = _fetch_manifest(settings)
-    return parse_update_manifest(manifest)
+    return parse_update_manifest(
+        manifest,
+        background_mode=settings.background_mode,
+    )
 
 
 def prepare_update(

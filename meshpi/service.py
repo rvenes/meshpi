@@ -9,6 +9,15 @@ import uuid
 from collections.abc import Callable
 from typing import Any, Protocol
 
+from meshpi.channels import (
+    ChannelBinding,
+    dm_conversation_id,
+    logical_channel_key,
+    parse_dm_conversation_id,
+    parse_public_conversation_id,
+    provisional_channel_key,
+    public_conversation_id,
+)
 from meshpi.config import Settings
 from meshpi.connections import (
     ConnectionProfile,
@@ -30,6 +39,7 @@ from meshpi.models import (
     node_num_to_id,
     normalize_node_id,
     now_iso,
+    sanitize_terminal_text,
     validate_message_text,
 )
 from meshpi.node_actions import NodeActionError, parse_traceroute_response
@@ -173,9 +183,11 @@ class MeshtasticService:
         self._lost = threading.Event()
         self._switch_requested = threading.Event()
         self._lock = threading.RLock()
+        self._channel_sync_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._interface: Interface | None = None
         self._local_node_id: str | None = None
+        self._channel_bindings: dict[int, ChannelBinding] = {}
         self._node_actions: dict[str, dict[str, Any]] = {}
         self._node_action_timers: dict[str, threading.Timer] = {}
         self._traceroute_cooldown_until = 0.0
@@ -290,6 +302,7 @@ class MeshtasticService:
             interface = self._interface
             self._interface = None
             self._local_node_id = None
+            self._channel_bindings = {}
             self._switch_requested.set()
             self._lost.set()
         self._fail_pending_node_actions("Meshtastic-sambandet blei bytt")
@@ -389,11 +402,13 @@ class MeshtasticService:
                             raise RuntimeError("Tilkoplingsprofilen blei endra")
                         self._interface = interface
                     self._discover_local_node(interface)
+                    self._sync_channels(interface)
                     self._sync_nodes(interface)
                     self._set_status("tilkopla", attempt=0)
                     LOG.info("Tilkopla Meshtastic-noden")
                     attempt = 0
                     while not self._stop.is_set() and not self._lost.wait(30):
+                        self._sync_channels(interface)
                         self._sync_nodes(interface)
                     if self._stop.is_set():
                         break
@@ -440,6 +455,7 @@ class MeshtasticService:
             if interface is not self._interface:
                 return
         self._discover_local_node(interface)
+        self._sync_channels(interface)
         self._sync_nodes(interface)
         self._set_status("tilkopla", attempt=0)
 
@@ -486,6 +502,113 @@ class MeshtasticService:
                 LOG.debug("Klarte ikkje lagre node %s", node_id, exc_info=True)
         self.events.publish({"type": "nodes"})
 
+    def _sync_channels(self, interface: Interface) -> None:
+        with self._channel_sync_lock:
+            self._sync_channels_locked(interface)
+
+    def _sync_channels_locked(self, interface: Interface) -> None:
+        with self._lock:
+            local_node_id = self._local_node_id
+            profile = self._profile
+        if not local_node_id:
+            return
+        local_node = getattr(interface, "localNode", None)
+        raw_channels = getattr(local_node, "channels", None)
+        bindings: list[ChannelBinding] = []
+        if raw_channels:
+            for raw in raw_channels:
+                try:
+                    index = int(raw.index)
+                    role_value = int(raw.role)
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                if role_value == 0 or not 0 <= index <= 7:
+                    continue
+                settings = getattr(raw, "settings", None)
+                name = sanitize_terminal_text(
+                    getattr(settings, "name", "") if settings is not None else "",
+                    80,
+                ).strip()
+                try:
+                    channel_id_value = (
+                        int(settings.id)
+                        if settings is not None
+                        else None
+                    )
+                except (AttributeError, TypeError, ValueError):
+                    channel_id_value = None
+                channel_id = channel_id_value if channel_id_value not in {0, None} else None
+                binding = ChannelBinding(
+                    local_node_id=local_node_id,
+                    channel_index=index,
+                    channel_key=logical_channel_key(
+                        local_node_id,
+                        index,
+                        name,
+                        channel_id,
+                    ),
+                    name=name,
+                    role={1: "PRIMARY", 2: "SECONDARY"}.get(
+                        role_value,
+                        f"ROLE_{role_value}",
+                    ),
+                    meshtastic_id=channel_id,
+                    gateway_profile_id=profile.profile_id if profile else None,
+                )
+                bindings.append(binding)
+        with self._lock:
+            self._channel_bindings = {
+                binding.channel_index: binding for binding in bindings
+            }
+        self.database.sync_channel_bindings(
+            local_node_id,
+            profile.profile_id if profile else None,
+            bindings,
+        )
+        for binding in bindings:
+            self.database.rebind_provisional_channel(
+                local_node_id,
+                binding.channel_index,
+                provisional_channel_key(local_node_id, binding.channel_index),
+                binding.channel_key,
+            )
+        self.events.publish(
+            {
+                "type": "channels",
+                "data": [binding.as_dict() for binding in bindings],
+            }
+        )
+
+    def _channel_binding(self, channel_index: int) -> ChannelBinding:
+        with self._lock:
+            binding = self._channel_bindings.get(channel_index)
+            local_node_id = self._local_node_id
+            profile = self._profile
+        if binding is not None:
+            return binding
+        if not local_node_id:
+            raise RuntimeError("Lokal node-ID er ikkje kjend enno")
+        binding = ChannelBinding(
+            local_node_id=local_node_id,
+            channel_index=channel_index,
+            channel_key=provisional_channel_key(local_node_id, channel_index),
+            name="",
+            role="UNKNOWN",
+            gateway_profile_id=profile.profile_id if profile else None,
+            active=False,
+        )
+        return binding
+
+    def list_channels(self) -> list[dict[str, Any]]:
+        with self._lock:
+            local_node_id = self._local_node_id
+        if not local_node_id:
+            return []
+        return self.database.list_channel_bindings(
+            local_node_id,
+            active_only=True,
+        )
+
     def _on_receive(
         self, packet: dict[str, Any], interface: Interface | None = None, **_: Any
     ) -> None:
@@ -508,13 +631,36 @@ class MeshtasticService:
             metadata["gateway_transport"] = profile.transport
             metadata["gateway_endpoint"] = profile.endpoint
             message.raw_metadata = metadata
+            channel_index = message.channel if message.channel is not None else 0
+            with self._lock:
+                known_channel = channel_index in self._channel_bindings
+            if not known_channel and interface is not None:
+                self._sync_channels(interface)
+            binding = self._channel_binding(channel_index)
+            message.channel_key = binding.channel_key
+            message.local_node_id = self._local_node_id
+            message.gateway_profile_id = profile.profile_id
+            message.received_at = now_iso()
+            message.conversation_id = (
+                public_conversation_id(binding.channel_key)
+                if message.kind == ConversationKind.PUBLIC
+                else dm_conversation_id(
+                    self._local_node_id or "",
+                    message.peer_node or "",
+                    binding.channel_key,
+                )
+            )
             inserted, message_id = self.database.insert_message(message)
             if not inserted:
                 return
             message.id = message_id
             event = {"type": "message", "data": message.as_dict()}
             self.events.publish(event)
-            label = "CH0" if message.kind == ConversationKind.PUBLIC else "DM"
+            label = (
+                f"CH{channel_index}"
+                if message.kind == ConversationKind.PUBLIC
+                else f"DM/CH{channel_index}"
+            )
             LOG.info(
                 "Motteken %s via %s frå %s [%s]",
                 label,
@@ -563,11 +709,22 @@ class MeshtasticService:
         request_id = _routing_request_id(packet)
         if request_id is None:
             return
-        outgoing = self.database.outgoing_message(request_id)
+        with self._lock:
+            local_node_id = self._local_node_id
+        if not local_node_id:
+            return
+        outgoing = self.database.outgoing_message(
+            request_id,
+            local_node_id,
+        )
         if outgoing is None:
             return
         status = _ack_status(packet, outgoing.get("to_node"))
-        if self.database.update_message_status(request_id, status):
+        if self.database.update_message_status(
+            request_id,
+            status,
+            local_node_id,
+        ):
             self.events.publish(
                 {
                     "type": "message_status",
@@ -575,11 +732,34 @@ class MeshtasticService:
                 }
             )
 
-    def send_public(self, text: str) -> dict[str, Any]:
-        return self._send(text, destination="!ffffffff", public=True)
+    def send_public(
+        self,
+        text: str,
+        conversation: str | None = None,
+        channel_index: int | None = None,
+    ) -> dict[str, Any]:
+        return self._send(
+            text,
+            destination="!ffffffff",
+            public=True,
+            conversation=conversation,
+            channel_index=channel_index,
+        )
 
-    def send_dm(self, node_id: str, text: str) -> dict[str, Any]:
-        return self._send(text, destination=normalize_node_id(node_id), public=False)
+    def send_dm(
+        self,
+        node_id: str,
+        text: str,
+        conversation: str | None = None,
+        channel_index: int | None = None,
+    ) -> dict[str, Any]:
+        return self._send(
+            text,
+            destination=normalize_node_id(node_id),
+            public=False,
+            conversation=conversation,
+            channel_index=channel_index,
+        )
 
     def start_node_action(self, action: str, node_id: str) -> dict[str, Any]:
         normalized_action = action.strip().lower()
@@ -1043,7 +1223,15 @@ class MeshtasticService:
         while len(self._node_actions) > MAX_NODE_ACTIONS and completed:
             self._node_actions.pop(completed.pop(0), None)
 
-    def _send(self, text: str, destination: str, public: bool) -> dict[str, Any]:
+    def _send(
+        self,
+        text: str,
+        destination: str,
+        public: bool,
+        *,
+        conversation: str | None = None,
+        channel_index: int | None = None,
+    ) -> dict[str, Any]:
         text = validate_message_text(text)
         with self._lock:
             interface = self._interface
@@ -1051,6 +1239,55 @@ class MeshtasticService:
             state = self.status()["state"]
             if interface is None or profile is None or state != "tilkopla":
                 raise RuntimeError("Meshtastic-noden er ikkje tilkopla")
+            local_node_id = self._local_node_id
+            if not local_node_id:
+                raise RuntimeError("Lokal node-ID er ikkje kjend enno")
+            requested_key: str | None = None
+            if conversation is not None:
+                if public:
+                    requested_key = parse_public_conversation_id(conversation)
+                else:
+                    route_local, route_peer, requested_key = (
+                        parse_dm_conversation_id(conversation)
+                    )
+                    if route_local != local_node_id:
+                        raise RuntimeError(
+                            "Den valde samtaleruta høyrer til ein annan lokal node"
+                        )
+                    if route_peer != destination:
+                        raise ValueError(
+                            "Mottakaren samsvarar ikkje med den valde samtaleruta"
+                        )
+            if requested_key is not None:
+                requested_index = next(
+                    (
+                        index
+                        for index, binding in self._channel_bindings.items()
+                        if binding.channel_key == requested_key and binding.active
+                    ),
+                    None,
+                )
+                if requested_index is None:
+                    raise RuntimeError(
+                        "Den valde kanalen finst ikkje på den aktive noden"
+                    )
+                if channel_index is not None and int(channel_index) != requested_index:
+                    raise ValueError(
+                        "Kanalindeksen samsvarar ikkje med den valde samtaleruta"
+                    )
+                channel_index = requested_index
+            selected_index = 0 if channel_index is None else int(channel_index)
+            if not 0 <= selected_index <= 7:
+                raise ValueError("Kanalindeksen må vere mellom 0 og 7")
+            binding = self._channel_bindings.get(selected_index)
+            if binding is None or not binding.active:
+                raise RuntimeError(
+                    "Den valde kanalen finst ikkje på den aktive noden"
+                )
+            if requested_key is not None and binding.channel_key != requested_key:
+                raise RuntimeError(
+                    "Den valde kanalen finst ikkje på den aktive noden"
+                )
 
             pending_id: int | None = None
             stored = threading.Event()
@@ -1063,7 +1300,11 @@ class MeshtasticService:
                     if pending_id is None or not stored.is_set():
                         early_status[:] = [status]
                         return
-                if self.database.update_message_status(pending_id, status):
+                if self.database.update_message_status(
+                    pending_id,
+                    status,
+                    local_node_id,
+                ):
                     self.events.publish(
                         {
                             "type": "message_status",
@@ -1073,7 +1314,7 @@ class MeshtasticService:
 
             kwargs: dict[str, Any] = {
                 "destinationId": "^all" if public else destination,
-                "channelIndex": 0,
+                "channelIndex": selected_index,
                 "wantAck": not public,
             }
             if not public:
@@ -1084,9 +1325,9 @@ class MeshtasticService:
         message = Message(
             packet_id=pending_id,
             timestamp=now_iso(),
-            from_node=self._local_node_id,
+            from_node=local_node_id,
             to_node="!ffffffff" if public else destination,
-            channel=0,
+            channel=selected_index,
             kind=ConversationKind.PUBLIC if public else ConversationKind.DM,
             peer_node=None if public else destination,
             text=text,
@@ -1102,6 +1343,19 @@ class MeshtasticService:
                 "gateway_endpoint": profile.endpoint,
             },
             is_read=True,
+            conversation_id=(
+                public_conversation_id(binding.channel_key)
+                if public
+                else dm_conversation_id(
+                    local_node_id,
+                    destination,
+                    binding.channel_key,
+                )
+            ),
+            channel_key=binding.channel_key,
+            local_node_id=local_node_id,
+            gateway_profile_id=profile.profile_id,
+            received_at=now_iso(),
         )
         inserted, message_id = self.database.insert_message(message)
         message.id = message_id
@@ -1109,7 +1363,11 @@ class MeshtasticService:
             stored.set()
             ack_status = early_status[0] if early_status else None
         if pending_id is not None and ack_status is not None:
-            self.database.update_message_status(pending_id, ack_status)
+            self.database.update_message_status(
+                pending_id,
+                ack_status,
+                local_node_id,
+            )
             message.status = ack_status
             self.events.publish(
                 {
@@ -1121,7 +1379,7 @@ class MeshtasticService:
             self.events.publish({"type": "message", "data": message.as_dict()})
         LOG.info(
             "Sender %s til %s (%s byte)",
-            "CH0" if public else "DM",
+            f"CH{selected_index}" if public else f"DM/CH{selected_index}",
             destination,
             len(text.encode("utf-8")),
         )

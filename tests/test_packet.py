@@ -1,3 +1,5 @@
+import pytest
+
 from meshpi.models import ConversationKind, Direction, Transport
 from meshpi.packet import node_from_registry, parse_text_packet
 
@@ -27,8 +29,16 @@ def test_public_channel_zero():
     assert message.direction == Direction.INCOMING
 
 
-def test_other_public_channel_is_ignored():
-    assert parse_text_packet(packet(channel=1), LOCAL) is None
+def test_other_public_channel_is_preserved():
+    message = parse_text_packet(packet(channel=1), LOCAL)
+    assert message is not None
+    assert message.kind == ConversationKind.PUBLIC
+    assert message.channel == 1
+
+
+@pytest.mark.parametrize("channel", [-1, 8, "ugyldig"])
+def test_invalid_public_channel_is_ignored(channel):
+    assert parse_text_packet(packet(channel=channel), LOCAL) is None
 
 
 def test_incoming_and_outgoing_dm():
@@ -110,4 +120,3 @@ def test_node_registry_mapping_and_private_field_filtering():
     assert node.transport == Transport.MQTT
     assert node.can_receive_dm is True
     assert node.is_local is False
-

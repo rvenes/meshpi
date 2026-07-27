@@ -121,6 +121,11 @@ class Message:
     raw_metadata: dict[str, Any] | None = None
     id: int | None = None
     is_read: bool = False
+    conversation_id: str | None = None
+    channel_key: str | None = None
+    local_node_id: str | None = None
+    gateway_profile_id: str | None = None
+    received_at: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         result = asdict(self)

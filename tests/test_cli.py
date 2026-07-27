@@ -1,12 +1,16 @@
+import pytest
+
 from meshpi.cli import (
     _battery,
     _format_message,
     _normalize_argv,
     _print_status,
+    _public_channel_options,
     build_parser,
     main,
     run,
 )
+from meshpi.client import CLIError
 from meshpi.config import Settings
 from meshpi.update import UpdateNotice
 
@@ -41,6 +45,21 @@ def test_message_display_contains_context_and_metadata():
     assert "hopp 3/2" in rendered
 
 
+def test_message_display_uses_actual_channel_index():
+    rendered = _format_message(
+        {
+            "timestamp": "2026-07-20T12:00:00+00:00",
+            "kind": "public",
+            "channel": 3,
+            "direction": "inn",
+            "from_node": "!11112222",
+            "transport": "RF",
+            "text": "Fleirkanal",
+        }
+    )
+    assert "CH3" in rendered
+
+
 def test_outgoing_message_display_explains_transport_and_ack_status():
     rendered = _format_message(
         {
@@ -63,6 +82,30 @@ def test_cli_parser_supports_json_and_node_details():
     assert args.json is True
     assert args.command == "node"
     assert args.node_id == "!11112222"
+
+
+def test_cli_parser_supports_channel_selection():
+    channels = build_parser().parse_args(["channels"])
+    public = build_parser().parse_args(
+        ["send-public", "Hei", "--channel", "3"]
+    )
+    dm = build_parser().parse_args(
+        ["send-dm", "!11112222", "Hei", "--channel", "2"]
+    )
+    assert channels.command == "channels"
+    assert public.channel == "3"
+    assert dm.channel == 2
+
+
+def test_public_channel_selection_rejects_names_and_out_of_range_indexes():
+    assert _public_channel_options("3") == {"channel_index": 3}
+    assert _public_channel_options("channel:global:Ops:1234") == {
+        "conversation": "channel:global:Ops:1234"
+    }
+    with pytest.raises(CLIError, match="indeks eller ein samtale-ID"):
+        _public_channel_options("Ops")
+    with pytest.raises(CLIError, match="mellom 0 og 7"):
+        _public_channel_options("8")
 
 
 def test_cli_defaults_to_tui():

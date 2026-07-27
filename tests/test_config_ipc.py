@@ -4,17 +4,30 @@ import socket
 import tempfile
 import threading
 import time
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
 
+from meshpi.channels import (
+    dm_conversation_id,
+    logical_channel_key,
+    public_conversation_id,
+)
 from meshpi.client import CLIError, CLIUnavailableError, open_watch, request
 from meshpi.config import Settings
 from meshpi.database import Database
 from meshpi.events import EventHub
 from meshpi.ipc import IPCApplication, IPCServer
 from meshpi.lifecycle import daemon_status
-from meshpi.models import Node
+from meshpi.models import (
+    ConversationKind,
+    Direction,
+    Message,
+    MessageStatus,
+    Node,
+    Transport,
+)
 
 
 class FakeService:
@@ -56,6 +69,30 @@ class FakeService:
     def connect(self, **kwargs):
         return {"state": "koplar til", **kwargs}
 
+
+class MultiChannelService(FakeService):
+    def __init__(self):
+        self.sent = []
+        key = logical_channel_key("!aaaaaaaa", 2, "Ops", 1234)
+        self.channels = [
+            {
+                "local_node_id": "!aaaaaaaa",
+                "channel_index": 2,
+                "channel_key": key,
+                "name": "Ops",
+                "display_name": "Ops",
+                "role": "SECONDARY",
+                "conversation": public_conversation_id(key),
+                "kind": "public",
+            }
+        ]
+
+    def list_channels(self):
+        return self.channels
+
+    def send_public(self, text, **options):
+        self.sent.append((text, options))
+        return {"text": text, "kind": "public"} | options
 
 def test_client_connection_error_uses_cross_platform_service_hint(monkeypatch):
     def fail_connection(*_args, **_kwargs):
@@ -336,6 +373,264 @@ def test_ipc_dispatch_and_validation(tmp_path):
         app.dispatch({"command": "ukjend"})
 
 
+def test_ipc_exposes_empty_channels_and_routes_selected_channel(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    service = MultiChannelService()
+    app = IPCApplication(
+        Settings(database_path=database.path),
+        database,
+        service,
+        EventHub(),
+    )
+    channel = service.channels[0]
+
+    assert app.dispatch({"command": "channels"})["data"] == service.channels
+    conversations = app.dispatch({"command": "conversations"})["data"]
+    assert conversations[0]["conversation"] == channel["conversation"]
+    assert conversations[0]["sendable"] is True
+
+    sent = app.dispatch(
+        {
+            "command": "send_public",
+            "conversation": channel["conversation"],
+            "text": "Ops-melding",
+        }
+    )["data"]
+    assert sent["conversation"] == channel["conversation"]
+    assert service.sent == [
+        ("Ops-melding", {"conversation": channel["conversation"]})
+    ]
+
+
+def test_public_watch_matches_only_the_active_primary_channel(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    service = MultiChannelService()
+    primary_key = logical_channel_key("!aaaaaaaa", 0, "Primær", 100)
+    service.channels.insert(
+        0,
+        {
+            "local_node_id": "!aaaaaaaa",
+            "channel_index": 0,
+            "channel_key": primary_key,
+            "name": "Primær",
+            "conversation": public_conversation_id(primary_key),
+        },
+    )
+    app = IPCApplication(
+        Settings(database_path=database.path),
+        database,
+        service,
+        EventHub(),
+    )
+
+    assert app.matches_message_event(
+        {
+            "type": "message",
+            "data": {
+                "kind": "public",
+                "conversation_id": public_conversation_id(primary_key),
+            },
+        },
+        "public",
+    )
+    assert not app.matches_message_event(
+        {
+            "type": "message",
+            "data": {
+                "kind": "public",
+                "conversation_id": service.channels[1]["conversation"],
+            },
+        },
+        "public",
+    )
+
+
+def test_dm_channel_history_uses_active_logical_route(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    service = MultiChannelService()
+    app = IPCApplication(
+        Settings(database_path=database.path),
+        database,
+        service,
+        EventHub(),
+    )
+    peer = "!11112222"
+    active_channel = service.channels[0]
+    for packet_id, local_node, channel_key, text in (
+        (1, "!aaaaaaaa", active_channel["channel_key"], "Aktiv rute"),
+        (2, "!bbbbbbbb", "global:Anna:5678", "Anna lokal node"),
+    ):
+        database.insert_message(
+            Message(
+                packet_id=packet_id,
+                timestamp="2026-07-20T12:00:00+00:00",
+                from_node=peer,
+                to_node=local_node,
+                channel=2,
+                kind=ConversationKind.DM,
+                peer_node=peer,
+                text=text,
+                direction=Direction.INCOMING,
+                transport=Transport.RF,
+                status=MessageStatus.RECEIVED,
+                conversation_id=dm_conversation_id(
+                    local_node,
+                    peer,
+                    str(channel_key),
+                ),
+                channel_key=str(channel_key),
+                local_node_id=local_node,
+            )
+        )
+
+    result = app.dispatch(
+        {
+            "command": "messages",
+            "conversation": peer,
+            "channel_index": 2,
+        }
+    )["data"]
+
+    assert [item["text"] for item in result] == ["Aktiv rute"]
+
+
+def test_archive_conversation_rejects_invalid_or_mismatched_route(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    app = IPCApplication(
+        Settings(database_path=database.path),
+        database,
+        MultiChannelService(),
+        EventHub(),
+    )
+
+    with pytest.raises(ValueError, match="Ugyldig"):
+        app.dispatch(
+            {
+                "command": "archive_conversation",
+                "node_id": "!11112222",
+                "conversation": "ikkje-ei-rute",
+            }
+        )
+    with pytest.raises(ValueError, match="samsvarar"):
+        app.dispatch(
+            {
+                "command": "archive_conversation",
+                "node_id": "!11112222",
+                "conversation": (
+                    "dm:!aaaaaaaa:!33334444:global:Ops:1234"
+                ),
+            }
+        )
+
+
+def test_legacy_dm_can_be_archived_by_peer_id(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    legacy = Message(
+        packet_id=9,
+        timestamp="2026-07-20T12:00:00+00:00",
+        from_node="!11112222",
+        to_node="!aaaaaaaa",
+        channel=0,
+        kind=ConversationKind.DM,
+        peer_node="!11112222",
+        text="Legacy",
+        direction=Direction.INCOMING,
+        transport=Transport.RF,
+        status=MessageStatus.RECEIVED,
+        conversation_id="!11112222",
+    )
+    database.insert_message(legacy)
+    app = IPCApplication(
+        Settings(database_path=database.path),
+        database,
+        FakeService(),
+        EventHub(),
+    )
+
+    app.dispatch(
+        {
+            "command": "archive_conversation",
+            "node_id": "!11112222",
+            "conversation": "!11112222",
+        }
+    )
+
+    assert database.conversations() == []
+
+
+def test_public_history_is_empty_without_active_channel_and_stays_unread(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    public = Message(
+        packet_id=10,
+        timestamp="2026-07-20T12:00:00+00:00",
+        from_node="!11112222",
+        to_node="!ffffffff",
+        channel=0,
+        kind=ConversationKind.PUBLIC,
+        peer_node=None,
+        text="Arkiv",
+        direction=Direction.INCOMING,
+        transport=Transport.RF,
+        status=MessageStatus.RECEIVED,
+        conversation_id="channel:legacy:gammal:0",
+        channel_key="legacy:gammal:0",
+    )
+    database.insert_message(public)
+    app = IPCApplication(
+        Settings(database_path=database.path),
+        database,
+        FakeService(),
+        EventHub(),
+    )
+
+    result = app.dispatch(
+        {
+            "command": "messages",
+            "conversation": "public",
+            "mark_read": True,
+        }
+    )["data"]
+
+    assert result == []
+    assert database.conversations()[0]["unread"] == 1
+
+
+@pytest.mark.parametrize(
+    "conversation",
+    [
+        "channel:ukjend",
+        "dm:!aaaaaaaa:!11112222:ukjend",
+        "channel:global:Ops:1\x1b",
+    ],
+)
+def test_message_history_validates_structured_conversation_ids(
+    tmp_path,
+    conversation,
+):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    app = IPCApplication(
+        Settings(database_path=database.path),
+        database,
+        FakeService(),
+        EventHub(),
+    )
+
+    with pytest.raises(ValueError):
+        app.dispatch(
+            {
+                "command": "messages",
+                "conversation": conversation,
+            }
+        )
+
+
 def test_ipc_shutdown_starts_only_after_response_is_completed(tmp_path):
     database = Database(tmp_path / "db.sqlite")
     database.initialize()
@@ -519,6 +814,59 @@ def test_closed_watcher_releases_watcher_and_client_slots(
             replacement_sock.close()
         server.shutdown()
         thread.join(timeout=2)
+
+
+def test_watch_read_is_interrupted_when_socket_is_shutdown(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    server_settings = Settings(
+        database_path=database.path,
+        ipc_port=0,
+        ipc_token="i" * 64,
+        ipc_transport="tcp",
+    )
+    server = IPCServer(
+        server_settings,
+        IPCApplication(server_settings, database, FakeService(), EventHub()),
+    )
+    client_settings = Settings(
+        database_path=database.path,
+        ipc_host=server.address[0],
+        ipc_port=server.address[1],
+        ipc_token=server_settings.ipc_token,
+        ipc_transport="tcp",
+    )
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+    sock = stream = None
+    reader_thread = None
+    try:
+        sock, stream = open_watch(client_settings)
+
+        def read_until_closed():
+            with suppress(OSError):
+                list(stream)
+
+        reader_thread = threading.Thread(
+            target=read_until_closed,
+            daemon=True,
+        )
+        reader_thread.start()
+        time.sleep(0.05)
+
+        sock.shutdown(socket.SHUT_RDWR)
+        sock.close()
+        sock = None
+        reader_thread.join(timeout=1)
+
+        assert reader_thread.is_alive() is False
+    finally:
+        if stream is not None:
+            stream.close()
+        if sock is not None:
+            sock.close()
+        server.shutdown()
+        server_thread.join(timeout=2)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX Unix-socket")

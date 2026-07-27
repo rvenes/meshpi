@@ -9,7 +9,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from meshpi.channels import (
+    ChannelBinding,
+    dm_conversation_id,
+    public_conversation_id,
+)
 from meshpi.models import Message, MessageStatus, Node, now_iso
+
+DATABASE_SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
@@ -31,12 +38,13 @@ CREATE TABLE IF NOT EXISTS messages (
     want_ack INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL,
     raw_metadata TEXT,
-    is_read INTEGER NOT NULL DEFAULT 0
+    is_read INTEGER NOT NULL DEFAULT 0,
+    conversation_id TEXT,
+    channel_key TEXT,
+    local_node_id TEXT,
+    gateway_profile_id TEXT,
+    received_at TEXT
 );
-
-CREATE UNIQUE INDEX IF NOT EXISTS messages_packet_identity
-ON messages(packet_id, direction, COALESCE(from_node, ''), COALESCE(to_node, ''))
-WHERE packet_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS messages_public_time
 ON messages(kind, channel, timestamp);
@@ -81,6 +89,60 @@ CREATE TABLE IF NOT EXISTS telemetry_samples (
     gateway_profile_id TEXT,
     gateway_node_id TEXT,
     gateway_transport TEXT
+);
+
+CREATE TABLE IF NOT EXISTS archived_conversation_ids (
+    conversation_id TEXT PRIMARY KEY,
+    archived_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS logical_channels (
+    channel_key TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    meshtastic_id TEXT,
+    first_seen_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS channel_bindings (
+    local_node_id TEXT NOT NULL,
+    channel_index INTEGER NOT NULL,
+    channel_key TEXT NOT NULL REFERENCES logical_channels(channel_key),
+    name TEXT NOT NULL,
+    role TEXT NOT NULL,
+    meshtastic_id TEXT,
+    gateway_profile_id TEXT,
+    first_seen_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY(local_node_id, channel_index)
+);
+
+CREATE INDEX IF NOT EXISTS channel_bindings_key
+ON channel_bindings(channel_key, local_node_id);
+
+CREATE TABLE IF NOT EXISTS message_observations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    observed_at TEXT NOT NULL,
+    local_node_id TEXT,
+    gateway_profile_id TEXT,
+    channel_index INTEGER,
+    channel_key TEXT,
+    transport TEXT NOT NULL,
+    rssi INTEGER,
+    snr REAL,
+    hop_limit INTEGER,
+    hop_start INTEGER
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS message_observation_identity
+ON message_observations(
+    message_id,
+    COALESCE(local_node_id, ''),
+    COALESCE(gateway_profile_id, ''),
+    COALESCE(channel_index, -1),
+    transport
 );
 
 CREATE INDEX IF NOT EXISTS telemetry_node_kind_time
@@ -165,7 +227,12 @@ class Database:
         if os.name == "posix":
             self.path.chmod(0o600)
         with self._connect() as connection:
+            current_version = int(
+                connection.execute("PRAGMA user_version").fetchone()[0]
+            )
             connection.executescript(SCHEMA)
+            self._migrate_message_schema(connection, current_version)
+            self._ensure_message_indexes(connection)
             # Eldre versjonar kalla også den førebelse, implisitte ACK-en
             # «stadfesta». Det gav eit sterkare leveringsløfte enn protokollen.
             connection.execute(
@@ -174,6 +241,148 @@ class Database:
             )
             self._prune_messages(connection)
             self._prune_observations(connection)
+
+    @staticmethod
+    def _migrate_message_schema(
+        connection: sqlite3.Connection,
+        current_version: int,
+    ) -> None:
+        if current_version >= DATABASE_SCHEMA_VERSION:
+            return
+        columns = {
+            str(row["name"])
+            for row in connection.execute("PRAGMA table_info(messages)").fetchall()
+        }
+        additions = {
+            "conversation_id": "TEXT",
+            "channel_key": "TEXT",
+            "local_node_id": "TEXT",
+            "gateway_profile_id": "TEXT",
+            "received_at": "TEXT",
+        }
+        for name, declaration in additions.items():
+            if name not in columns:
+                connection.execute(
+                    f"ALTER TABLE messages ADD COLUMN {name} {declaration}"
+                )  # nosec B608 -- namn og deklarasjon kjem frå lokal konstant
+        if current_version < 2:
+            legacy_rows = connection.execute(
+                """
+                SELECT id, kind, peer_node, channel, timestamp, raw_metadata
+                FROM messages
+                WHERE conversation_id IS NULL
+                   OR received_at IS NULL
+                """
+            ).fetchall()
+            for row in legacy_rows:
+                gateway_profile_id = None
+                raw = row["raw_metadata"]
+                if raw:
+                    try:
+                        metadata = json.loads(raw)
+                        if isinstance(metadata, dict):
+                            gateway_profile_id = metadata.get("gateway_id")
+                    except (TypeError, json.JSONDecodeError):
+                        pass
+                channel_key = None
+                if row["kind"] == "public":
+                    profile_scope = str(gateway_profile_id or "ukjend")
+                    channel_index = (
+                        int(row["channel"])
+                        if row["channel"] is not None
+                        else 0
+                    )
+                    channel_key = f"legacy:{profile_scope}:{channel_index}"
+                    conversation_id = public_conversation_id(channel_key)
+                    connection.execute(
+                        """
+                        INSERT OR IGNORE INTO logical_channels (
+                            channel_key, name, meshtastic_id,
+                            first_seen_at, last_seen_at
+                        ) VALUES (?, '', NULL, ?, ?)
+                        """,
+                        (channel_key, row["timestamp"], row["timestamp"]),
+                    )
+                else:
+                    conversation_id = row["peer_node"]
+                connection.execute(
+                    """
+                    UPDATE messages
+                    SET conversation_id=COALESCE(conversation_id, ?),
+                        channel_key=COALESCE(channel_key, ?),
+                        received_at=COALESCE(received_at, timestamp),
+                        gateway_profile_id=COALESCE(gateway_profile_id, ?)
+                    WHERE id=?
+                    """,
+                    (
+                        conversation_id,
+                        channel_key,
+                        gateway_profile_id,
+                        row["id"],
+                    ),
+                )
+
+            connection.execute("DROP INDEX IF EXISTS messages_packet_identity")
+            connection.execute(
+                "DROP INDEX IF EXISTS messages_packet_context_identity"
+            )
+            connection.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS messages_packet_context_identity
+                ON messages(
+                    packet_id,
+                    direction,
+                    COALESCE(from_node, ''),
+                    COALESCE(to_node, ''),
+                    COALESCE(conversation_id, ''),
+                    text
+                )
+                WHERE packet_id IS NOT NULL
+                """
+            )
+
+        if current_version < 3:
+            connection.execute(
+                """
+                UPDATE messages
+                SET local_node_id=from_node
+                WHERE local_node_id IS NULL
+                  AND direction='ut'
+                  AND from_node GLOB '![0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]'
+                                     || '[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]'
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS messages_conversation_time
+                ON messages(conversation_id, id DESC)
+                """
+            )
+
+        connection.execute(f"PRAGMA user_version={DATABASE_SCHEMA_VERSION}")
+
+    @staticmethod
+    def _ensure_message_indexes(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS messages_packet_context_identity
+            ON messages(
+                packet_id,
+                direction,
+                COALESCE(from_node, ''),
+                COALESCE(to_node, ''),
+                COALESCE(conversation_id, ''),
+                text
+            )
+            WHERE packet_id IS NOT NULL
+            """
+        )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS messages_conversation_time
+            ON messages(conversation_id, id DESC)
+            """
+        )
 
     def _prune_messages(self, connection: sqlite3.Connection) -> None:
         connection.execute(
@@ -220,6 +429,12 @@ class Database:
             connection.close()
 
     def insert_message(self, message: Message) -> tuple[bool, int | None]:
+        conversation_id = message.conversation_id
+        if not conversation_id:
+            conversation_id = (
+                "public" if str(message.kind) == "public" else message.peer_node
+            )
+        received_at = message.received_at or now_iso()
         values = (
             message.packet_id,
             message.timestamp,
@@ -241,28 +456,86 @@ class Database:
             if message.raw_metadata
             else None,
             int(message.is_read),
+            conversation_id,
+            message.channel_key,
+            message.local_node_id,
+            message.gateway_profile_id,
+            received_at,
         )
         sql = """
             INSERT OR IGNORE INTO messages (
                 packet_id, timestamp, from_node, to_node, channel, kind, peer_node,
                 text, direction, transport, rssi, snr, hop_limit, hop_start,
-                want_ack, status, raw_metadata, is_read
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                want_ack, status, raw_metadata, is_read, conversation_id,
+                channel_key, local_node_id, gateway_profile_id, received_at
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?
+            )
         """
         with self._connect() as connection:
             cursor = connection.execute(sql, values)
             inserted = cursor.rowcount == 1
+            message_id = cursor.lastrowid if inserted else None
+            if not inserted and message.packet_id is not None:
+                existing = connection.execute(
+                    """
+                    SELECT id FROM messages
+                    WHERE packet_id=? AND direction=?
+                      AND COALESCE(from_node, '')=COALESCE(?, '')
+                      AND COALESCE(to_node, '')=COALESCE(?, '')
+                      AND COALESCE(conversation_id, '')=COALESCE(?, '')
+                      AND text=?
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (
+                        message.packet_id,
+                        str(message.direction),
+                        message.from_node,
+                        message.to_node,
+                        conversation_id,
+                        message.text,
+                    ),
+                ).fetchone()
+                message_id = int(existing["id"]) if existing else None
+            if message_id is not None:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO message_observations (
+                        message_id, observed_at, local_node_id, gateway_profile_id,
+                        channel_index, channel_key, transport, rssi, snr,
+                        hop_limit, hop_start
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        message_id,
+                        received_at,
+                        message.local_node_id,
+                        message.gateway_profile_id,
+                        message.channel,
+                        message.channel_key,
+                        str(message.transport),
+                        message.rssi,
+                        message.snr,
+                        message.hop_limit,
+                        message.hop_start,
+                    ),
+                )
             if inserted and str(message.kind) == "dm" and message.peer_node:
                 connection.execute(
                     "DELETE FROM archived_conversations WHERE peer_node = ?",
                     (message.peer_node,),
+                )
+                connection.execute(
+                    "DELETE FROM archived_conversation_ids WHERE conversation_id = ?",
+                    (conversation_id,),
                 )
             if inserted:
                 self._inserts_since_prune += 1
                 if self._inserts_since_prune >= 100:
                     self._prune_messages(connection)
                     self._inserts_since_prune = 0
-            return inserted, cursor.lastrowid if inserted else None
+            return inserted, message_id
 
     def insert_telemetry(self, sample: dict[str, Any]) -> bool:
         metrics = sample.get("metrics")
@@ -488,7 +761,12 @@ class Database:
             },
         }
 
-    def update_message_status(self, packet_id: int, status: MessageStatus) -> bool:
+    def update_message_status(
+        self,
+        packet_id: int,
+        status: MessageStatus,
+        local_node_id: str | None = None,
+    ) -> bool:
         if status == MessageStatus.ACKNOWLEDGED:
             allowed_statuses = (str(MessageStatus.QUEUED), "stadfesta")
         elif status == MessageStatus.FAILED:
@@ -505,26 +783,51 @@ class Database:
                 "stadfesta",
             )
         placeholders = ", ".join("?" for _ in allowed_statuses)
+        local_filter = "AND local_node_id = ?" if local_node_id else ""
+        local_params: tuple[Any, ...] = (
+            (local_node_id,) if local_node_id else ()
+        )
         with self._connect() as connection:
             cursor = connection.execute(
                 f"""
                 UPDATE messages SET status = ?
-                WHERE packet_id = ? AND direction = 'ut'
-                  AND status IN ({placeholders})
-                """,  # nosec B608 -- talet på plasshaldarar er lokalt og fast
-                (str(status), packet_id, *allowed_statuses),
+                WHERE id = (
+                    SELECT id FROM messages
+                    WHERE packet_id = ? AND direction = 'ut'
+                      AND status IN ({placeholders})
+                      {local_filter}
+                    ORDER BY id DESC LIMIT 1
+                )
+                """,  # nosec B608 -- ledda kjem frå lokale, faste konstantar
+                (
+                    str(status),
+                    packet_id,
+                    *allowed_statuses,
+                    *local_params,
+                ),
             )
             return cursor.rowcount > 0
 
-    def outgoing_message(self, packet_id: int) -> dict[str, Any] | None:
+    def outgoing_message(
+        self,
+        packet_id: int,
+        local_node_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        local_filter = "AND local_node_id = ?" if local_node_id else ""
+        params: tuple[Any, ...] = (
+            (packet_id, local_node_id)
+            if local_node_id
+            else (packet_id,)
+        )
         with self._connect() as connection:
             row = connection.execute(
-                """
+                f"""
                 SELECT * FROM messages
                 WHERE packet_id = ? AND direction = 'ut'
+                  {local_filter}
                 ORDER BY id DESC LIMIT 1
-                """,
-                (packet_id,),
+                """,  # nosec B608 -- filteret er ein fast lokal konstant
+                params,
             ).fetchone()
         return self._message_row(row) if row is not None else None
 
@@ -532,16 +835,33 @@ class Database:
         self,
         kind: str,
         peer_node: str | None = None,
+        conversation_id: str | None = None,
+        channel_index: int | None = None,
         limit: int = 100,
         mark_read: bool = False,
     ) -> list[dict[str, Any]]:
         limit = max(1, min(limit, 1000))
-        where = "kind = ? AND channel = 0" if kind == "public" else "kind = ? AND peer_node = ?"
-        params: tuple[Any, ...] = (kind,) if kind == "public" else (kind, peer_node)
+        if conversation_id:
+            where = "conversation_id = ?"
+            params: tuple[Any, ...] = (conversation_id,)
+        elif kind == "public":
+            where = "kind = ? AND channel = 0"
+            params = (kind,)
+        else:
+            if channel_index is None:
+                where = "kind = ? AND peer_node = ?"
+                params = (kind, peer_node)
+            else:
+                where = "kind = ? AND peer_node = ? AND channel = ?"
+                params = (kind, peer_node, channel_index)
         with self._connect() as connection:
             query = f"""
                 SELECT recent.*, nodes.long_name AS from_long_name,
-                       nodes.short_name AS from_short_name
+                       nodes.short_name AS from_short_name,
+                       (
+                           SELECT COUNT(*) FROM message_observations
+                           WHERE message_id=recent.id
+                       ) AS observation_count
                 FROM (
                     SELECT * FROM messages WHERE {where}
                     ORDER BY id DESC LIMIT ?
@@ -561,24 +881,38 @@ class Database:
         sql = """
         WITH grouped AS (
             SELECT
-                CASE WHEN kind = 'public' THEN 'public' ELSE peer_node END AS conversation,
+                COALESCE(
+                    conversation_id,
+                    CASE WHEN kind = 'public' THEN 'public' ELSE peer_node END
+                ) AS conversation,
                 kind,
                 MAX(id) AS last_message_id,
                 SUM(CASE WHEN direction = 'inn' AND is_read = 0 THEN 1 ELSE 0 END) AS unread
             FROM messages
-            WHERE (kind = 'public' AND channel = 0)
+            WHERE kind = 'public'
                OR (kind = 'dm' AND NOT EXISTS (
                    SELECT 1 FROM archived_conversations
                    WHERE peer_node = messages.peer_node
+               ) AND NOT EXISTS (
+                   SELECT 1 FROM archived_conversation_ids
+                   WHERE conversation_id = messages.conversation_id
                ))
-            GROUP BY kind, CASE WHEN kind = 'public' THEN 'public' ELSE peer_node END
+            GROUP BY kind, COALESCE(
+                conversation_id,
+                CASE WHEN kind = 'public' THEN 'public' ELSE peer_node END
+            )
         )
         SELECT grouped.conversation, grouped.kind, messages.timestamp AS last_timestamp,
                grouped.unread, messages.text AS last_text, messages.from_node, messages.to_node,
+               messages.channel, messages.channel_key, messages.local_node_id,
+               messages.peer_node, messages.gateway_profile_id,
+               channels.name AS channel_name,
                nodes.long_name, nodes.short_name
         FROM grouped
         LEFT JOIN messages ON messages.id = grouped.last_message_id
-        LEFT JOIN nodes ON nodes.node_id = grouped.conversation
+        LEFT JOIN logical_channels AS channels
+               ON channels.channel_key = messages.channel_key
+        LEFT JOIN nodes ON nodes.node_id = messages.peer_node
         ORDER BY grouped.last_message_id DESC
         """
         with self._connect() as connection:
@@ -586,7 +920,7 @@ class Database:
 
     def delete_messages(self, scope: str) -> int:
         where = {
-            "public": "kind = 'public' AND channel = 0",
+            "public": "kind = 'public'",
             "dm": "kind = 'dm'",
             "all": "kind IN ('public', 'dm')",
         }.get(scope)
@@ -596,6 +930,7 @@ class Database:
             cursor = connection.execute(f"DELETE FROM messages WHERE {where}")  # nosec B608
             if scope in {"dm", "all"}:
                 connection.execute("DELETE FROM archived_conversations")
+                connection.execute("DELETE FROM archived_conversation_ids")
             return cursor.rowcount
 
     def upsert_node_action(self, action: dict[str, Any]) -> None:
@@ -676,23 +1011,285 @@ class Database:
             )
             return cursor.rowcount
 
-    def archive_conversation(self, peer_node: str) -> None:
+    def archive_conversation(
+        self,
+        peer_node: str,
+        conversation_id: str | None = None,
+    ) -> None:
         with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO archived_conversations (peer_node, archived_at)
-                VALUES (?, ?)
-                ON CONFLICT(peer_node) DO UPDATE SET archived_at=excluded.archived_at
-                """,
-                (peer_node, now_iso()),
-            )
+            if conversation_id:
+                connection.execute(
+                    """
+                    INSERT INTO archived_conversation_ids (
+                        conversation_id, archived_at
+                    ) VALUES (?, ?)
+                    ON CONFLICT(conversation_id)
+                    DO UPDATE SET archived_at=excluded.archived_at
+                    """,
+                    (conversation_id, now_iso()),
+                )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO archived_conversations (peer_node, archived_at)
+                    VALUES (?, ?)
+                    ON CONFLICT(peer_node)
+                    DO UPDATE SET archived_at=excluded.archived_at
+                    """,
+                    (peer_node, now_iso()),
+                )
 
-    def unarchive_conversation(self, peer_node: str) -> None:
+    def unarchive_conversation(
+        self,
+        peer_node: str,
+        conversation_id: str | None = None,
+    ) -> None:
+        with self._connect() as connection:
+            if conversation_id:
+                connection.execute(
+                    "DELETE FROM archived_conversation_ids WHERE conversation_id = ?",
+                    (conversation_id,),
+                )
+            else:
+                connection.execute(
+                    "DELETE FROM archived_conversations WHERE peer_node = ?",
+                    (peer_node,),
+                )
+
+    def rebind_provisional_channel(
+        self,
+        local_node_id: str,
+        channel_index: int,
+        provisional_key: str,
+        channel_key: str,
+    ) -> int:
+        if provisional_key == channel_key:
+            return 0
+        rebound = 0
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM messages
+                WHERE local_node_id=?
+                  AND channel_key=?
+                ORDER BY id
+                """,
+                (local_node_id, provisional_key),
+            ).fetchall()
+            for row in rows:
+                conversation_id = (
+                    public_conversation_id(channel_key)
+                    if row["kind"] == "public"
+                    else dm_conversation_id(
+                        local_node_id,
+                        str(row["peer_node"] or ""),
+                        channel_key,
+                    )
+                )
+                duplicate = None
+                if row["packet_id"] is not None:
+                    duplicate = connection.execute(
+                        """
+                        SELECT id
+                        FROM messages
+                        WHERE id<>?
+                          AND packet_id=?
+                          AND direction=?
+                          AND COALESCE(from_node, '')=COALESCE(?, '')
+                          AND COALESCE(to_node, '')=COALESCE(?, '')
+                          AND COALESCE(conversation_id, '')=?
+                          AND text=?
+                        ORDER BY id
+                        LIMIT 1
+                        """,
+                        (
+                            row["id"],
+                            row["packet_id"],
+                            row["direction"],
+                            row["from_node"],
+                            row["to_node"],
+                            conversation_id,
+                            row["text"],
+                        ),
+                    ).fetchone()
+                if duplicate is not None:
+                    connection.execute(
+                        """
+                        INSERT OR IGNORE INTO message_observations (
+                            message_id, observed_at, local_node_id,
+                            gateway_profile_id, channel_index, channel_key,
+                            transport, rssi, snr, hop_limit, hop_start
+                        )
+                        SELECT ?, observed_at, local_node_id,
+                               gateway_profile_id, ?, ?,
+                               transport, rssi, snr, hop_limit, hop_start
+                        FROM message_observations
+                        WHERE message_id=?
+                        """,
+                        (
+                            duplicate["id"],
+                            channel_index,
+                            channel_key,
+                            row["id"],
+                        ),
+                    )
+                    connection.execute(
+                        "DELETE FROM messages WHERE id=?",
+                        (row["id"],),
+                    )
+                else:
+                    connection.execute(
+                        """
+                        UPDATE messages
+                        SET channel=?, channel_key=?, conversation_id=?
+                        WHERE id=?
+                        """,
+                        (
+                            channel_index,
+                            channel_key,
+                            conversation_id,
+                            row["id"],
+                        ),
+                    )
+                    connection.execute(
+                        """
+                        UPDATE message_observations
+                        SET channel_index=?, channel_key=?
+                        WHERE message_id=?
+                        """,
+                        (channel_index, channel_key, row["id"]),
+                    )
+                old_conversation_id = str(row["conversation_id"] or "")
+                if old_conversation_id:
+                    connection.execute(
+                        """
+                        INSERT OR IGNORE INTO archived_conversation_ids (
+                            conversation_id, archived_at
+                        )
+                        SELECT ?, archived_at
+                        FROM archived_conversation_ids
+                        WHERE conversation_id=?
+                        """,
+                        (conversation_id, old_conversation_id),
+                    )
+                    connection.execute(
+                        """
+                        DELETE FROM archived_conversation_ids
+                        WHERE conversation_id=?
+                        """,
+                        (old_conversation_id,),
+                    )
+                rebound += 1
+        return rebound
+
+    def sync_channel_bindings(
+        self,
+        local_node_id: str,
+        gateway_profile_id: str | None,
+        bindings: list[ChannelBinding],
+    ) -> None:
+        seen_at = now_iso()
         with self._connect() as connection:
             connection.execute(
-                "DELETE FROM archived_conversations WHERE peer_node = ?",
-                (peer_node,),
+                "UPDATE channel_bindings SET is_active=0 WHERE local_node_id=?",
+                (local_node_id,),
             )
+            for binding in bindings:
+                connection.execute(
+                    """
+                    INSERT INTO logical_channels (
+                        channel_key, name, meshtastic_id,
+                        first_seen_at, last_seen_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(channel_key) DO UPDATE SET
+                        name=excluded.name,
+                        meshtastic_id=COALESCE(
+                            excluded.meshtastic_id,
+                            logical_channels.meshtastic_id
+                        ),
+                        last_seen_at=excluded.last_seen_at
+                    """,
+                    (
+                        binding.channel_key,
+                        binding.name,
+                        (
+                            str(binding.meshtastic_id)
+                            if binding.meshtastic_id is not None
+                            else None
+                        ),
+                        seen_at,
+                        seen_at,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO channel_bindings (
+                        local_node_id, channel_index, channel_key, name, role,
+                        meshtastic_id, gateway_profile_id, first_seen_at,
+                        last_seen_at, is_active
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                    ON CONFLICT(local_node_id, channel_index) DO UPDATE SET
+                        channel_key=excluded.channel_key,
+                        name=excluded.name,
+                        role=excluded.role,
+                        meshtastic_id=excluded.meshtastic_id,
+                        gateway_profile_id=excluded.gateway_profile_id,
+                        last_seen_at=excluded.last_seen_at,
+                        is_active=1
+                    """,
+                    (
+                        local_node_id,
+                        binding.channel_index,
+                        binding.channel_key,
+                        binding.name,
+                        binding.role,
+                        (
+                            str(binding.meshtastic_id)
+                            if binding.meshtastic_id is not None
+                            else None
+                        ),
+                        gateway_profile_id,
+                        seen_at,
+                        seen_at,
+                    ),
+                )
+
+    def list_channel_bindings(
+        self,
+        local_node_id: str | None = None,
+        *,
+        active_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        where: list[str] = []
+        params: list[Any] = []
+        if local_node_id:
+            where.append("bindings.local_node_id=?")
+            params.append(local_node_id)
+        if active_only:
+            where.append("bindings.is_active=1")
+        clause = f"WHERE {' AND '.join(where)}" if where else ""
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT bindings.*, channels.name AS channel_name
+                FROM channel_bindings AS bindings
+                JOIN logical_channels AS channels
+                  ON channels.channel_key=bindings.channel_key
+                {clause}
+                ORDER BY bindings.local_node_id, bindings.channel_index
+                """,  # nosec B608 -- WHERE-ledda er faste lokale konstantar
+                params,
+            ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["is_active"] = bool(item["is_active"])
+            item["display_name"] = item["name"] or f"Kanal {item['channel_index']}"
+            item["conversation"] = f"channel:{item['channel_key']}"
+            item["kind"] = "public"
+            result.append(item)
+        return result
 
     def upsert_node(self, node: Node) -> None:
         node.updated_at = node.updated_at or now_iso()

@@ -18,11 +18,17 @@ from meshpi.tui import (
     NodePickerItem,
     NodeSidebarItem,
     QuitScreen,
+    _conversation_title,
     _map_link,
     _message_time_parts,
     _metric_label_and_value,
 )
 from meshpi.update import UpdateNotice
+
+PRIMARY_CHANNEL_KEY = "local:!040840a0:0:"
+PUBLIC_CONVERSATION = f"channel:{PRIMARY_CHANNEL_KEY}"
+RESERVE_DM_CONVERSATION = f"dm:!040840a0:!710365c8:{PRIMARY_CHANNEL_KEY}"
+VENESSOL_DM_CONVERSATION = f"dm:!040840a0:!2f779c48:{PRIMARY_CHANNEL_KEY}"
 
 
 class FakeBackend:
@@ -41,15 +47,24 @@ class FakeBackend:
         }
         self.conversations = [
             {
-                "conversation": "public",
+                "conversation": PUBLIC_CONVERSATION,
                 "kind": "public",
+                "channel": 0,
+                "channel_key": PRIMARY_CHANNEL_KEY,
+                "local_node_id": "!040840a0",
+                "sendable": True,
                 "last_timestamp": "2026-07-20T12:00:00+00:00",
                 "last_text": "Public test",
                 "unread": 0,
             },
             {
-                "conversation": "!710365c8",
+                "conversation": RESERVE_DM_CONVERSATION,
                 "kind": "dm",
+                "peer_node": "!710365c8",
+                "channel": 0,
+                "channel_key": PRIMARY_CHANNEL_KEY,
+                "local_node_id": "!040840a0",
+                "sendable": True,
                 "last_timestamp": "2026-07-20T12:01:00+00:00",
                 "last_text": "Hei",
                 "unread": 1,
@@ -90,7 +105,7 @@ class FakeBackend:
             },
         ]
         self.messages = {
-            "public": [
+            PUBLIC_CONVERSATION: [
                 {
                     "timestamp": "2026-07-20T12:00:00+00:00",
                     "kind": "public",
@@ -100,7 +115,7 @@ class FakeBackend:
                     "text": "Public test",
                 }
             ],
-            "!710365c8": [
+            RESERVE_DM_CONVERSATION: [
                 {
                     "timestamp": "2026-07-20T12:01:00+00:00",
                     "kind": "dm",
@@ -111,7 +126,7 @@ class FakeBackend:
                     "text": "Hei",
                 }
             ],
-            "!2f779c48": [],
+            VENESSOL_DM_CONVERSATION: [],
         }
         self.node_actions = {
             "!710365c8": [],
@@ -179,7 +194,7 @@ class FakeBackend:
         elif command == "nodes":
             data = self.nodes
         elif command == "messages":
-            data = self.messages[payload["conversation"]]
+            data = self.messages.get(payload["conversation"], [])
             if payload.get("mark_read"):
                 for conversation in self.conversations:
                     if conversation["conversation"] == payload["conversation"]:
@@ -219,10 +234,10 @@ class FakeBackend:
         elif command == "node_actions":
             data = self.node_actions[payload["node_id"]]
         elif command == "archive_conversation":
-            self.archived.add(payload["node_id"])
+            self.archived.add(payload.get("conversation") or payload["node_id"])
             data = {"node_id": payload["node_id"], "archived": True}
         elif command == "unarchive_conversation":
-            self.archived.discard(payload["node_id"])
+            self.archived.discard(payload.get("conversation") or payload["node_id"])
             data = {"node_id": payload["node_id"], "archived": False}
         elif command in {"send_public", "send_dm"}:
             data = {"packet_id": 123}
@@ -267,6 +282,67 @@ class FakeBackend:
 
 def run_scenario(scenario):
     asyncio.run(scenario())
+
+
+def test_channel_conversation_title_uses_safe_name_and_index():
+    assert (
+        _conversation_title(
+            {
+                "conversation": "channel:global:ops:1234",
+                "kind": "public",
+                "channel": 2,
+                "channel_name": "Ops",
+            }
+        )
+        == "Ops – kanal 2"
+    )
+
+
+def test_archived_and_provisional_channel_titles_are_distinct():
+    assert _conversation_title(
+        {
+            "conversation": "channel:legacy:tcp-felt:0",
+            "kind": "public",
+            "channel": 0,
+            "channel_key": "legacy:tcp-felt:0",
+        }
+    ) == "Public (arkiv tcp-felt) – kanal 0"
+    assert _conversation_title(
+        {
+            "conversation": "channel:provisional:!aaaaaaaa:5",
+            "kind": "public",
+            "channel": 5,
+            "channel_key": "provisional:!aaaaaaaa:5",
+        }
+    ) == "Public (uavklart rute) – kanal 5"
+
+
+def test_tui_routes_send_to_selected_channel_conversation():
+    backend = FakeBackend()
+    app = MeshPiTUI(
+        Settings(),
+        requester=backend.request,
+        watcher=None,
+        update_checker=None,
+    )
+    conversation = "channel:global:ops:1234"
+    app.conversations = [
+        {
+            "conversation": conversation,
+            "kind": "public",
+            "channel": 2,
+            "channel_name": "Ops",
+            "sendable": True,
+        }
+    ]
+
+    app._send_worker(conversation, "Hei")
+
+    assert backend.calls[-1] == {
+        "command": "send_public",
+        "text": "Hei",
+        "conversation": conversation,
+    }
 
 
 def test_tui_distinguishes_ack_from_delivery():
@@ -323,11 +399,11 @@ def test_tui_uses_enter_to_activate_and_tab_to_move_between_panes():
         async with app.run_test(size=(160, 48)) as pilot:
             await pilot.pause(0.3)
             assert len(app.conversations) == 2
-            assert app.current_conversation == "public"
+            assert app.current_conversation == PUBLIC_CONVERSATION
             await pilot.press("f2", "down")
-            assert app.current_conversation == "public"
+            assert app.current_conversation == PUBLIC_CONVERSATION
             await pilot.press("enter")
-            assert app.current_conversation == "!710365c8"
+            assert app.current_conversation == RESERVE_DM_CONVERSATION
             assert app.query_one("#conversation-list", ListView).has_focus
 
             await pilot.press("tab")
@@ -354,7 +430,7 @@ def test_status_bar_shows_current_meshpi_version_and_host(monkeypatch):
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.8.0" in text
+            assert "MeshPi 0.8.2" in text
             assert "Vert: testvert" in text
 
     run_scenario(scenario)
@@ -450,6 +526,7 @@ def test_tui_sends_to_selected_dm():
                 "command": "send_dm",
                 "node_id": "!710365c8",
                 "text": "test",
+                "conversation": RESERVE_DM_CONVERSATION,
             } in backend.calls
 
     run_scenario(scenario)
@@ -477,7 +554,8 @@ def test_live_message_is_appended_to_active_dm():
                 "text": "Ny melding",
             }
             # The real daemon commits a message before publishing its live event.
-            backend.messages["!710365c8"].append(incoming)
+            incoming["conversation_id"] = RESERVE_DM_CONVERSATION
+            backend.messages[RESERVE_DM_CONVERSATION].append(incoming)
             backend.conversations[1]["unread"] = 1
             app.post_message(
                 LiveEvent(
@@ -492,20 +570,20 @@ def test_live_message_is_appended_to_active_dm():
             active_item = next(
                 item
                 for item in app.query(ConversationItem)
-                if item.conversation_id == "!710365c8"
+                if item.conversation_id == RESERVE_DM_CONVERSATION
             )
             assert active_item.conversation["unread"] == 0
 
-            app.select_conversation("!2f779c48")
+            app.select_conversation(VENESSOL_DM_CONVERSATION)
             await pilot.pause(0.2)
-            app.select_conversation("!710365c8")
+            app.select_conversation(RESERVE_DM_CONVERSATION)
             await pilot.pause(0.2)
             rendered = "\n".join(line.text for line in log.lines)
             assert rendered.index("Hei") < rendered.index("Ny melding")
             conversation_item = next(
                 item
                 for item in app.query(ConversationItem)
-                if item.conversation_id == "!710365c8"
+                if item.conversation_id == RESERVE_DM_CONVERSATION
             )
             assert conversation_item.conversation["unread"] == 0
 
@@ -650,12 +728,16 @@ def test_delete_archives_selected_dm_without_deleting_messages():
             await pilot.press("f2", "down", "enter", "delete")
             await pilot.pause(0.3)
 
-            assert backend.archived == {"!710365c8"}
-            assert app.current_conversation == "public"
+            assert backend.archived == {RESERVE_DM_CONVERSATION}
+            assert app.current_conversation == PUBLIC_CONVERSATION
+            assert app.query_one("#message-input", Input).disabled is False
+            assert "Public" in str(
+                app.query_one("#conversation-title", Static).render()
+            )
             assert [item.conversation_id for item in app.query(ConversationItem)] == [
-                "public"
+                PUBLIC_CONVERSATION
             ]
-            assert backend.messages["!710365c8"][0]["text"] == "Hei"
+            assert backend.messages[RESERVE_DM_CONVERSATION][0]["text"] == "Hei"
 
     run_scenario(scenario)
 
@@ -695,7 +777,7 @@ def test_sidebar_lists_nodes_and_opens_selected_node_as_dm():
 
             await pilot.press("enter")
             await pilot.pause(0.3)
-            assert app.current_conversation == "!2f779c48"
+            assert app.current_conversation == VENESSOL_DM_CONVERSATION
 
     run_scenario(scenario)
 
@@ -715,7 +797,7 @@ def test_keyboard_opens_node_action_menu_and_starts_traceroute():
 
             await pilot.press("t")
             await pilot.pause(0.3)
-            assert app.current_conversation == "!710365c8"
+            assert app.current_conversation == RESERVE_DM_CONVERSATION
             assert {
                 "command": "node_action",
                 "action": "traceroute",
@@ -741,7 +823,7 @@ def test_right_click_selects_node_and_opens_node_action_menu():
             await pilot.pause(0.3)
 
             assert app.selected_node_id == "!2f779c48"
-            assert app.current_conversation == "public"
+            assert app.current_conversation == PUBLIC_CONVERSATION
             assert isinstance(app.screen, NodeActionScreen)
             assert app.screen.node["node_id"] == "!2f779c48"
             assert main_screen._selecting is False
@@ -1422,7 +1504,7 @@ def test_completed_traceroute_is_rendered_in_dm_without_blocking_the_app():
             await pilot.pause(0.2)
 
             assert not isinstance(app.screen, NodeActionScreen)
-            assert app.current_conversation == "!710365c8"
+            assert app.current_conversation == RESERVE_DM_CONVERSATION
             assert app.query_one("#message-input", Input).has_focus
             message_log = app.query_one("#message-log", RichLog)
             text = "\n".join(line.text for line in message_log.lines)
@@ -1501,7 +1583,8 @@ def test_message_stays_below_older_traceroute_after_ack_refresh():
                 "status": "sendt",
                 "text": "Melding etter traceroute",
             }
-            backend.messages["!710365c8"].append(outgoing)
+            outgoing["conversation_id"] = RESERVE_DM_CONVERSATION
+            backend.messages[RESERVE_DM_CONVERSATION].append(outgoing)
             app.post_message(LiveEvent({"type": "message", "data": outgoing}))
             await pilot.pause(0.2)
 
@@ -1597,7 +1680,12 @@ def test_new_dm_picker_lists_and_filters_remote_nodes():
             assert len(app.screen.query(NodePickerItem)) == 1
             await pilot.press("enter")
             await pilot.pause(0.3)
-            assert app.current_conversation == "!710365c8"
+            assert app.current_conversation == RESERVE_DM_CONVERSATION
+            assert {
+                "command": "unarchive_conversation",
+                "node_id": "!710365c8",
+                "conversation": RESERVE_DM_CONVERSATION,
+            } in backend.calls
 
     run_scenario(scenario)
 

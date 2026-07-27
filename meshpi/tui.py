@@ -10,7 +10,7 @@ import time
 from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime
-from typing import Any, BinaryIO
+from typing import Any
 from urllib.parse import urlencode
 
 from rich import box
@@ -31,13 +31,14 @@ from textual.strip import Strip
 from textual.widgets import Button, Input, Label, ListItem, ListView, RichLog, Static
 
 from meshpi import __version__
-from meshpi.client import CLIError, open_watch, request
+from meshpi.channels import dm_conversation_id, parse_dm_conversation_id
+from meshpi.client import CLIError, WatchStream, open_watch, request
 from meshpi.config import Settings
 from meshpi.models import normalize_node_id, sanitize_terminal_text, validate_message_text
 from meshpi.update import UpdateNotice, check_for_update
 
 Requester = Callable[[Settings, dict[str, Any]], dict[str, Any]]
-Watcher = Callable[[Settings, str], tuple[socket.socket, BinaryIO]]
+Watcher = Callable[[Settings, str], tuple[socket.socket, WatchStream]]
 UpdateChecker = Callable[[Settings], UpdateNotice | None]
 
 
@@ -275,13 +276,38 @@ def _fit_status_endpoint(transport: str, endpoint: str, width: int) -> str:
 
 
 def _conversation_id(item: dict[str, Any]) -> str:
-    return "public" if item.get("kind") == "public" else str(item["conversation"])
+    return str(item["conversation"])
 
 
 def _conversation_title(item: dict[str, Any]) -> str:
     if item.get("kind") == "public":
-        return "Public – kanal 0"
-    node_id = str(item.get("conversation", ""))
+        channel = item.get("channel")
+        name = sanitize_terminal_text(item.get("channel_name") or "")
+        channel_key = str(item.get("channel_key") or "")
+        if channel_key.startswith("legacy:"):
+            scope = sanitize_terminal_text(channel_key.split(":", 2)[1], 40)
+            return (
+                f"Public (arkiv {scope}) – kanal "
+                f"{channel if channel is not None else '?'}"
+            )
+        if channel_key.startswith("provisional:"):
+            return (
+                "Public (uavklart rute) – kanal "
+                f"{channel if channel is not None else '?'}"
+            )
+        local_suffix = (
+            f" [{str(item.get('local_node_id'))[-4:]}]"
+            if channel_key.startswith("local:")
+            and item.get("local_node_id")
+            else ""
+        )
+        if name:
+            return f"{name} – kanal {channel}{local_suffix}"
+        return (
+            f"Public – kanal {channel if channel is not None else 0}"
+            f"{local_suffix}"
+        )
+    node_id = str(item.get("peer_node") or item.get("conversation", ""))
     name = sanitize_terminal_text(item.get("long_name") or item.get("short_name") or node_id)
     return f"DM {name} [{node_id[-4:]}]"
 
@@ -301,7 +327,10 @@ class ConversationItem(ListItem):
         unread = int(self.conversation.get("unread") or 0)
         title = _conversation_title(self.conversation)
         text = Text()
-        text.append("● " if self.conversation_id == "public" else "◆ ", style="green")
+        text.append(
+            "● " if self.conversation.get("kind") == "public" else "◆ ",
+            style="green",
+        )
         text.append(title, style="bold")
         if unread:
             text.append(f"  {unread}", style="bold cyan")
@@ -2006,31 +2035,63 @@ class MeshPiTUI(App[str | None]):
         status_widget.update(text)
 
     def _with_public(self, conversations: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        public = next(
-            (item for item in conversations if item.get("kind") == "public"),
-            {
+        public = [item for item in conversations if item.get("kind") == "public"]
+        if not public:
+            public = [{
                 "conversation": "public",
                 "kind": "public",
                 "last_timestamp": None,
                 "last_text": None,
                 "unread": 0,
-            },
-        )
+                "channel": 0,
+                "sendable": False,
+            }]
+        elif self.current_conversation == "public":
+            primary = next(
+                (item for item in public if item.get("channel") == 0),
+                public[0],
+            )
+            self.current_conversation = _conversation_id(primary)
         direct = [item for item in conversations if item.get("kind") == "dm"]
-        if self.current_conversation != "public" and not any(
-            _conversation_id(item) == self.current_conversation for item in direct
+        known_ids = {
+            _conversation_id(item) for item in [*public, *direct]
+        }
+        if (
+            self.current_conversation not in known_ids
+            and self.current_conversation != "public"
+            and not self.current_conversation.startswith("channel:")
         ):
+            synthetic: dict[str, Any] = {
+                "conversation": self.current_conversation,
+                "kind": "dm",
+                "last_timestamp": None,
+                "last_text": None,
+                "unread": 0,
+                "sendable": False,
+            }
+            if self.current_conversation.startswith("dm:"):
+                with suppress(ValueError):
+                    route_local, route_peer, route_key = parse_dm_conversation_id(
+                        self.current_conversation
+                    )
+                    synthetic.update(
+                        {
+                            "peer_node": route_peer,
+                            "local_node_id": route_local,
+                            "channel_key": route_key,
+                            "sendable": any(
+                                item.get("sendable") is True
+                                and item.get("local_node_id") == route_local
+                                and item.get("channel_key") == route_key
+                                for item in public
+                            ),
+                        }
+                    )
             direct.insert(
                 0,
-                {
-                    "conversation": self.current_conversation,
-                    "kind": "dm",
-                    "last_timestamp": None,
-                    "last_text": None,
-                    "unread": 0,
-                },
+                synthetic,
             )
-        return [public, *direct]
+        return [*public, *direct]
 
     async def _apply_conversations(self, conversations: list[dict[str, Any]]) -> None:
         incoming = self._with_public(conversations)
@@ -2064,8 +2125,8 @@ class MeshPiTUI(App[str | None]):
         preferred = self.selected_node_id
         if preferred not in self.nodes:
             preferred = (
-                self.current_conversation
-                if self.current_conversation != "public"
+                self._conversation_peer(self.current_conversation)
+                if not self._is_public_conversation(self.current_conversation)
                 else str(self.status_data.get("local_node_id") or "")
             )
         node_list = self.query_one("#node-list", ListView)
@@ -2147,8 +2208,36 @@ class MeshPiTUI(App[str | None]):
         self.query_one("#node-list", ListView).focus()
         self._open_node_actions(message.node_id)
 
+    def _conversation_data(self, conversation: str) -> dict[str, Any] | None:
+        return next(
+            (
+                item
+                for item in self.conversations
+                if _conversation_id(item) == conversation
+            ),
+            None,
+        )
+
+    def _is_public_conversation(self, conversation: str) -> bool:
+        item = self._conversation_data(conversation)
+        return bool(
+            conversation == "public"
+            or conversation.startswith("channel:")
+            or (item and item.get("kind") == "public")
+        )
+
+    def _conversation_peer(self, conversation: str) -> str | None:
+        item = self._conversation_data(conversation)
+        peer = item.get("peer_node") if item else None
+        if peer:
+            return str(peer)
+        if conversation.startswith("dm:"):
+            return None
+        return conversation if conversation.startswith("!") else None
+
     def select_conversation(self, conversation: str) -> None:
         self.current_conversation = conversation
+        selected_data = self._conversation_data(conversation)
         title = next(
             (
                 _conversation_title(item)
@@ -2158,6 +2247,10 @@ class MeshPiTUI(App[str | None]):
             f"DM {conversation}",
         )
         self.query_one("#conversation-title", Static).update(Text(title))
+        message_input = self.query_one("#message-input", Input)
+        message_input.disabled = not bool(
+            selected_data and selected_data.get("sendable") is True
+        )
         self.run_worker(
             lambda: self._conversation_worker(conversation),
             name=f"conversation-{conversation}",
@@ -2169,6 +2262,8 @@ class MeshPiTUI(App[str | None]):
 
     def _conversation_worker(self, conversation: str) -> None:
         try:
+            is_public = self._is_public_conversation(conversation)
+            peer_node = self._conversation_peer(conversation)
             messages = self._call(
                 {
                     "command": "messages",
@@ -2179,17 +2274,17 @@ class MeshPiTUI(App[str | None]):
             )["data"]
             node_actions = (
                 []
-                if conversation == "public"
+                if is_public or not peer_node
                 else self._call(
                     {
                         "command": "node_actions",
                         "action": "traceroute",
-                        "node_id": conversation,
+                        "node_id": peer_node,
                         "limit": 100,
                     }
                 )["data"]
             )
-            node_id = conversation if conversation != "public" else self._latest_peer(messages)
+            node_id = self._latest_peer(messages) if is_public else peer_node
             node = None
             if node_id and node_id not in {"!ffffffff", "^all"}:
                 try:
@@ -2243,12 +2338,13 @@ class MeshPiTUI(App[str | None]):
         timeline: list[tuple[str, dict[str, Any]]] = [
             ("message", message) for message in messages
         ]
-        if conversation != "public":
+        peer_node = self._conversation_peer(conversation)
+        if not self._is_public_conversation(conversation) and peer_node:
             actions = sorted(
                 (
                     action
                     for action in self.node_action_entries.values()
-                    if action.get("node_id") == conversation
+                    if action.get("node_id") == peer_node
                 ),
                 key=lambda item: (
                     str(item.get("started_at") or ""),
@@ -2534,11 +2630,43 @@ class MeshPiTUI(App[str | None]):
         )
 
     def _send_worker(self, conversation: str, text: str) -> None:
-        payload = (
-            {"command": "send_public", "text": text}
-            if conversation == "public"
-            else {"command": "send_dm", "node_id": conversation, "text": text}
-        )
+        selected_data = self._conversation_data(conversation)
+        if not selected_data or selected_data.get("sendable") is not True:
+            self.call_from_thread(
+                self.notify,
+                "Den valde samtaleruta er ikkje sendbar på den aktive noden",
+                severity="error",
+            )
+            return
+        if self._is_public_conversation(conversation):
+            payload = {
+                "command": "send_public",
+                "text": text,
+                **(
+                    {"conversation": conversation}
+                    if conversation.startswith("channel:")
+                    else {}
+                ),
+            }
+        else:
+            peer_node = self._conversation_peer(conversation)
+            if not peer_node:
+                self.call_from_thread(
+                    self.notify,
+                    "Fann ikkje mottakarnoden for samtalen",
+                    severity="error",
+                )
+                return
+            payload = {
+                "command": "send_dm",
+                "node_id": peer_node,
+                "text": text,
+                **(
+                    {"conversation": conversation}
+                    if conversation.startswith("dm:")
+                    else {}
+                ),
+            }
         try:
             self._call(payload)
         except Exception as exc:
@@ -2603,7 +2731,7 @@ class MeshPiTUI(App[str | None]):
         if event_type == "message_status":
             self.select_conversation(self.current_conversation)
             return
-        if event_type == "nodes":
+        if event_type in {"nodes", "channels"}:
             self.run_worker(
                 self._refresh_lists_worker,
                 name="refresh-nodes",
@@ -2641,7 +2769,10 @@ class MeshPiTUI(App[str | None]):
         if event_type != "message":
             return
         data = event.get("data", {})
-        conversation = "public" if data.get("kind") == "public" else data.get("peer_node")
+        conversation = (
+            data.get("conversation_id")
+            or ("public" if data.get("kind") == "public" else data.get("peer_node"))
+        )
         if conversation == self.current_conversation:
             self.query_one("#message-log", RichLog).write(
                 self._render_message(data),
@@ -2997,8 +3128,8 @@ class MeshPiTUI(App[str | None]):
             and screen.overview_data.get("node", {}).get("node_id") == node_id
         ):
             screen.upsert_traceroute(action)
-        if node_id == self.current_conversation:
-            self.select_conversation(node_id)
+        if node_id == self._conversation_peer(self.current_conversation):
+            self.select_conversation(self.current_conversation)
         if status == "started":
             self.notify(
                 f"Traceroute til {self._node_action_label(node_id)} er sendt",
@@ -3012,7 +3143,7 @@ class MeshPiTUI(App[str | None]):
                 timeout=10,
             )
             return
-        if node_id != self.current_conversation:
+        if node_id != self._conversation_peer(self.current_conversation):
             self.notify(
                 f"Traceroute til {self._node_action_label(node_id)} er ferdig",
                 timeout=7,
@@ -3047,22 +3178,74 @@ class MeshPiTUI(App[str | None]):
         self._open_node_dm(node_id, focus_input=True)
 
     def _open_node_dm(self, node_id: str, *, focus_input: bool) -> None:
-        self.current_conversation = node_id
+        normalized_node_id = normalize_node_id(node_id)
+        primary = next(
+            (
+                item
+                for item in self.conversations
+                if item.get("kind") == "public"
+                and item.get("channel") == 0
+                and item.get("sendable") is True
+                and item.get("local_node_id")
+                and item.get("channel_key")
+            ),
+            None,
+        )
+        if primary is None:
+            self.notify(
+                "Primærkanalen er ikkje klar på den aktive noden",
+                severity="error",
+            )
+            return
+        conversation = dm_conversation_id(
+            str(primary["local_node_id"]),
+            normalized_node_id,
+            str(primary["channel_key"]),
+        )
+        if self._conversation_data(conversation) is None:
+            self.conversations.append(
+                {
+                    "conversation": conversation,
+                    "kind": "dm",
+                    "peer_node": normalized_node_id,
+                    "local_node_id": primary["local_node_id"],
+                    "channel_key": primary["channel_key"],
+                    "channel": 0,
+                    "last_timestamp": None,
+                    "last_text": None,
+                    "unread": 0,
+                    "sendable": True,
+                }
+            )
+        self.current_conversation = conversation
         self.run_worker(
-            lambda: self._unarchive_and_refresh_worker(node_id),
+            lambda: self._unarchive_and_refresh_worker(
+                normalized_node_id,
+                conversation,
+            ),
             name="new-dm-refresh",
             group="refresh",
             thread=True,
             exclusive=True,
             exit_on_error=False,
         )
-        self.select_conversation(node_id)
+        self.select_conversation(conversation)
         if focus_input:
             self.query_one("#message-input", Input).focus()
 
-    def _unarchive_and_refresh_worker(self, node_id: str) -> None:
+    def _unarchive_and_refresh_worker(
+        self,
+        node_id: str,
+        conversation: str,
+    ) -> None:
         with suppress(Exception):
-            self._call({"command": "unarchive_conversation", "node_id": node_id})
+            self._call(
+                {
+                    "command": "unarchive_conversation",
+                    "node_id": node_id,
+                    "conversation": conversation,
+                }
+            )
         self._refresh_lists_worker()
 
     def action_archive_conversation(self) -> None:
@@ -3072,24 +3255,46 @@ class MeshPiTUI(App[str | None]):
         selected = conversation_list.highlighted_child
         if not isinstance(selected, ConversationItem):
             return
-        if selected.conversation_id == "public":
+        if selected.conversation.get("kind") == "public":
             self.notify("Public-kanalen kan ikkje lukkast", timeout=3)
             return
-        node_id = selected.conversation_id
+        conversation = selected.conversation_id
+        node_id = str(
+            selected.conversation.get("peer_node")
+            or self._conversation_peer(conversation)
+            or ""
+        )
+        if not node_id:
+            self.notify("Fann ikkje mottakarnoden for samtalen", severity="error")
+            return
         self.run_worker(
-            lambda: self._archive_conversation_worker(node_id),
-            name=f"archive-{node_id}",
+            lambda: self._archive_conversation_worker(node_id, conversation),
+            name=f"archive-{conversation}",
             group="archive",
             thread=True,
             exclusive=True,
             exit_on_error=False,
         )
 
-    def _archive_conversation_worker(self, node_id: str) -> None:
+    def _archive_conversation_worker(
+        self,
+        node_id: str,
+        conversation: str,
+    ) -> None:
         try:
-            self._call({"command": "archive_conversation", "node_id": node_id})
+            self._call(
+                {
+                    "command": "archive_conversation",
+                    "node_id": node_id,
+                    "conversation": conversation,
+                }
+            )
             conversations = self._call({"command": "conversations"})["data"]
-            self.call_from_thread(self._finish_archive, node_id, conversations)
+            self.call_from_thread(
+                self._finish_archive,
+                conversation,
+                conversations,
+            )
         except Exception as exc:
             self.call_from_thread(
                 self.notify,
@@ -3099,13 +3304,13 @@ class MeshPiTUI(App[str | None]):
 
     async def _finish_archive(
         self,
-        node_id: str,
+        conversation: str,
         conversations: list[dict[str, Any]],
     ) -> None:
-        if self.current_conversation == node_id:
+        if self.current_conversation == conversation:
             self.current_conversation = "public"
-            self.select_conversation("public")
         await self._apply_conversations(conversations)
+        self.select_conversation(self.current_conversation)
         self.query_one("#conversation-list", ListView).focus()
         self.notify("Samtalen er lukka. Ein ny DM opnar han att.", timeout=5)
 

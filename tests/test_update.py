@@ -31,15 +31,37 @@ def test_update_manifest_selects_platform_command():
         platform_name="win32",
     )
     assert notice is not None
-    assert notice.latest_version == "0.8.0"
+    assert notice.latest_version == "0.8.2"
     assert notice.command == "meshpi update"
+
+
+@pytest.mark.parametrize(
+    ("platform_name", "background_mode", "command"),
+    [
+        ("linux", "always", "sudo meshpi update"),
+        ("linux", "session", "meshpi update"),
+        ("darwin", "always", "meshpi update"),
+    ],
+)
+def test_update_manifest_command_matches_platform_and_mode(
+    platform_name, background_mode, command
+):
+    notice = parse_update_manifest(
+        manifest(),
+        current_version="0.5.2",
+        platform_name=platform_name,
+        background_mode=background_mode,
+    )
+
+    assert notice is not None
+    assert notice.command == command
 
 
 def test_update_manifest_returns_none_for_current_or_newer_version():
     assert (
         parse_update_manifest(
             manifest(),
-            current_version="0.8.0",
+            current_version="0.8.2",
             platform_name="linux",
         )
         is None
@@ -47,7 +69,7 @@ def test_update_manifest_returns_none_for_current_or_newer_version():
     assert (
         parse_update_manifest(
             manifest(),
-            current_version="0.8.1",
+            current_version="0.8.3",
             platform_name="linux",
         )
         is None

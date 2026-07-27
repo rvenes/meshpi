@@ -3,6 +3,7 @@ import sqlite3
 
 import pytest
 
+from meshpi.channels import ChannelBinding, logical_channel_key, public_conversation_id
 from meshpi.database import Database
 from meshpi.models import (
     ConversationKind,
@@ -122,6 +123,270 @@ def test_dm_storage_is_separate_per_peer(tmp_path):
     assert len(database.list_messages("dm", "!33334444")) == 1
 
 
+def test_public_conversations_are_separate_per_logical_channel(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    first = message(1)
+    first.channel = 1
+    first.channel_key = "global:ops:123"
+    first.conversation_id = public_conversation_id(first.channel_key)
+    second = message(2)
+    second.channel = 1
+    second.channel_key = "local:!aaaaaaaa:1:ops"
+    second.conversation_id = public_conversation_id(second.channel_key)
+
+    database.insert_message(first)
+    database.insert_message(second)
+
+    conversations = database.conversations()
+    assert {item["conversation"] for item in conversations} == {
+        first.conversation_id,
+        second.conversation_id,
+    }
+    assert len(
+        database.list_messages(
+            "public",
+            conversation_id=first.conversation_id,
+        )
+    ) == 1
+
+
+def test_same_public_packet_has_one_message_and_two_gateway_observations(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    first = message(7)
+    first.channel_key = "global:ops:123"
+    first.conversation_id = public_conversation_id(first.channel_key)
+    first.local_node_id = "!aaaaaaaa"
+    first.gateway_profile_id = "tcp-a"
+    second = message(7)
+    second.channel_key = first.channel_key
+    second.conversation_id = first.conversation_id
+    second.local_node_id = "!bbbbbbbb"
+    second.gateway_profile_id = "serial-b"
+
+    assert database.insert_message(first)[0] is True
+    assert database.insert_message(second)[0] is False
+
+    with sqlite3.connect(database.path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 1
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM message_observations"
+            ).fetchone()[0]
+            == 2
+        )
+    assert database.list_messages(
+        "public",
+        conversation_id=first.conversation_id,
+    )[0]["observation_count"] == 2
+
+
+def test_packet_id_collision_on_two_channels_is_not_deduplicated(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    first = message(9)
+    first.channel_key = "global:first:1"
+    first.conversation_id = public_conversation_id(first.channel_key)
+    second = message(9)
+    second.channel_key = "global:second:2"
+    second.conversation_id = public_conversation_id(second.channel_key)
+
+    assert database.insert_message(first)[0] is True
+    assert database.insert_message(second)[0] is True
+
+
+def test_channel_bindings_use_global_id_across_nodes_and_local_fallback(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    shared_a = logical_channel_key("!aaaaaaaa", 1, "Ops", 1234)
+    shared_b = logical_channel_key("!bbbbbbbb", 3, "Ops", 1234)
+    local_a = logical_channel_key("!aaaaaaaa", 2, "Lokal", None)
+    local_b = logical_channel_key("!bbbbbbbb", 2, "Lokal", None)
+    assert shared_a == shared_b
+    assert local_a != local_b
+    assert logical_channel_key("!bbbbbbbb", 3, "ops", 1234) != shared_a
+    assert logical_channel_key("!bbbbbbbb", 3, "Nytt namn", 1234) != shared_a
+
+    database.sync_channel_bindings(
+        "!aaaaaaaa",
+        "tcp-a",
+        [
+            ChannelBinding(
+                "!aaaaaaaa",
+                1,
+                shared_a,
+                "Ops",
+                "SECONDARY",
+                1234,
+                "tcp-a",
+            )
+        ],
+    )
+    rows = database.list_channel_bindings("!aaaaaaaa", active_only=True)
+    assert rows[0]["conversation"] == public_conversation_id(shared_a)
+    assert rows[0]["display_name"] == "Ops"
+
+    largest_id = (1 << 32) - 1
+    largest_key = logical_channel_key("!aaaaaaaa", 4, "Stor", largest_id)
+    database.sync_channel_bindings(
+        "!aaaaaaaa",
+        "tcp-a",
+        [
+            ChannelBinding(
+                "!aaaaaaaa",
+                4,
+                largest_key,
+                "Stor",
+                "SECONDARY",
+                largest_id,
+                "tcp-a",
+            )
+        ],
+    )
+    assert database.list_channel_bindings("!aaaaaaaa", active_only=True)[0][
+        "meshtastic_id"
+    ] == str(largest_id)
+
+
+def test_legacy_message_schema_is_migrated_without_data_loss(tmp_path):
+    path = tmp_path / "legacy.db"
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                packet_id INTEGER,
+                timestamp TEXT NOT NULL,
+                from_node TEXT,
+                to_node TEXT,
+                channel INTEGER,
+                kind TEXT NOT NULL,
+                peer_node TEXT,
+                text TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                transport TEXT NOT NULL,
+                rssi INTEGER,
+                snr REAL,
+                hop_limit INTEGER,
+                hop_start INTEGER,
+                want_ack INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL,
+                raw_metadata TEXT,
+                is_read INTEGER NOT NULL DEFAULT 0
+            );
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO messages (
+                packet_id, timestamp, from_node, to_node, channel, kind,
+                text, direction, transport, status, raw_metadata
+            ) VALUES (
+                42, '2026-07-20T12:00:00+00:00', '!11112222',
+                '!ffffffff', 0, 'public', 'Historikk', 'inn', 'RF',
+                'motteken', '{"gateway_id":"tcp-gammal"}'
+            )
+            """
+        )
+
+    database = Database(path)
+    database.initialize()
+
+    row = database.list_messages("public")[0]
+    assert row["text"] == "Historikk"
+    assert row["conversation_id"] == "channel:legacy:tcp-gammal:0"
+    assert row["channel_key"] == "legacy:tcp-gammal:0"
+    assert row["gateway_profile_id"] == "tcp-gammal"
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        indexes = {
+            row[1] for row in connection.execute("PRAGMA index_list(messages)")
+        }
+        assert "messages_conversation_time" in indexes
+
+
+def test_migration_backfills_local_node_for_outgoing_ack_scope(tmp_path):
+    path = tmp_path / "version-2.db"
+    database = Database(path)
+    database.initialize()
+    with sqlite3.connect(path) as connection:
+        connection.execute("PRAGMA user_version=2")
+        connection.execute(
+            """
+            INSERT INTO messages (
+                packet_id, timestamp, from_node, to_node, channel, kind,
+                peer_node, text, direction, transport, want_ack, status,
+                is_read, conversation_id, received_at
+            ) VALUES (
+                77, '2026-07-20T12:00:00+00:00', '!aaaaaaaa',
+                '!11112222', 0, 'dm', '!11112222', 'Ventande', 'ut',
+                'Ukjend', 1, 'sendt', 1, '!11112222',
+                '2026-07-20T12:00:00+00:00'
+            )
+            """
+        )
+
+    database.initialize()
+
+    assert database.outgoing_message(77, "!aaaaaaaa")["local_node_id"] == "!aaaaaaaa"
+
+
+def test_provisional_rebind_merges_duplicate_observations(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    provisional = message(42)
+    provisional.local_node_id = "!aaaaaaaa"
+    provisional.channel = None
+    provisional.channel_key = "provisional:!aaaaaaaa:2"
+    provisional.conversation_id = "channel:provisional:!aaaaaaaa:2"
+    confirmed = message(42)
+    confirmed.local_node_id = "!aaaaaaaa"
+    confirmed.channel = 2
+    confirmed.gateway_profile_id = "tcp-b"
+    confirmed.channel_key = "global:Ops:1234"
+    confirmed.conversation_id = "channel:global:Ops:1234"
+    assert database.insert_message(provisional)[0] is True
+    assert database.insert_message(confirmed)[0] is True
+
+    rebound = database.rebind_provisional_channel(
+        "!aaaaaaaa",
+        2,
+        provisional.channel_key,
+        confirmed.channel_key,
+    )
+    rows = database.list_messages(
+        "public",
+        conversation_id=confirmed.conversation_id,
+    )
+
+    assert rebound == 1
+    assert len(rows) == 1
+    assert rows[0]["channel"] == 2
+    assert rows[0]["observation_count"] == 2
+
+
+def test_version_three_recreates_missing_message_indexes(tmp_path):
+    path = tmp_path / "messages.db"
+    database = Database(path)
+    database.initialize()
+    with sqlite3.connect(path) as connection:
+        connection.execute("DROP INDEX messages_packet_context_identity")
+        connection.execute("DROP INDEX messages_conversation_time")
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+
+    database.initialize()
+
+    with sqlite3.connect(path) as connection:
+        indexes = {
+            row[1] for row in connection.execute("PRAGMA index_list(messages)")
+        }
+    assert {
+        "messages_packet_context_identity",
+        "messages_conversation_time",
+    } <= indexes
+
+
 def test_archived_dm_is_hidden_until_a_new_message_arrives(tmp_path):
     database = Database(tmp_path / "messages.db")
     database.initialize()
@@ -146,12 +411,38 @@ def test_conversation_can_be_unarchived_without_new_message(tmp_path):
     assert database.conversations()[0]["conversation"] == "!11112222"
 
 
+def test_archiving_one_dm_route_does_not_hide_another_route(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    first = message(1, ConversationKind.DM, "!11112222")
+    first.local_node_id = "!aaaaaaaa"
+    first.channel_key = "global:ops:1"
+    first.conversation_id = "dm:!aaaaaaaa:!11112222:global:ops:1"
+    second = message(2, ConversationKind.DM, "!11112222")
+    second.local_node_id = "!bbbbbbbb"
+    second.channel_key = "global:ops:1"
+    second.conversation_id = "dm:!bbbbbbbb:!11112222:global:ops:1"
+    database.insert_message(first)
+    database.insert_message(second)
+
+    database.archive_conversation("!11112222", first.conversation_id)
+
+    assert [item["conversation"] for item in database.conversations()] == [
+        second.conversation_id
+    ]
+
+
 def test_messages_can_be_deleted_by_scope(tmp_path):
     database = Database(tmp_path / "messages.db")
     database.initialize()
     database.insert_message(message(1))
-    database.insert_message(message(2, ConversationKind.DM, "!11112222"))
+    routed = message(2, ConversationKind.DM, "!11112222")
+    routed.local_node_id = "!aaaaaaaa"
+    routed.channel_key = "global:Privat:2"
+    routed.conversation_id = "dm:!aaaaaaaa:!11112222:global:Privat:2"
+    database.insert_message(routed)
     database.archive_conversation("!11112222")
+    database.archive_conversation("!11112222", routed.conversation_id)
 
     assert database.delete_messages("public") == 1
     assert database.list_messages("public") == []
@@ -160,6 +451,7 @@ def test_messages_can_be_deleted_by_scope(tmp_path):
     assert database.delete_messages("all") == 1
     assert database.list_messages("dm", "!11112222") == []
     database.unarchive_conversation("!11112222")
+    database.unarchive_conversation("!11112222", routed.conversation_id)
     assert database.conversations() == []
 
 

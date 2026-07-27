@@ -134,7 +134,7 @@ def parse_text_packet(packet: dict[str, Any], local_node_id: str | None) -> Mess
         channel = None
 
     if broadcast:
-        if channel != 0:
+        if channel is None or not 0 <= channel <= 7:
             return None
         kind = ConversationKind.PUBLIC
         peer_node = None

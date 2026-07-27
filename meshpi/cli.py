@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from meshpi import __version__
+from meshpi.channels import parse_public_conversation_id
 from meshpi.client import CLIError
 from meshpi.client import open_watch as _open_watch
 from meshpi.client import request as _request
@@ -41,6 +42,7 @@ COMMANDS = {
     "nodes",
     "node",
     "conversations",
+    "channels",
     "delete-messages",
     "public",
     "dm",
@@ -85,6 +87,24 @@ def _battery(value: Any) -> str:
     return f"{value}%"
 
 
+def _public_channel_options(value: str | None) -> dict[str, Any]:
+    if value is None:
+        return {}
+    channel = value.strip()
+    if channel.isdecimal():
+        channel_index = int(channel)
+        if not 0 <= channel_index <= 7:
+            raise CLIError("Kanalindeksen må vere mellom 0 og 7")
+        return {"channel_index": channel_index}
+    try:
+        parse_public_conversation_id(channel)
+    except ValueError as exc:
+        raise CLIError(
+            "Kanalvalet må vere ein indeks eller ein samtale-ID som startar med channel:"
+        ) from exc
+    return {"conversation": channel}
+
+
 def _format_message(message: dict[str, Any]) -> str:
     timestamp = _local_time(message.get("timestamp"))
     timestamp = timestamp[5:] if len(timestamp) >= 19 else timestamp
@@ -98,7 +118,13 @@ def _format_message(message: dict[str, Any]) -> str:
     transport = message.get("transport") or "Ukjend"
     transport = "transport ukjend" if transport == "Ukjend" else transport
     direction = "→" if message.get("direction") == "ut" else "←"
-    context = "CH0" if message.get("kind") == "public" else "DM "
+    channel = message.get("channel")
+    channel_label = channel if channel is not None else 0
+    context = (
+        f"CH{channel_label}"
+        if message.get("kind") == "public"
+        else f"DM{channel_label}"
+    )
     status_value = "ACK" if message.get("status") == "stadfesta" else message.get("status")
     status_value = status_value or "sendt"
     status = f" [{status_value}]" if message.get("direction") == "ut" else ""
@@ -223,14 +249,62 @@ def _print_conversations(conversations: list[dict[str, Any]]) -> None:
     print("─" * 90)
     for item in conversations:
         if item["kind"] == "public":
-            label = "Public – kanal 0"
+            channel = item.get("channel")
+            name = item.get("channel_name")
+            channel_key = str(item.get("channel_key") or "")
+            legacy_scope = (
+                channel_key.split(":", 2)[1]
+                if channel_key.startswith("legacy:") and ":" in channel_key
+                else ""
+            )
+            suffix = (
+                f" [{str(item.get('local_node_id'))[-4:]}]"
+                if channel_key.startswith("local:")
+                and item.get("local_node_id")
+                else ""
+            )
+            if legacy_scope:
+                label = (
+                    f"Public (arkiv {_trim(legacy_scope, 10)}) – kanal "
+                    f"{channel if channel is not None else '?'}"
+                )
+            elif channel_key.startswith("provisional:"):
+                label = (
+                    "Public (uavklart rute) – kanal "
+                    f"{channel if channel is not None else '?'}"
+                )
+            else:
+                label = (
+                    f"{name} – kanal {channel}{suffix}"
+                    if name
+                    else (
+                        f"Public – kanal "
+                        f"{channel if channel is not None else '?'}{suffix}"
+                    )
+                )
         else:
-            name = item.get("long_name") or item.get("short_name") or item["conversation"]
-            label = f"{name} [{item['conversation'][-4:]}]"
+            peer = str(item.get("peer_node") or item["conversation"])
+            name = item.get("long_name") or item.get("short_name") or peer
+            label = f"{name} [{peer[-4:]}]"
         print(
             f"{_trim(label, 28):28} {item.get('unread', 0):5} "
             f"{_local_time(item.get('last_timestamp')):19}  "
             f"{_trim(item.get('last_text'), 32)}"
+        )
+
+
+def _print_channels(channels: list[dict[str, Any]]) -> None:
+    if not channels:
+        print("Ingen kanalar er tilgjengelege på den aktive noden.")
+        return
+    print(f"{'Indeks':6} {'Rolle':10} {'Namn':20} Samtale-ID")
+    print("─" * 90)
+    for channel in channels:
+        print(
+            f"{channel.get('channel_index', '?'):6} "
+            f"{str(channel.get('role') or '–'):10} "
+            f"{_trim(channel.get('display_name'), 20):20} "
+            f"{channel.get('conversation')}"
         )
 
 
@@ -289,7 +363,11 @@ def _chat(settings: Settings, conversation: str, limit: int) -> None:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.patch_stdout import patch_stdout
 
-    normalized = "public" if conversation == "public" else normalize_node_id(conversation)
+    normalized = (
+        conversation
+        if conversation == "public" or conversation.startswith(("channel:", "dm:"))
+        else normalize_node_id(conversation)
+    )
     history = _request(
         settings,
         {
@@ -299,7 +377,27 @@ def _chat(settings: Settings, conversation: str, limit: int) -> None:
             "mark_read": True,
         },
     )["data"]
-    label = "Public – kanal 0" if normalized == "public" else f"DM {normalized}"
+    dm_peer = normalized
+    if normalized.startswith("dm:"):
+        dm_peer = next(
+            (
+                str(message["peer_node"])
+                for message in reversed(history)
+                if message.get("peer_node")
+            ),
+            "",
+        )
+        if not dm_peer:
+            raise CLIError("Fann ikkje mottakarnoden for DM-samtalen")
+    label = (
+        "Public – primærkanal"
+        if normalized == "public"
+        else (
+            f"Kanal {normalized}"
+            if normalized.startswith("channel:")
+            else f"DM {normalized}"
+        )
+    )
     status = _request(settings, {"command": "status"})["data"]
     print(f"\n{label}   |   {status.get('state')}")
     print("─" * 78)
@@ -351,9 +449,26 @@ def _chat(settings: Settings, conversation: str, limit: int) -> None:
                     _print_nodes(_request(settings, {"command": "nodes"})["data"])
                     continue
                 payload = (
-                    {"command": "send_public", "text": command}
-                    if normalized == "public"
-                    else {"command": "send_dm", "node_id": normalized, "text": command}
+                    {
+                        "command": "send_public",
+                        "text": command,
+                        **(
+                            {"conversation": normalized}
+                            if normalized.startswith("channel:")
+                            else {}
+                        ),
+                    }
+                    if normalized == "public" or normalized.startswith("channel:")
+                    else {
+                        "command": "send_dm",
+                        "node_id": dm_peer,
+                        "text": command,
+                        **(
+                            {"conversation": normalized}
+                            if normalized.startswith("dm:")
+                            else {}
+                        ),
+                    }
                 )
                 try:
                     _request(settings, payload)
@@ -436,6 +551,7 @@ def build_parser() -> argparse.ArgumentParser:
     node = sub.add_parser("node", help="vis alle detaljar om éin node")
     node.add_argument("node_id")
     sub.add_parser("conversations", help="vis samtalar og uleste meldingar")
+    sub.add_parser("channels", help="vis kanalar på den aktive noden")
     delete_messages = sub.add_parser(
         "delete-messages",
         help="slett lagra meldingar frå public, DM eller begge",
@@ -447,22 +563,37 @@ def build_parser() -> argparse.ArgumentParser:
         help="stadfest slettinga utan interaktivt spørsmål",
     )
 
-    public = sub.add_parser("public", help="vis meldingar frå public kanal 0")
+    public = sub.add_parser("public", help="vis meldingar frå ein public-kanal")
     public.add_argument("--limit", type=int, default=100)
+    public.add_argument(
+        "--channel",
+        help="kanalindeks eller samtale-ID; standard er primærkanalen",
+    )
     dm = sub.add_parser("dm", help="vis DM-samtale")
     dm.add_argument("node_id")
     dm.add_argument("--limit", type=int, default=100)
+    dm.add_argument("--channel", type=int, help="kanalindeks for DM-ruta")
 
-    send_public = sub.add_parser("send-public", help="send til public kanal 0")
+    send_public = sub.add_parser("send-public", help="send til ein public-kanal")
     send_public.add_argument("text")
+    send_public.add_argument(
+        "--channel",
+        help="kanalindeks eller samtale-ID; standard er primærkanalen",
+    )
     send_dm = sub.add_parser("send-dm", help="send direkte melding")
     send_dm.add_argument("node_id")
     send_dm.add_argument("text")
+    send_dm.add_argument("--channel", type=int, help="kanalindeks for DM-ruta")
 
     watch = sub.add_parser("watch", help="følg nye meldingar")
-    watch.add_argument("conversation", nargs="?", default="all", help="all, public eller node-ID")
+    watch.add_argument(
+        "conversation",
+        nargs="?",
+        default="all",
+        help="all, public, samtale-ID eller node-ID",
+    )
     chat = sub.add_parser("chat", help="start interaktiv chat")
-    chat.add_argument("conversation", help="public eller node-ID")
+    chat.add_argument("conversation", help="public, samtale-ID eller node-ID")
     chat.add_argument("--limit", type=int, default=50)
     return parser
 
@@ -576,14 +707,17 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
     elif command == "conversations":
         data = _request(settings, {"command": "conversations"})["data"]
         print(json.dumps(data, ensure_ascii=False)) if args.json else _print_conversations(data)
+    elif command == "channels":
+        data = _request(settings, {"command": "channels"})["data"]
+        print(json.dumps(data, ensure_ascii=False)) if args.json else _print_channels(data)
     elif command == "delete-messages":
         if not args.yes:
             if args.json:
                 raise ValueError("Bruk --yes saman med --json for å stadfeste slettinga")
             labels = {
-                "public": "alle meldingar frå public kanal 0",
+                "public": "alle meldingar frå public-kanalane",
                 "dm": "alle DM-meldingar",
-                "all": "alle meldingar frå public kanal 0 og DM",
+                "all": "alle meldingar frå public-kanalane og DM",
             }
             answer = input(
                 f"Dette slettar {labels[args.scope]} permanent. Skriv SLETT for å halde fram: "
@@ -601,6 +735,11 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
             print(f"Sletta {data['deleted']} meldingar.")
     elif command in {"public", "dm"}:
         conversation = "public" if command == "public" else normalize_node_id(args.node_id)
+        public_options = (
+            _public_channel_options(args.channel) if command == "public" else {}
+        )
+        if public_options.get("conversation"):
+            conversation = str(public_options["conversation"])
         data = _request(
             settings,
             {
@@ -608,12 +747,29 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
                 "conversation": conversation,
                 "limit": args.limit,
                 "mark_read": not args.json,
+                **(
+                    {
+                        "channel_index": public_options["channel_index"]
+                    }
+                    if command == "public"
+                    and "channel_index" in public_options
+                    else (
+                        {"channel_index": args.channel}
+                        if command == "dm" and args.channel is not None
+                        else {}
+                    )
+                ),
             },
         )["data"]
         print(json.dumps(data, ensure_ascii=False)) if args.json else _print_messages(data)
     elif command == "send-public":
+        send_payload: dict[str, Any] = {
+            "command": "send_public",
+            "text": args.text,
+        }
+        send_payload.update(_public_channel_options(args.channel))
         message = _request(
-            settings, {"command": "send_public", "text": args.text}
+            settings, send_payload
         )["data"]
         if args.json:
             print(json.dumps(message, ensure_ascii=False))
@@ -622,7 +778,16 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
     elif command == "send-dm":
         message = _request(
             settings,
-            {"command": "send_dm", "node_id": args.node_id, "text": args.text},
+            {
+                "command": "send_dm",
+                "node_id": args.node_id,
+                "text": args.text,
+                **(
+                    {"channel_index": args.channel}
+                    if args.channel is not None
+                    else {}
+                ),
+            },
         )["data"]
         if args.json:
             print(json.dumps(message, ensure_ascii=False))
@@ -630,7 +795,10 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
             print(f"Sendt som pakke {message.get('packet_id') or 'utan kjend ID'}.")
     elif command == "watch":
         conversation = args.conversation
-        if conversation not in {"all", "public"}:
+        if (
+            conversation not in {"all", "public"}
+            and not conversation.startswith(("channel:", "dm:"))
+        ):
             conversation = normalize_node_id(conversation)
         _watch(settings, conversation, raw_json=args.json)
     elif command == "chat":

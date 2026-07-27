@@ -30,7 +30,7 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.8.0</div>
+        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.8.2</div>
         <h1>Meshtastic-chat.<br><span>Rett i terminalen.</span></h1>
         <p class="lead">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
@@ -55,7 +55,7 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.8.0</b><i>●</i> Tilkopla
+          <b>MeshPi 0.8.2</b><i>●</i> Tilkopla
           <span>TCP meshtastic.local:4403</span>
         </div>
         <div class="terminal-grid">
@@ -98,7 +98,7 @@
         <article>
           <span class="feature-number">01</span>
           <h3>Sanntidschat</h3>
-          <p>Public kanal 0 og direkte meldingar dukkar opp automatisk, med RF/MQTT, SNR, RSSI og ACK når data finst.</p>
+          <p>Alle aktiverte public-kanalar og direktemeldingar med kanalrute dukkar opp automatisk, med RF/MQTT, SNR, RSSI og ACK når data finst.</p>
         </article>
         <article>
           <span class="feature-number">02</span>
@@ -328,13 +328,14 @@
         <div><code>meshpi nodes [--search TEKST] [--sort name|seen|id]</code><span>Vis, filtrer og sorter kjende nodar.</span></div>
         <div><code>meshpi node NODE-ID</code><span>Vis alle lagra detaljar om éin node.</span></div>
         <div><code>meshpi conversations</code><span>Vis samtalar og uleste meldingar.</span></div>
+        <div><code>meshpi channels</code><span>Vis kanalar på den aktive noden.</span></div>
         <div><code>meshpi delete-messages {public,dm,all} [--yes]</code><span>Slett meldingar frå valt omfang etter stadfesting.</span></div>
-        <div><code>meshpi public [--limit TAL]</code><span>Vis historikken frå public kanal 0.</span></div>
-        <div><code>meshpi dm NODE-ID [--limit TAL]</code><span>Vis DM-historikken med éin node.</span></div>
-        <div><code>meshpi send-public TEKST</code><span>Send ei melding til public kanal 0.</span></div>
-        <div><code>meshpi send-dm NODE-ID TEKST</code><span>Send ei direkte melding til éin node.</span></div>
-        <div><code>meshpi watch [all|public|NODE-ID]</code><span>Følg nye meldingar i sanntid.</span></div>
-        <div><code>meshpi chat {public|NODE-ID} [--limit TAL]</code><span>Start interaktiv linjebasert chat.</span></div>
+        <div><code>meshpi public [--channel INDEKS|SAMTALE-ID] [--limit TAL]</code><span>Vis historikken frå ein public-kanal.</span></div>
+        <div><code>meshpi dm NODE-ID [--channel INDEKS] [--limit TAL]</code><span>Vis DM-historikken med éin node.</span></div>
+        <div><code>meshpi send-public TEKST [--channel INDEKS|SAMTALE-ID]</code><span>Send til vald public-kanal.</span></div>
+        <div><code>meshpi send-dm NODE-ID TEKST [--channel INDEKS]</code><span>Send ein DM via vald kanal.</span></div>
+        <div><code>meshpi watch [all|public|SAMTALE-ID|NODE-ID]</code><span>Følg nye meldingar i sanntid.</span></div>
+        <div><code>meshpi chat {public|SAMTALE-ID|NODE-ID} [--limit TAL]</code><span>Start interaktiv linjebasert chat.</span></div>
       </div>
       <div class="global-options info-card">
         <h3>Globale val</h3>
@@ -375,20 +376,20 @@
       </div>
     </section>
 
-    <section id="release-0.8.0" class="section release-section">
+    <section id="release-0.8.2" class="section release-section">
       <div class="section-heading">
         <span>Siste versjon</span>
-        <h2>MeshPi 0.8.0</h2>
+        <h2>MeshPi 0.8.2</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li>Ny samla nodeinfo med oversikt, telemetri, posisjonar og traceroute-logg</li>
-          <li>Telemetri og GPS-posisjonar blir lagra per kjeldenode i SQLite med automatisk opprydding</li>
-          <li>Google Maps-lenkjer, posisjonsutveksling og traceroute kan brukast direkte frå nodeinfo</li>
-          <li>Tabellvisingar, hopptal, musehandlingar, global Ctrl+Q og vertsnamn i statuslinja</li>
+          <li>Fleire Meshtastic-kanalar kan brukast trygt frå CLI og TUI utan å lese eller lagre kanalnøklar</li>
+          <li>Meldingshistorikken skil kanal, lokal node og gateway, og bevarer kvart mottak som ein observasjon</li>
+          <li>DM-ruter er kanalbundne og fell aldri stille tilbake til kanal 0</li>
+          <li>Windows-overvaking kan avsluttast reint, og Linux viser rett oppdateringskommando for systemtenesta</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.8.0-py3-none-any.whl">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.8.2-py3-none-any.whl">Last ned Python-pakken</a>
           <a href="https://github.com/rvenes/meshpi">Kjeldekode på GitHub</a>
         </div>
       </div>

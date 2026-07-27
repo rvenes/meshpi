@@ -1,12 +1,62 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
-from typing import Any, BinaryIO
+from collections.abc import Iterator
+from typing import Any, Protocol
 
 from meshpi.config import Settings
 
 MAX_RESPONSE_BYTES = 2_000_000
+
+
+class WatchStream(Protocol):
+    def __iter__(self) -> Iterator[bytes]: ...
+
+    def close(self) -> None: ...
+
+
+class _SocketLineStream:
+    """Linjedelt lesing direkte frå ein sokkel som kan avbrytast på Windows."""
+
+    def __init__(self, sock: socket.socket):
+        self._socket = sock
+        self._buffer = bytearray()
+
+    def __iter__(self) -> Iterator[bytes]:
+        return self
+
+    def __next__(self) -> bytes:
+        line = self.readline(MAX_RESPONSE_BYTES + 1)
+        if not line:
+            raise StopIteration
+        if len(line) > MAX_RESPONSE_BYTES:
+            raise CLIError("Svaret frå meshpi-tenesta er for stort")
+        return line
+
+    def readline(self, maximum: int) -> bytes:
+        while True:
+            newline = self._buffer.find(b"\n")
+            if newline >= 0:
+                end = newline + 1
+                line = bytes(self._buffer[:end])
+                del self._buffer[:end]
+                return line
+            if len(self._buffer) >= maximum:
+                line = bytes(self._buffer[:maximum])
+                del self._buffer[:maximum]
+                return line
+            chunk = self._socket.recv(min(64 * 1024, maximum - len(self._buffer)))
+            if not chunk:
+                line = bytes(self._buffer)
+                self._buffer.clear()
+                return line
+            self._buffer.extend(chunk)
+
+    def close(self) -> None:
+        # Sokkelen er eigd og lukka av kallaren.
+        pass
 
 
 class CLIError(RuntimeError):
@@ -70,14 +120,13 @@ def request(
 
 def open_watch(
     settings: Settings, conversation: str = "all"
-) -> tuple[socket.socket, BinaryIO]:
+) -> tuple[socket.socket, WatchStream]:
     sock: socket.socket | None = None
-    stream: BinaryIO | None = None
+    stream: WatchStream | None = None
     try:
         sock = _connect(settings, 10)
         sock.settimeout(None)
-        stream = sock.makefile("rwb")
-        stream.write(
+        payload = (
             json.dumps(
                 {
                     "command": "watch",
@@ -89,8 +138,17 @@ def open_watch(
             ).encode("utf-8")
             + b"\n"
         )
-        stream.flush()
-        raw = stream.readline(MAX_RESPONSE_BYTES + 1)
+        if os.name == "nt":
+            windows_stream = _SocketLineStream(sock)
+            stream = windows_stream
+            sock.sendall(payload)
+            raw = windows_stream.readline(MAX_RESPONSE_BYTES + 1)
+        else:
+            posix_stream = sock.makefile("rwb")
+            stream = posix_stream
+            posix_stream.write(payload)
+            posix_stream.flush()
+            raw = posix_stream.readline(MAX_RESPONSE_BYTES + 1)
         if not raw or len(raw) > MAX_RESPONSE_BYTES:
             raise CLIError("Ugyldig svar frå meshpi-tenesta")
         response = json.loads(raw)
