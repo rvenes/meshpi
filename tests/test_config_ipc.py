@@ -63,8 +63,12 @@ class FakeService:
     def list_connections(self):
         return {"active_profile_id": "tcp-test", "profiles": []}
 
-    def discover_connections(self):
+    def discover_connections(self, *, include_ble=True):
+        del include_ble
         return {"active_profile_id": "tcp-test", "profiles": [], "serial": [], "tcp": []}
+
+    def discover_ble_connections(self):
+        return {"ble": [], "ble_error": None}
 
     def connect(self, **kwargs):
         return {"state": "koplar til", **kwargs}
@@ -257,6 +261,10 @@ def test_ipc_dispatch_and_validation(tmp_path):
     assert isinstance(status["daemon_pid"], int)
     assert app.dispatch({"command": "connections"})["data"]["active_profile_id"] == "tcp-test"
     assert app.dispatch({"command": "discover_connections"})["data"]["serial"] == []
+    assert app.dispatch({"command": "discover_ble_connections"})["data"] == {
+        "ble": [],
+        "ble_error": None,
+    }
     assert (
         app.dispatch({"command": "connect", "target": "10.0.0.135"})["data"]["target"]
         == "10.0.0.135"
@@ -401,6 +409,105 @@ def test_ipc_exposes_empty_channels_and_routes_selected_channel(tmp_path):
     assert service.sent == [
         ("Ops-melding", {"conversation": channel["conversation"]})
     ]
+
+
+def test_conversation_view_hides_public_archives_and_groups_dm_routes(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    service = MultiChannelService()
+    app = IPCApplication(
+        Settings(database_path=database.path),
+        database,
+        service,
+        EventHub(),
+    )
+    peer = "!11112222"
+    primary_key = str(service.channels[0]["channel_key"])
+    secondary_key = logical_channel_key("!aaaaaaaa", 3, "Vakt", 5678)
+    service.channels.append(
+        {
+            "local_node_id": "!aaaaaaaa",
+            "channel_index": 3,
+            "channel_key": secondary_key,
+            "name": "Vakt",
+            "display_name": "Vakt",
+            "role": "SECONDARY",
+            "conversation": public_conversation_id(secondary_key),
+            "kind": "public",
+        }
+    )
+    primary_route = dm_conversation_id("!aaaaaaaa", peer, primary_key)
+    secondary_route = dm_conversation_id("!aaaaaaaa", peer, secondary_key)
+    for packet_id, timestamp, channel, channel_key, conversation in (
+        (
+            1,
+            "2026-07-20T12:00:00+00:00",
+            2,
+            primary_key,
+            primary_route,
+        ),
+        (
+            2,
+            "2026-07-20T12:01:00+00:00",
+            3,
+            secondary_key,
+            secondary_route,
+        ),
+    ):
+        database.insert_message(
+            Message(
+                packet_id=packet_id,
+                timestamp=timestamp,
+                from_node=peer,
+                to_node="!aaaaaaaa",
+                channel=channel,
+                kind=ConversationKind.DM,
+                peer_node=peer,
+                text=f"DM {packet_id}",
+                direction=Direction.INCOMING,
+                transport=Transport.RF,
+                status=MessageStatus.RECEIVED,
+                conversation_id=conversation,
+                channel_key=channel_key,
+                local_node_id="!aaaaaaaa",
+            )
+        )
+    database.insert_message(
+        Message(
+            packet_id=3,
+            timestamp="2026-07-20T11:00:00+00:00",
+            from_node=peer,
+            to_node="!ffffffff",
+            channel=0,
+            kind=ConversationKind.PUBLIC,
+            peer_node=None,
+            text="Gammal public",
+            direction=Direction.INCOMING,
+            transport=Transport.RF,
+            status=MessageStatus.RECEIVED,
+            conversation_id="channel:legacy:serial-gammal:0",
+            channel_key="legacy:serial-gammal:0",
+        )
+    )
+
+    default = app.dispatch({"command": "conversations"})["data"]
+    preferred = app.dispatch(
+        {
+            "command": "conversations",
+            "preferred_conversation": primary_route,
+        }
+    )["data"]
+
+    assert all(
+        not str(item.get("channel_key") or "").startswith("legacy:")
+        for item in default
+    )
+    assert [
+        item["conversation"] for item in default if item["kind"] == "dm"
+    ] == [secondary_route]
+    assert [
+        item["conversation"] for item in preferred if item["kind"] == "dm"
+    ] == [primary_route]
 
 
 def test_public_watch_matches_only_the_active_primary_channel(tmp_path):

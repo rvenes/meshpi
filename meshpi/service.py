@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import logging
 import math
-import socket
 import threading
 import time
 import uuid
-from collections.abc import Callable
-from typing import Any, Protocol
+from typing import Any
 
+from meshpi.ble import BLEDiscoveryError, discover_ble
 from meshpi.channels import (
     ChannelBinding,
     dm_conversation_id,
@@ -45,6 +44,7 @@ from meshpi.models import (
 from meshpi.node_actions import NodeActionError, parse_traceroute_response
 from meshpi.observations import parse_position_packet, parse_telemetry_packet
 from meshpi.packet import node_from_registry, parse_text_packet
+from meshpi.transports import Interface, InterfaceFactory, default_interface_factory
 
 LOG = logging.getLogger(__name__)
 RECONNECT_DELAYS = (2, 5, 10, 30)
@@ -53,44 +53,6 @@ TRACEROUTE_COOLDOWN_SECONDS = 30
 POSITION_EXCHANGE_TIMEOUT_SECONDS = 120
 POSITION_EXCHANGE_COOLDOWN_SECONDS = 30
 MAX_NODE_ACTIONS = 50
-
-
-class Interface(Protocol):
-    nodes: dict[str, dict[str, Any]] | None
-    isConnected: threading.Event
-
-    def sendText(self, text: str, **kwargs: Any) -> Any: ...
-
-    def sendData(self, data: Any, **kwargs: Any) -> Any: ...
-
-    def close(self) -> None: ...
-
-
-InterfaceFactory = Callable[[ConnectionProfile], Interface]
-
-
-def default_interface_factory(profile: ConnectionProfile) -> Interface:
-    if profile.transport == "serial":
-        from meshtastic.serial_interface import SerialInterface
-
-        return SerialInterface(devPath=profile.device, timeout=30)
-    if profile.transport == "tcp":
-        from meshtastic.tcp_interface import TCPInterface
-
-        class TimedTCPInterface(TCPInterface):
-            def myConnect(self) -> None:  # noqa: N802
-                connected = socket.create_connection(
-                    (self.hostname, self.portNumber), timeout=10
-                )
-                connected.settimeout(None)
-                self.socket = connected
-
-        return TimedTCPInterface(
-            hostname=str(profile.host),
-            portNumber=int(profile.port or 4403),
-            timeout=10,
-        )
-    raise ValueError(f"Ustøtta transport: {profile.transport}")
 
 
 def reconnect_delay(attempt: int) -> int:
@@ -111,6 +73,18 @@ def _ack_failed(packet: Any) -> bool:
     routing = packet.get("decoded", {}).get("routing", {})
     reason = routing.get("errorReason") if isinstance(routing, dict) else None
     return reason not in (None, "NONE", 0)
+
+
+def _routing_error_reason(packet: Any) -> str | None:
+    if not isinstance(packet, dict):
+        return None
+    routing = packet.get("decoded", {}).get("routing", {})
+    if not isinstance(routing, dict):
+        return None
+    reason = routing.get("errorReason")
+    if reason in (None, "NONE", 0):
+        return None
+    return sanitize_terminal_text(str(reason), 80)
 
 
 def _packet_from_node(packet: Any) -> str | None:
@@ -183,6 +157,7 @@ class MeshtasticService:
         self._lost = threading.Event()
         self._switch_requested = threading.Event()
         self._lock = threading.RLock()
+        self._ble_operation_lock = threading.Lock()
         self._channel_sync_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._interface: Interface | None = None
@@ -200,6 +175,7 @@ class MeshtasticService:
             "host": None,
             "port": None,
             "device": None,
+            "ble_identifier": None,
         }
         self._status: dict[str, Any] = profile_status | {
             "state": "fråkopla" if self._profile else "ingen node",
@@ -219,6 +195,7 @@ class MeshtasticService:
             "host": profile.host,
             "port": profile.port,
             "device": profile.device,
+            "ble_identifier": profile.ble_identifier,
         }
 
     def start(self) -> None:
@@ -257,7 +234,7 @@ class MeshtasticService:
             "profiles": [profile.as_dict() for profile in self.connections.list_profiles()],
         }
 
-    def discover_connections(self) -> dict[str, Any]:
+    def discover_connections(self, *, include_ble: bool = True) -> dict[str, Any]:
         result = self.list_connections()
         result["serial"] = discover_serial()
         subnets = (
@@ -276,7 +253,31 @@ class MeshtasticService:
         result["tcp"] = list(tcp.values())
         result["tcp_error"] = "; ".join(errors) or None
         result["scanned_subnets"] = subnets
+        if include_ble:
+            result.update(self.discover_ble_connections())
+        else:
+            result["ble"] = []
+            result["ble_error"] = None
         return result
+
+    def discover_ble_connections(self) -> dict[str, Any]:
+        if not self._ble_operation_lock.acquire(blocking=False):
+            return {
+                "ble": [],
+                "ble_error": "Eit BLE-søk er allereie i gang.",
+            }
+        try:
+            return {
+                "ble": discover_ble(),
+                "ble_error": None,
+            }
+        except BLEDiscoveryError as exc:
+            return {
+                "ble": [],
+                "ble_error": str(exc),
+            }
+        finally:
+            self._ble_operation_lock.release()
 
     def connect(
         self,
@@ -367,6 +368,12 @@ class MeshtasticService:
             snapshot = dict(self._status)
         self.events.publish({"type": "status", "data": snapshot})
 
+    def _create_interface(self, profile: ConnectionProfile) -> Interface:
+        if profile.transport == "ble":
+            with self._ble_operation_lock:
+                return self.interface_factory(profile)
+        return self.interface_factory(profile)
+
     def _run(self) -> None:
         from pubsub import pub
 
@@ -388,14 +395,18 @@ class MeshtasticService:
                     profile = self._refresh_active_serial_profile(profile)
                     with self._state_lock:
                         self._status.update(self._profile_status(profile))
-                    self._set_status("koplar til", attempt=attempt)
+                    state = "søkjer" if profile.transport == "ble" else "koplar til"
+                    self._set_status(state, attempt=attempt)
                     LOG.info(
                         "Koplar til Meshtastic-node via %s %s",
                         profile.transport,
                         profile.endpoint,
                     )
-                    interface = self.interface_factory(profile)
+                    interface = self._create_interface(profile)
                     with self._lock:
+                        if self._stop.is_set():
+                            interface.close()
+                            break
                         if profile != self._profile:
                             interface.close()
                             self._switch_requested.set()
@@ -572,6 +583,12 @@ class MeshtasticService:
                 provisional_channel_key(local_node_id, binding.channel_index),
                 binding.channel_key,
             )
+            if binding.channel_index == 0:
+                self.database.rebind_legacy_primary_dms(
+                    local_node_id,
+                    binding.channel_index,
+                    binding.channel_key,
+                )
         self.events.publish(
             {
                 "type": "channels",
@@ -720,15 +737,21 @@ class MeshtasticService:
         if outgoing is None:
             return
         status = _ack_status(packet, outgoing.get("to_node"))
+        failure_reason = _routing_error_reason(packet)
         if self.database.update_message_status(
             request_id,
             status,
             local_node_id,
+            failure_reason,
         ):
             self.events.publish(
                 {
                     "type": "message_status",
-                    "data": {"packet_id": request_id, "status": str(status)},
+                    "data": {
+                        "packet_id": request_id,
+                        "status": str(status),
+                        "failure_reason": failure_reason,
+                    },
                 }
             )
 
@@ -1292,23 +1315,35 @@ class MeshtasticService:
             pending_id: int | None = None
             stored = threading.Event()
             ack_lock = threading.Lock()
-            early_status: list[MessageStatus] = []
+            early_status: list[tuple[MessageStatus, str | None]] = []
 
             def onAckNak(packet: dict[str, Any]) -> None:  # noqa: N802
                 status = _ack_status(packet, destination)
+                failure_reason = _routing_error_reason(packet)
                 with ack_lock:
                     if pending_id is None or not stored.is_set():
-                        early_status[:] = [status]
+                        early_status[:] = [(status, failure_reason)]
                         return
                 if self.database.update_message_status(
                     pending_id,
                     status,
                     local_node_id,
+                    failure_reason,
                 ):
+                    if failure_reason:
+                        LOG.warning(
+                            "DM-pakke %s feila: %s",
+                            pending_id,
+                            failure_reason,
+                        )
                     self.events.publish(
                         {
                             "type": "message_status",
-                            "data": {"packet_id": pending_id, "status": str(status)},
+                            "data": {
+                                "packet_id": pending_id,
+                                "status": str(status),
+                                "failure_reason": failure_reason,
+                            },
                         }
                     )
 
@@ -1361,18 +1396,32 @@ class MeshtasticService:
         message.id = message_id
         with ack_lock:
             stored.set()
-            ack_status = early_status[0] if early_status else None
+            early_result = early_status[0] if early_status else None
+        ack_status = early_result[0] if early_result else None
+        failure_reason = early_result[1] if early_result else None
         if pending_id is not None and ack_status is not None:
             self.database.update_message_status(
                 pending_id,
                 ack_status,
                 local_node_id,
+                failure_reason,
             )
             message.status = ack_status
+            if failure_reason:
+                message.raw_metadata["failure_reason"] = failure_reason
+                LOG.warning(
+                    "DM-pakke %s feila: %s",
+                    pending_id,
+                    failure_reason,
+                )
             self.events.publish(
                 {
                     "type": "message_status",
-                    "data": {"packet_id": pending_id, "status": str(ack_status)},
+                    "data": {
+                        "packet_id": pending_id,
+                        "status": str(ack_status),
+                        "failure_reason": failure_reason,
+                    },
                 }
             )
         if inserted:

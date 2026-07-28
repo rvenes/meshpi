@@ -3,7 +3,12 @@ import sqlite3
 
 import pytest
 
-from meshpi.channels import ChannelBinding, logical_channel_key, public_conversation_id
+from meshpi.channels import (
+    ChannelBinding,
+    dm_conversation_id,
+    logical_channel_key,
+    public_conversation_id,
+)
 from meshpi.database import Database
 from meshpi.models import (
     ConversationKind,
@@ -363,6 +368,115 @@ def test_provisional_rebind_merges_duplicate_observations(tmp_path):
     assert rebound == 1
     assert len(rows) == 1
     assert rows[0]["channel"] == 2
+    assert rows[0]["observation_count"] == 2
+
+
+def test_legacy_primary_dm_history_is_safely_merged_into_active_route(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    local_node = "!aaaaaaaa"
+    peer_node = "!11112222"
+    channel_key = "local:!aaaaaaaa:0:"
+    current_route = dm_conversation_id(local_node, peer_node, channel_key)
+
+    incoming = message(40, ConversationKind.DM, peer_node)
+    incoming.from_node = peer_node
+    incoming.to_node = local_node
+    incoming.conversation_id = peer_node
+    incoming.channel_key = None
+    incoming.local_node_id = None
+    outgoing = message(41, ConversationKind.DM, peer_node)
+    outgoing.from_node = local_node
+    outgoing.to_node = peer_node
+    outgoing.direction = Direction.OUTGOING
+    outgoing.conversation_id = peer_node
+    outgoing.channel_key = None
+    outgoing.local_node_id = local_node
+    current = message(42, ConversationKind.DM, peer_node)
+    current.from_node = peer_node
+    current.to_node = local_node
+    current.conversation_id = current_route
+    current.channel_key = channel_key
+    current.local_node_id = local_node
+    for item in (incoming, outgoing, current):
+        assert database.insert_message(item)[0] is True
+
+    rebound = database.rebind_legacy_primary_dms(local_node, 0, channel_key)
+
+    conversations = database.conversations()
+    rows = database.list_messages("dm", conversation_id=current_route)
+    assert rebound == 2
+    assert [item["conversation"] for item in conversations] == [current_route]
+    assert len(rows) == 3
+    assert all(item["local_node_id"] == local_node for item in rows)
+    assert all(item["channel_key"] == channel_key for item in rows)
+
+
+def test_legacy_dm_rebind_rejects_ambiguous_or_other_local_history(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    local_node = "!aaaaaaaa"
+    peer_node = "!11112222"
+    channel_key = "local:!aaaaaaaa:0:"
+    other_local = message(50, ConversationKind.DM, peer_node)
+    other_local.from_node = peer_node
+    other_local.to_node = "!bbbbbbbb"
+    other_local.conversation_id = peer_node
+    other_local.local_node_id = "!bbbbbbbb"
+    ambiguous = message(51, ConversationKind.DM, peer_node)
+    ambiguous.from_node = peer_node
+    ambiguous.to_node = "!cccccccc"
+    ambiguous.conversation_id = peer_node
+    ambiguous.local_node_id = None
+    self_dm = message(52, ConversationKind.DM, local_node)
+    self_dm.from_node = local_node
+    self_dm.to_node = local_node
+    self_dm.conversation_id = local_node
+    self_dm.local_node_id = local_node
+    secondary = message(53, ConversationKind.DM, peer_node)
+    secondary.from_node = peer_node
+    secondary.to_node = local_node
+    secondary.channel = 2
+    secondary.conversation_id = peer_node
+    for item in (other_local, ambiguous, self_dm, secondary):
+        assert database.insert_message(item)[0] is True
+
+    rebound = database.rebind_legacy_primary_dms(local_node, 0, channel_key)
+
+    assert rebound == 0
+    assert {
+        item["conversation"] for item in database.conversations()
+    } == {peer_node, local_node}
+    with pytest.raises(ValueError, match="primærkanalen"):
+        database.rebind_legacy_primary_dms(local_node, 2, channel_key)
+
+
+def test_legacy_dm_rebind_deduplicates_same_packet_and_keeps_observations(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    local_node = "!aaaaaaaa"
+    peer_node = "!11112222"
+    channel_key = "local:!aaaaaaaa:0:"
+    current_route = dm_conversation_id(local_node, peer_node, channel_key)
+    legacy = message(60, ConversationKind.DM, peer_node)
+    legacy.from_node = peer_node
+    legacy.to_node = local_node
+    legacy.conversation_id = peer_node
+    legacy.gateway_profile_id = "serial-a"
+    current = message(60, ConversationKind.DM, peer_node)
+    current.from_node = peer_node
+    current.to_node = local_node
+    current.conversation_id = current_route
+    current.channel_key = channel_key
+    current.local_node_id = local_node
+    current.gateway_profile_id = "ble-b"
+    assert database.insert_message(legacy)[0] is True
+    assert database.insert_message(current)[0] is True
+
+    assert database.rebind_legacy_primary_dms(local_node, 0, channel_key) == 1
+
+    rows = database.list_messages("dm", conversation_id=current_route)
+    assert len(rows) == 1
     assert rows[0]["observation_count"] == 2
 
 

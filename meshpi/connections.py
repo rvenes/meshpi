@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_MESHTASTIC_PORT = 4403
-SUPPORTED_TRANSPORTS = {"tcp", "serial"}
+CONNECTION_FILE_VERSION = 2
+SUPPORTED_TRANSPORTS = {"tcp", "serial", "ble"}
 WINDOWS_PORT = re.compile(r"^COM\d+$", re.IGNORECASE)
 LINUX_LEGACY_SERIAL = re.compile(r"^/dev/ttyS\d+$")
 
@@ -37,6 +38,7 @@ class ConnectionProfile:
     host: str | None = None
     port: int | None = None
     device: str | None = None
+    ble_identifier: str | None = None
     serial_number: str | None = None
     vid: int | None = None
     pid: int | None = None
@@ -45,12 +47,19 @@ class ConnectionProfile:
     def endpoint(self) -> str:
         if self.transport == "tcp":
             return f"{self.host}:{self.port}"
+        if self.transport == "ble":
+            return str(self.ble_identifier)
         return str(self.device)
 
     def as_dict(self) -> dict[str, Any]:
         data = asdict(self)
+        if self.transport != "ble":
+            data.pop("ble_identifier")
         if self.transport != "serial":
             for key in ("serial_number", "vid", "pid"):
+                data.pop(key)
+        if self.transport == "ble":
+            for key in ("host", "port", "device"):
                 data.pop(key)
         return data | {"endpoint": self.endpoint}
 
@@ -99,6 +108,22 @@ class ConnectionProfile:
         )
 
     @classmethod
+    def ble(
+        cls,
+        identifier: str,
+        name: str | None = None,
+    ) -> ConnectionProfile:
+        identifier = identifier.strip()
+        if not identifier:
+            raise ValueError("BLE-identifikatoren kan ikkje vere tom")
+        return cls(
+            profile_id=_profile_id("ble", identifier),
+            name=(name or identifier).strip(),
+            transport="ble",
+            ble_identifier=identifier,
+        )
+
+    @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ConnectionProfile:
         transport = str(data.get("transport", "")).lower()
         if transport == "tcp":
@@ -115,21 +140,19 @@ class ConnectionProfile:
                 vid=_optional_int(data.get("vid")),
                 pid=_optional_int(data.get("pid")),
             )
+        elif transport == "ble":
+            identifier = str(
+                data.get("ble_identifier", "") or data.get("endpoint", "")
+            )
+            profile = cls.ble(
+                identifier,
+                str(data.get("name", "") or identifier),
+            )
         else:
             raise ValueError(f"Ustøtta transport: {transport or 'tom'}")
         requested_id = str(data.get("profile_id", "")).strip()
-        if requested_id:
-            return cls(
-                profile_id=requested_id,
-                name=profile.name,
-                transport=profile.transport,
-                host=profile.host,
-                port=profile.port,
-                device=profile.device,
-                serial_number=profile.serial_number,
-                vid=profile.vid,
-                pid=profile.pid,
-            )
+        if requested_id and profile.transport != "ble":
+            return replace(profile, profile_id=requested_id)
         return profile
 
 
@@ -149,6 +172,8 @@ def parse_connection_target(target: str, name: str | None = None) -> ConnectionP
 
     if target.lower().startswith("serial://"):
         return ConnectionProfile.serial(target[9:], name=name)
+    if target.lower().startswith("ble://"):
+        return ConnectionProfile.ble(target[6:], name=name)
     if target.lower().startswith("tcp://"):
         target = target[6:]
     elif target.startswith(("/", "./", "../")) or WINDOWS_PORT.fullmatch(target):
@@ -185,11 +210,23 @@ class ConnectionStore:
     def _ensure_initialized(self) -> None:
         with self._lock:
             if self.path.is_file():
-                self._read()
+                data = self._read()
+                if data["version"] == 1:
+                    self._write(
+                        {
+                            "version": CONNECTION_FILE_VERSION,
+                            "active_profile_id": data.get("active_profile_id"),
+                            "profiles": [
+                                ConnectionProfile.from_dict(item).as_dict()
+                                for item in data["profiles"]
+                                if isinstance(item, dict)
+                            ],
+                        }
+                    )
                 return
             self._write(
                 {
-                    "version": 1,
+                    "version": CONNECTION_FILE_VERSION,
                     "active_profile_id": (
                         self._default_profile.profile_id if self._default_profile else None
                     ),
@@ -206,6 +243,10 @@ class ConnectionStore:
             raise ValueError(f"Klarte ikkje lese tilkoplingsprofilar: {exc}") from exc
         if not isinstance(data, dict) or not isinstance(data.get("profiles"), list):
             raise ValueError("Tilkoplingsfila har ugyldig format")
+        version = data.get("version", 1)
+        if version not in {1, CONNECTION_FILE_VERSION}:
+            raise ValueError(f"Ustøtta versjon av tilkoplingsfila: {version}")
+        data["version"] = version
         return data
 
     def _write(self, data: dict[str, Any]) -> None:
@@ -249,7 +290,7 @@ class ConnectionStore:
             if self._default_profile is not None:
                 self._write(
                     {
-                        "version": 1,
+                        "version": CONNECTION_FILE_VERSION,
                         "active_profile_id": self._default_profile.profile_id,
                         "profiles": [self._default_profile.as_dict()],
                     }
@@ -276,7 +317,7 @@ class ConnectionStore:
             profiles.append(profile)
             self._write(
                 {
-                    "version": 1,
+                    "version": CONNECTION_FILE_VERSION,
                     "active_profile_id": profile.profile_id,
                     "profiles": [current.as_dict() for current in profiles],
                 }

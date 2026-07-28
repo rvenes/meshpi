@@ -53,6 +53,15 @@ COMMANDS = {
 }
 
 
+def _configure_console_output() -> None:
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(errors="replace")
+
+
 def _normalize_argv(argv: list[str]) -> list[str]:
     if argv and not argv[0].startswith("-") and argv[0] not in COMMANDS:
         return ["connect", argv[0], *argv[1:]]
@@ -507,8 +516,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.set_defaults(command="tui")
     sub.add_parser("tui", help="start fullskjerms terminalgrensesnitt")
     sub.add_parser("new", help="oppdag, vel eller legg til ei tilkopling")
-    connect = sub.add_parser("connect", help="byt til TCP- eller serielltilkopling")
-    connect.add_argument("target", help="IP, vert[:port], /dev/sti eller COM-port")
+    connect = sub.add_parser("connect", help="byt til TCP-, seriell- eller BLE-tilkopling")
+    connect.add_argument(
+        "target",
+        help="IP, vert[:port], /dev/sti, COM-port eller ble://identifikator",
+    )
     connect.add_argument("--name", help="namn på den lagra profilen")
     sub.add_parser("connections", help="vis lagra tilkoplingar")
     daemon = sub.add_parser("daemon", help="køyr bakgrunnstenesta i framgrunnen")
@@ -806,6 +818,7 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    _configure_console_output()
     raw_argv = _normalize_argv(list(sys.argv[1:] if argv is None else argv))
     parser = build_parser()
     args = parser.parse_args(raw_argv)

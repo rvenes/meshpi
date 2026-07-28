@@ -25,6 +25,7 @@ from meshpi.connections import (
         ("/dev/ttyACM0", "serial", "/dev/ttyACM0"),
         ("serial:///dev/serial/by-id/test", "serial", "/dev/serial/by-id/test"),
         ("COM3", "serial", "COM3"),
+        ("ble://A1:B2:C3:D4:E5:F6", "ble", "A1:B2:C3:D4:E5:F6"),
     ],
 )
 def test_parse_connection_target(target, transport, endpoint):
@@ -60,7 +61,7 @@ def test_connection_store_starts_empty_without_default_profile(tmp_path):
     assert store.active_profile() is None
     assert store.list_profiles() == []
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved == {"version": 1, "active_profile_id": None, "profiles": []}
+    assert saved == {"version": 2, "active_profile_id": None, "profiles": []}
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX-filrettar")
@@ -81,7 +82,81 @@ def test_connection_store_is_private_on_posix(tmp_path, monkeypatch):
 
 def test_connection_profile_rejects_unknown_transport():
     with pytest.raises(ValueError):
-        ConnectionProfile.from_dict({"transport": "ble", "name": "test"})
+        ConnectionProfile.from_dict({"transport": "unknown", "name": "test"})
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        "A1:B2:C3:D4:E5:F6",
+        "A1B2C3D4E5F6",
+        "243E23AE-4A99-406C-B317-18F1BD7B4CBE",
+    ],
+)
+def test_ble_profile_preserves_opaque_platform_identifier(identifier):
+    profile = ConnectionProfile.ble(identifier, name="Mesh-node")
+
+    assert profile.ble_identifier == identifier
+    assert profile.endpoint == identifier
+    assert ConnectionProfile.from_dict(profile.as_dict()) == profile
+
+
+def test_ble_profiles_with_duplicate_names_keep_distinct_ids():
+    first = ConnectionProfile.ble("A1:B2:C3:D4:E5:F6", name="Meshtastic")
+    second = ConnectionProfile.ble("B1:C2:D3:E4:F5:A6", name="Meshtastic")
+
+    assert first.name == second.name
+    assert first.profile_id != second.profile_id
+
+
+def test_ble_profile_id_is_always_derived_from_identifier():
+    profile = ConnectionProfile.from_dict(
+        {
+            "profile_id": "display-name-derived-id",
+            "name": "Meshtastic",
+            "transport": "ble",
+            "ble_identifier": "A1:B2:C3:D4:E5:F6",
+        }
+    )
+
+    assert profile.profile_id == ConnectionProfile.ble(
+        "A1:B2:C3:D4:E5:F6"
+    ).profile_id
+
+
+def test_connection_store_migrates_version_one_and_preserves_active_profile(tmp_path):
+    path = tmp_path / "connections.json"
+    tcp = ConnectionProfile.tcp("192.0.2.42")
+    serial = ConnectionProfile.serial("/dev/ttyACM0")
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "active_profile_id": serial.profile_id,
+                "profiles": [tcp.as_dict(), serial.as_dict()],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    store = ConnectionStore(path)
+
+    assert store.active_profile() == serial
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["version"] == 2
+    assert saved["active_profile_id"] == serial.profile_id
+    assert {item["transport"] for item in saved["profiles"]} == {"tcp", "serial"}
+
+
+def test_connection_store_rejects_unknown_future_version(tmp_path):
+    path = tmp_path / "connections.json"
+    path.write_text(
+        json.dumps({"version": 999, "active_profile_id": None, "profiles": []}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Ustøtta versjon"):
+        ConnectionStore(path)
 
 
 def test_discover_serial_prefers_stable_by_id_path(monkeypatch):

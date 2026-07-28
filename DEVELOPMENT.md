@@ -1,7 +1,7 @@
 # Utviklingsstatus og vidare plan
 
-Sist oppdatert: 27. juli 2026
-Gjeldande utgiving: MeshPi 0.8.2
+Sist oppdatert: 28. juli 2026
+Gjeldande utgiving: MeshPi 0.8.3
 
 Denne fila er den varige overleveringa mellom utviklingstrådar. Ho skal
 oppdaterast når ei større funksjon blir ferdig, når eit viktig arkitekturval
@@ -118,6 +118,7 @@ Det viktigaste skiljet mot ein vanleg klient er derfor:
 | 0.7.1 | Rett kronologi mellom meldingar, ACK og traceroute |
 | 0.8.0 | Nodeinfo, telemetri-, posisjons- og traceroutehistorikk |
 | 0.8.2 | Fleirkanalsmeldingar, kanalbundne DM-ruter og gatewayobservasjonar |
+| 0.8.3 | Eksperimentell BLE, betre DM-ruter og delt samtale-/kanalvising |
 
 ## Avklaringar som alt er tekne
 
@@ -199,6 +200,30 @@ historikk blir bevart, og ingen kanalnøklar blir eksponerte.
 Mål: BLE som ein tredje profiltype ved sida av TCP og seriell, framleis med
 berre eitt samband eigd av daemonen.
 
+Implementert i 0.8.3:
+
+- Transportopprettinga for TCP, seriell og BLE er skild frå daemonen.
+- Profilformat v2 migrerer eksisterande profilar og bevarer aktiv profil.
+- BLE-identitet blir lagra ugjennomsiktig, og profil-ID-en blir avleidd frå
+  identifikatoren i staden for visingsnamnet.
+- Eksplisitt, serialisert BLE-oppdaging, nynorske adapterfeil og 30 sekunds
+  IPC-frist er implementert med mocka testar. Veljaren opnar før BLE-søket,
+  viser USB/TCP-resultat først, viser søkestatus og støttar F5 for nytt søk.
+- Lukking av veljaren forkastar seine svar utan å starte parallelle søk.
+- Tilkoplingsveljaren og manuelle `ble://IDENTIFIKATOR`-mål er implementerte.
+- Grunnleggjande oppdaging, profilbyte og tilkopling er stadfesta på Windows.
+- Trygg migrering bind eldre DM-historikk til den observerte primærkanalen når
+  lokal node og motpart kan stadfestast. Tvitydig historikk er framleis låst.
+- Nye DM-ar i TUI-en har eksplisitt kanalval, DM-titlar viser kanalruta, og
+  Meshtastic si NAK-årsak blir lagra og vist ved mislukka sending.
+- Samtalelista slår saman eldre kanalruter til éi DM-oppføring per node og
+  gøymer gamle arkiverte public-ruter utan å slette historikken.
+- Kanalar og DM-ar har eigne visuelle seksjonar. F8 skjuler DM-ar, medan F9
+  skjuler sekundærkanalar; primærkanalen er alltid synleg øvst.
+- Reconnect og kontrollert tenesteomstart er live-testa med BLE på Windows og
+  TCP på Raspberry Pi. BLE i systemtenester på Linux og macOS står att å
+  plattformteste før støtta kan reknast som ferdig.
+
 Dette bør starte som ei teknisk undersøking, fordi oppdaging, paring,
 tilgangsrettar og stabil identitet er ulike på Linux, macOS og Windows.
 
@@ -250,11 +275,11 @@ Aktuelle, men lågare prioriterte forbetringar:
 
 ## Tilrådd neste arbeid
 
-1. La 0.8.2 samle reelle data ei stund og noter felt eller nodetypar som blir
+1. La 0.8.3 samle reelle data ei stund og noter felt eller nodetypar som blir
    viste feil.
 2. Stabiliser fleirkanalslogging med verkelege, ulike kanaloppsett utan å sende
    public-testtrafikk.
-3. Ta BLE i ein eigen tråd etter ei kort plattformundersøking.
+3. Stabiliser BLE på Windows og gjennomfør plattformtest på Linux og macOS.
 4. Vent med fleire samtidige gatewayar til tenestelivssyklusen er spesifisert
    og testa.
 

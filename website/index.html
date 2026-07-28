@@ -30,7 +30,7 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.8.2</div>
+        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.8.3</div>
         <h1>Meshtastic-chat.<br><span>Rett i terminalen.</span></h1>
         <p class="lead">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
@@ -55,8 +55,8 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.8.2</b><i>●</i> Tilkopla
-          <span>TCP meshtastic.local:4403</span>
+          <b>MeshPi 0.8.3</b><i>●</i> Tilkopla
+          <span>BLE Meshtastic</span>
         </div>
         <div class="terminal-grid">
           <div class="terminal-list">
@@ -107,8 +107,8 @@
         </article>
         <article>
           <span class="feature-number">03</span>
-          <h3>TCP og USB</h3>
-          <p>Byt mellom lagra eller oppdaga Meshtastic-nodar utan omstart. USB-einingar med serienummer blir kjende att sjølv om portnamnet endrar seg.</p>
+          <h3>TCP, USB og BLE</h3>
+          <p>Byt mellom lagra eller oppdaga Meshtastic-nodar utan omstart. BLE-støtta er eksperimentell og er live-testa på Windows.</p>
         </article>
         <article>
           <span class="feature-number">04</span>
@@ -212,7 +212,7 @@
         <ol>
           <li>Opne ein ny terminal.</li>
           <li>Køyr <code>meshpi</code>. Ved første oppstart opnar nodeveljaren automatisk.</li>
-          <li>Vel ei oppdaga TCP-/USB-eining, eller skriv målet manuelt.</li>
+          <li>Vel ei oppdaga TCP-, USB- eller BLE-eining, eller skriv målet manuelt.</li>
         </ol>
         <p>
           Installeren lagar ei ny versjonsmappe, kontrollerer pakken og alle
@@ -317,8 +317,8 @@
       <div class="command-reference">
         <div><code>meshpi</code><span>Start fullskjermsgrensesnittet.</span></div>
         <div><code>meshpi tui</code><span>Start fullskjermsgrensesnittet uttrykkeleg.</span></div>
-        <div><code>meshpi new</code><span>Oppdag eller vel ei tilkopling. Fråkopla serieprofilar blir merkte, og F4 viser alle Linux-portar.</span></div>
-        <div><code>meshpi connect MÅL [--name NAMN]</code><span>Byt til TCP, seriellsti eller COM-port.</span></div>
+        <div><code>meshpi new</code><span>Oppdag eller vel ei tilkopling. F4 viser alle Linux-portar, og F5 startar eit nytt BLE-søk.</span></div>
+        <div><code>meshpi connect MÅL [--name NAMN]</code><span>Byt til TCP, seriellsti, COM-port eller <code>ble://IDENTIFIKATOR</code>.</span></div>
         <div><code>meshpi connections</code><span>Vis lagra tilkoplingsprofilar.</span></div>
         <div><code>meshpi daemon</code><span>Køyr bakgrunnstenesta i framgrunnen for feilsøking eller tenesteoppsett.</span></div>
         <div><code>meshpi doctor [--offline]</code><span>Køyr sjølvtest; offline krev ikkje ein tilgjengeleg node.</span></div>
@@ -367,6 +367,8 @@
         <div><kbd>Ctrl+D</kbd><span>Finn ein node og start ein ny DM</span></div>
         <div><kbd>F2</kbd><span>Flytt markøren til samtalelista</span></div>
         <div><kbd>F3</kbd><span>Flytt markøren til nodelista</span></div>
+        <div><kbd>F8</kbd><span>Vis eller skjul DM-samtalane</span></div>
+        <div><kbd>F9</kbd><span>Vis eller skjul sekundærkanalane; primærkanalen blir ståande</span></div>
         <div><kbd>Shift+F10</kbd><span>Opne handlingar for markert node</span></div>
         <div><kbd>Delete</kbd><span>Lukk vald DM utan å slette historikken</span></div>
         <div><kbd>Ctrl+R</kbd><span>Oppdater status, samtalar og nodar</span></div>
@@ -376,20 +378,20 @@
       </div>
     </section>
 
-    <section id="release-0.8.2" class="section release-section">
+    <section id="release-0.8.3" class="section release-section">
       <div class="section-heading">
         <span>Siste versjon</span>
-        <h2>MeshPi 0.8.2</h2>
+        <h2>MeshPi 0.8.3</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li>Fleire Meshtastic-kanalar kan brukast trygt frå CLI og TUI utan å lese eller lagre kanalnøklar</li>
-          <li>Meldingshistorikken skil kanal, lokal node og gateway, og bevarer kvart mottak som ein observasjon</li>
-          <li>DM-ruter er kanalbundne og fell aldri stille tilbake til kanal 0</li>
-          <li>Windows-overvaking kan avsluttast reint, og Linux viser rett oppdateringskommando for systemtenesta</li>
+          <li>Eksperimentell BLE-oppdaging, lagra BLE-profilar og reconnect er live-testa på Windows</li>
+          <li>Nodeveljaren viser TCP og USB straks, søkjer etter BLE i bakgrunnen og støttar F5 for nytt søk</li>
+          <li>DM-ar får eksplisitt kanalval og viser Meshtastic si NAK-årsak når sendinga blir avvist</li>
+          <li>Samtalelista viser éin DM per node, skil kanalar frå DM-ar og kan filtrerast med F8 og F9</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.8.2-py3-none-any.whl">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.8.3-py3-none-any.whl">Last ned Python-pakken</a>
           <a href="https://github.com/rvenes/meshpi">Kjeldekode på GitHub</a>
         </div>
       </div>

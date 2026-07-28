@@ -28,7 +28,16 @@ from textual.message import Message as TextualMessage
 from textual.screen import ModalScreen
 from textual.selection import Selection
 from textual.strip import Strip
-from textual.widgets import Button, Input, Label, ListItem, ListView, RichLog, Static
+from textual.widgets import (
+    Button,
+    Input,
+    Label,
+    ListItem,
+    ListView,
+    RichLog,
+    Select,
+    Static,
+)
 
 from meshpi import __version__
 from meshpi.channels import dm_conversation_id, parse_dm_conversation_id
@@ -309,7 +318,16 @@ def _conversation_title(item: dict[str, Any]) -> str:
         )
     node_id = str(item.get("peer_node") or item.get("conversation", ""))
     name = sanitize_terminal_text(item.get("long_name") or item.get("short_name") or node_id)
-    return f"DM {name} [{node_id[-4:]}]"
+    channel = item.get("channel")
+    channel_name = sanitize_terminal_text(item.get("channel_name") or "")
+    route_label = ""
+    if channel is not None:
+        route_label = (
+            f" · {channel_name} · kanal {channel}"
+            if channel_name
+            else f" · kanal {channel}"
+        )
+    return f"DM {name} [{node_id[-4:]}]{route_label}"
 
 
 class ConversationItem(ListItem):
@@ -318,15 +336,34 @@ class ConversationItem(ListItem):
         self.conversation_id = _conversation_id(conversation)
         self.label_widget = Static(self._render_label(), classes="conversation-label")
         super().__init__(self.label_widget)
+        self._update_section_class()
 
     def update_conversation(self, conversation: dict[str, Any]) -> None:
         self.conversation = conversation
+        self._update_section_class()
         self.label_widget.update(self._render_label())
+
+    def _update_section_class(self) -> None:
+        self.set_class(
+            bool(self.conversation.get("_section_label")),
+            "conversation-section-start",
+        )
 
     def _render_label(self) -> Text:
         unread = int(self.conversation.get("unread") or 0)
         title = _conversation_title(self.conversation)
         text = Text()
+        section_label = sanitize_terminal_text(
+            self.conversation.get("_section_label") or ""
+        )
+        section_hint = sanitize_terminal_text(
+            self.conversation.get("_section_hint") or ""
+        )
+        if section_label:
+            text.append(section_label.upper(), style="bold cyan")
+            if section_hint:
+                text.append(f"  {section_hint}", style="dim")
+            text.append("\n")
         text.append(
             "● " if self.conversation.get("kind") == "public" else "◆ ",
             style="green",
@@ -436,24 +473,64 @@ class NodeSidebarItem(ListItem):
         self.post_message(NodeActionRequested(self.node_id))
 
 
-class NewDMScreen(ModalScreen[str | None]):
+class NewDMScreen(ModalScreen[tuple[str, str] | None]):
     BINDINGS = [
         Binding("escape", "cancel", "Avbryt", priority=True),
         Binding("down", "next_node", "Neste node", priority=True),
         Binding("up", "previous_node", "Førre node", priority=True),
     ]
 
-    def __init__(self, nodes: list[dict[str, Any]]):
+    def __init__(
+        self,
+        nodes: list[dict[str, Any]],
+        channels: list[dict[str, Any]],
+    ):
         super().__init__()
         self.all_nodes = sorted(
             (node for node in nodes if not node.get("is_local")),
             key=_node_sort_key,
         )
         self.filtered_nodes = list(self.all_nodes)
+        self.channels = sorted(
+            (
+                channel
+                for channel in channels
+                if channel.get("sendable") is True
+                and channel.get("channel_key")
+                and channel.get("local_node_id")
+            ),
+            key=lambda item: int(item.get("channel", 0)),
+        )
 
     def compose(self) -> ComposeResult:
+        options = [
+            (
+                (
+                    f"{sanitize_terminal_text(channel.get('channel_name') or '')}"
+                    f"{' · ' if channel.get('channel_name') else ''}"
+                    f"kanal {channel.get('channel', 0)}"
+                ),
+                str(channel["channel_key"]),
+            )
+            for channel in self.channels
+        ]
+        primary = next(
+            (
+                str(channel["channel_key"])
+                for channel in self.channels
+                if int(channel.get("channel", -1)) == 0
+            ),
+            options[0][1] if options else "",
+        )
         with Container(id="new-dm-dialog"):
             yield Label("Ny direkte samtale", id="new-dm-title")
+            yield Select(
+                options,
+                value=primary,
+                allow_blank=False,
+                id="new-dm-channel",
+                prompt="Vel kanal",
+            )
             yield Input(
                 placeholder="Søk på namn eller node-ID",
                 id="new-dm-input",
@@ -462,7 +539,7 @@ class NewDMScreen(ModalScreen[str | None]):
             with ListView(id="node-picker-list"):
                 yield from (NodePickerItem(node) for node in self.filtered_nodes)
             yield Static(
-                "Skriv: søk   ↑/↓: vel   Enter: opne   Esc: avbryt",
+                "Tab: vel kanal   Skriv: søk   ↑/↓: vel   Enter: opne   Esc: avbryt",
                 id="new-dm-help",
             )
 
@@ -506,10 +583,10 @@ class NewDMScreen(ModalScreen[str | None]):
     def submit_node(self, event: Input.Submitted) -> None:
         selected = self.query_one("#node-picker-list", ListView).highlighted_child
         if isinstance(selected, NodePickerItem):
-            self.dismiss(selected.node_id)
+            self._dismiss_node(selected.node_id)
             return
         try:
-            self.dismiss(normalize_node_id(event.value))
+            self._dismiss_node(normalize_node_id(event.value))
         except ValueError as exc:
             message = "Ingen nodar passar søket" if event.value.strip() else "Vel ein node"
             self.notify(f"{message}. {exc}", severity="error")
@@ -517,7 +594,14 @@ class NewDMScreen(ModalScreen[str | None]):
     @on(ListView.Selected, "#node-picker-list")
     def select_node(self, event: ListView.Selected) -> None:
         if isinstance(event.item, NodePickerItem):
-            self.dismiss(event.item.node_id)
+            self._dismiss_node(event.item.node_id)
+
+    def _dismiss_node(self, node_id: str) -> None:
+        channel_key = self.query_one("#new-dm-channel", Select).value
+        if not isinstance(channel_key, str) or not channel_key:
+            self.notify("Vel ein kanal for samtalen", severity="error")
+            return
+        self.dismiss((node_id, channel_key))
 
     def _move_node(self, direction: int) -> None:
         node_list = self.query_one("#node-picker-list", ListView)
@@ -1308,6 +1392,8 @@ class HelpScreen(ModalScreen[None]):
         ("Ctrl+D", "Finn ein node og start ein ny DM"),
         ("F2", "Flytt markøren til samtalelista"),
         ("F3", "Flytt markøren til nodelista"),
+        ("F8", "Vis eller skjul DM-samtalane"),
+        ("F9", "Vis eller skjul sekundærkanalane; primærkanalen blir ståande"),
         ("Shift+F10", "Opne handlingar for markert node"),
         ("Delete", "Lukk vald DM utan å slette historikken"),
         ("Ctrl+R", "Oppdater status, samtalar og nodar"),
@@ -1409,6 +1495,12 @@ class MeshPiTUI(App[str | None]):
         color: #cbd0d2;
     }
 
+    ConversationItem.conversation-section-start {
+        height: 6;
+        padding-top: 1;
+        border-top: solid #31393c;
+    }
+
     ConversationItem.--highlight {
         background: #245c2a;
         color: white;
@@ -1417,6 +1509,10 @@ class MeshPiTUI(App[str | None]):
     .conversation-label {
         width: 1fr;
         height: 3;
+    }
+
+    ConversationItem.conversation-section-start .conversation-label {
+        height: 4;
     }
 
     #message-log {
@@ -1727,6 +1823,8 @@ class MeshPiTUI(App[str | None]):
         Binding("ctrl+d", "new_dm", "Ny DM"),
         Binding("f2", "focus_conversations", "Samtalar"),
         Binding("f3", "focus_nodes", "Nodar"),
+        Binding("f8", "toggle_direct_messages", "Vis/skjul DM", priority=True),
+        Binding("f9", "toggle_channels", "Vis/skjul kanalar", priority=True),
         Binding("shift+f10", "node_actions", "Nodehandlingar", priority=True),
         Binding("delete", "archive_conversation", "Lukk DM"),
         Binding("ctrl+r", "refresh", "Oppdater"),
@@ -1759,6 +1857,8 @@ class MeshPiTUI(App[str | None]):
             "port": settings.meshtastic_port if settings.meshtastic_host else None,
         }
         self.conversations: list[dict[str, Any]] = []
+        self.show_direct_messages = True
+        self.show_secondary_channels = True
         self.nodes: dict[str, dict[str, Any]] = {}
         self.current_conversation = "public"
         self._watch_socket: socket.socket | None = None
@@ -1801,7 +1901,8 @@ class MeshPiTUI(App[str | None]):
                 yield ListView(id="node-list")
         yield Static(
             " F1 hjelp  Tab/Shift+Tab byter felt  Enter opnar  Del lukk DM  Ctrl+D ny DM  "
-            "F2 samtalar  F3 nodar  Shift+F10 nodehandlingar  Ctrl+R oppdater  "
+            "F2 samtalar  F3 nodar  F8 DM  F9 kanalar  "
+            "Shift+F10 nodehandlingar  Ctrl+R oppdater  "
             "Ctrl+U kopier oppdatering  "
             "Ctrl+Q avslutt ",
             id="key-bar",
@@ -2074,50 +2175,111 @@ class MeshPiTUI(App[str | None]):
                     route_local, route_peer, route_key = parse_dm_conversation_id(
                         self.current_conversation
                     )
+                    active_route = next(
+                        (
+                            item
+                            for item in public
+                            if item.get("sendable") is True
+                            and item.get("local_node_id") == route_local
+                            and item.get("channel_key") == route_key
+                        ),
+                        None,
+                    )
                     synthetic.update(
                         {
                             "peer_node": route_peer,
                             "local_node_id": route_local,
                             "channel_key": route_key,
-                            "sendable": any(
-                                item.get("sendable") is True
-                                and item.get("local_node_id") == route_local
-                                and item.get("channel_key") == route_key
-                                for item in public
+                            "channel": (
+                                active_route.get("channel")
+                                if active_route
+                                else None
                             ),
+                            "channel_name": (
+                                active_route.get("channel_name")
+                                if active_route
+                                else None
+                            ),
+                            "sendable": active_route is not None,
                         }
                     )
+                    direct = [
+                        item
+                        for item in direct
+                        if str(item.get("peer_node") or "").lower()
+                        != route_peer
+                    ]
             direct.insert(
                 0,
                 synthetic,
             )
         return [*public, *direct]
 
-    async def _apply_conversations(self, conversations: list[dict[str, Any]]) -> None:
-        incoming = self._with_public(conversations)
+    def _sidebar_conversations(
+        self,
+        conversations: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        public = [item for item in conversations if item.get("kind") == "public"]
+        direct = [item for item in conversations if item.get("kind") == "dm"]
+        primary = next(
+            (item for item in public if item.get("channel") == 0),
+            public[0] if public else None,
+        )
+        channels: list[dict[str, Any]] = []
+        if primary is not None:
+            channels.append(primary)
+        if self.show_secondary_channels:
+            channels.extend(item for item in public if item is not primary)
+
+        visible: list[dict[str, Any]] = []
+        for index, item in enumerate(channels):
+            rendered = dict(item)
+            if index == 0:
+                rendered["_section_label"] = "Kanalar"
+                rendered["_section_hint"] = (
+                    "F9 skjul sekundære"
+                    if self.show_secondary_channels
+                    else "F9 vis sekundære"
+                )
+            visible.append(rendered)
+
+        if self.show_direct_messages:
+            for index, item in enumerate(direct):
+                rendered = dict(item)
+                if index == 0:
+                    rendered["_section_label"] = "DM-samtalar"
+                    rendered["_section_hint"] = "F8 skjul"
+                visible.append(rendered)
+        return visible
+
+    async def _render_conversation_sidebar(self) -> None:
+        visible = self._sidebar_conversations(self.conversations)
         list_view = self.query_one("#conversation-list", ListView)
         existing = [
             item for item in list_view.children if isinstance(item, ConversationItem)
         ]
         existing_ids = [item.conversation_id for item in existing]
-        incoming_by_id = {_conversation_id(item): item for item in incoming}
-        incoming_ids = list(incoming_by_id)
+        visible_by_id = {_conversation_id(item): item for item in visible}
+        visible_ids = list(visible_by_id)
 
-        if existing and set(existing_ids) == set(incoming_ids):
-            self.conversations = [incoming_by_id[item_id] for item_id in existing_ids]
+        if existing and set(existing_ids) == set(visible_ids):
             for item in existing:
-                item.update_conversation(incoming_by_id[item.conversation_id])
+                item.update_conversation(visible_by_id[item.conversation_id])
             return
 
-        self.conversations = incoming
         self._rebuilding_list = True
         await list_view.clear()
-        await list_view.extend(ConversationItem(item) for item in self.conversations)
-        ids = [_conversation_id(item) for item in self.conversations]
+        await list_view.extend(ConversationItem(item) for item in visible)
         list_view.index = (
-            ids.index(self.current_conversation) if self.current_conversation in ids else 0
+            visible_ids.index(self.current_conversation)
+            if self.current_conversation in visible_ids
+            else 0
         )
         self._rebuilding_list = False
+
+    async def _apply_conversations(self, conversations: list[dict[str, Any]]) -> None:
+        self.conversations = self._with_public(conversations)
+        await self._render_conversation_sidebar()
 
     async def _apply_nodes(self, nodes: list[dict[str, Any]]) -> None:
         self.nodes = {str(node["node_id"]): node for node in nodes}
@@ -2439,6 +2601,14 @@ class MeshPiTUI(App[str | None]):
             status = str(message.get("status") or "sendt")
             if status == "stadfesta":
                 status = "ACK"
+            metadata = message.get("raw_metadata")
+            failure_reason = (
+                sanitize_terminal_text(metadata.get("failure_reason"), 80)
+                if status == "feila" and isinstance(metadata, dict)
+                else ""
+            )
+            if failure_reason:
+                status = f"{status}: {failure_reason}"
             status_style = "bold green" if status == "levert" else "dim"
             text.append(f"  [{status}]", style=status_style)
         text.append("\n  ")
@@ -2803,7 +2973,12 @@ class MeshPiTUI(App[str | None]):
 
     def _refresh_lists_worker(self) -> None:
         try:
-            conversations = self._call({"command": "conversations"})["data"]
+            conversations = self._call(
+                {
+                    "command": "conversations",
+                    "preferred_conversation": self.current_conversation,
+                }
+            )["data"]
             nodes = self._call({"command": "nodes", "sort": "seen"})["data"]
             self.call_from_thread(self._apply_refresh, conversations, nodes)
         except Exception:
@@ -2819,7 +2994,12 @@ class MeshPiTUI(App[str | None]):
                     "mark_read": True,
                 }
             )
-            conversations = self._call({"command": "conversations"})["data"]
+            conversations = self._call(
+                {
+                    "command": "conversations",
+                    "preferred_conversation": self.current_conversation,
+                }
+            )["data"]
             self.call_from_thread(self._apply_conversations, conversations)
         except Exception:
             return
@@ -2868,6 +3048,21 @@ class MeshPiTUI(App[str | None]):
             self.action_new_dm()
             return
         self.query_one("#node-list", ListView).focus()
+
+    async def action_toggle_direct_messages(self) -> None:
+        self.show_direct_messages = not self.show_direct_messages
+        await self._render_conversation_sidebar()
+        state = "viste" if self.show_direct_messages else "skjulte"
+        self.notify(f"DM-samtalane er {state}", timeout=2)
+
+    async def action_toggle_channels(self) -> None:
+        self.show_secondary_channels = not self.show_secondary_channels
+        await self._render_conversation_sidebar()
+        state = "viste" if self.show_secondary_channels else "skjulte"
+        self.notify(
+            f"Sekundærkanalane er {state}. Primærkanalen er alltid synleg.",
+            timeout=3,
+        )
 
     def action_node_actions(self) -> None:
         node_list = self.query_one("#node-list", ListView)
@@ -3170,37 +3365,64 @@ class MeshPiTUI(App[str | None]):
         return f"Eigen posisjon blei ikkje delt{suffix}."
 
     def action_new_dm(self) -> None:
-        self.push_screen(NewDMScreen(list(self.nodes.values())), self._open_new_dm)
+        channels = [
+            item
+            for item in self.conversations
+            if item.get("kind") == "public"
+        ]
+        self.push_screen(
+            NewDMScreen(list(self.nodes.values()), channels),
+            self._open_new_dm,
+        )
 
-    def _open_new_dm(self, node_id: str | None) -> None:
-        if node_id is None:
+    def _open_new_dm(self, selected: tuple[str, str] | None) -> None:
+        if selected is None:
             return
-        self._open_node_dm(node_id, focus_input=True)
+        node_id, channel_key = selected
+        self._open_node_dm(
+            node_id,
+            focus_input=True,
+            channel_key=channel_key,
+        )
 
-    def _open_node_dm(self, node_id: str, *, focus_input: bool) -> None:
+    def _open_node_dm(
+        self,
+        node_id: str,
+        *,
+        focus_input: bool,
+        channel_key: str | None = None,
+    ) -> None:
         normalized_node_id = normalize_node_id(node_id)
-        primary = next(
+        route = next(
             (
                 item
                 for item in self.conversations
                 if item.get("kind") == "public"
-                and item.get("channel") == 0
                 and item.get("sendable") is True
                 and item.get("local_node_id")
                 and item.get("channel_key")
+                and (
+                    item.get("channel_key") == channel_key
+                    if channel_key is not None
+                    else item.get("channel") == 0
+                )
             ),
             None,
         )
-        if primary is None:
+        if route is None:
             self.notify(
-                "Primærkanalen er ikkje klar på den aktive noden",
+                (
+                    "Den valde kanalen er ikkje klar på den aktive noden"
+                    if channel_key is not None
+                    else "Primærkanalen er ikkje klar på den aktive noden"
+                ),
                 severity="error",
             )
             return
         conversation = dm_conversation_id(
-            str(primary["local_node_id"]),
+            str(route["local_node_id"]),
             normalized_node_id,
-            str(primary["channel_key"]),
+            str(route["channel_key"]),
         )
         if self._conversation_data(conversation) is None:
             self.conversations.append(
@@ -3208,9 +3430,10 @@ class MeshPiTUI(App[str | None]):
                     "conversation": conversation,
                     "kind": "dm",
                     "peer_node": normalized_node_id,
-                    "local_node_id": primary["local_node_id"],
-                    "channel_key": primary["channel_key"],
-                    "channel": 0,
+                    "local_node_id": route["local_node_id"],
+                    "channel_key": route["channel_key"],
+                    "channel": route.get("channel"),
+                    "channel_name": route.get("channel_name"),
                     "last_timestamp": None,
                     "last_text": None,
                     "unread": 0,

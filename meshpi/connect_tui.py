@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import Any
 
 from rich.text import Text
@@ -11,6 +12,8 @@ from textual.widgets import Input, ListItem, ListView, Static
 
 from meshpi.client import request
 from meshpi.config import Settings
+
+DISCOVERY_TIMEOUT_SECONDS = 30
 
 
 def _serial_profile_available(
@@ -42,6 +45,23 @@ def _serial_profile_available(
     )
 
 
+def _ble_profile_available(
+    profile: dict[str, Any],
+    ble_entries: list[dict[str, Any]],
+) -> bool:
+    identifier = str(
+        profile.get("ble_identifier") or profile.get("endpoint") or ""
+    ).strip()
+    return bool(identifier) and any(
+        identifier
+        == str(
+            entry.get("ble_identifier")
+            or str(entry.get("target") or "").removeprefix("ble://")
+        ).strip()
+        for entry in ble_entries
+    )
+
+
 def build_connection_choices(
     data: dict[str, Any],
     *,
@@ -51,6 +71,9 @@ def build_connection_choices(
     choices: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     serial_entries = list(data.get("serial", []))
+    ble_entries = list(data.get("ble", []))
+    serial_scanned = bool(data.get("serial_scanned", True))
+    ble_scanned = bool(data.get("ble_scanned", True))
     saved_available: list[dict[str, Any]] = []
     saved_unavailable: list[dict[str, Any]] = []
     available_serial_profiles: list[dict[str, Any]] = []
@@ -60,9 +83,21 @@ def build_connection_choices(
         endpoint = str(profile.get("endpoint", ""))
         transport = str(profile.get("transport", ""))
         available = (
-            _serial_profile_available(profile, serial_entries)
+            (
+                _serial_profile_available(profile, serial_entries)
+                if serial_scanned
+                else None
+            )
             if transport == "serial"
-            else None
+            else (
+                (
+                    _ble_profile_available(profile, ble_entries)
+                    if ble_scanned
+                    else None
+                )
+                if transport == "ble"
+                else None
+            )
         )
         choice = {
             "section": "Lagra",
@@ -99,6 +134,7 @@ def build_connection_choices(
 
     for section, entries in (
         ("USB / seriell", data.get("serial", [])),
+        ("Bluetooth / BLE", data.get("ble", [])),
         ("TCP på lokalnettet", data.get("tcp", [])),
     ):
         for entry in entries:
@@ -114,7 +150,12 @@ def build_connection_choices(
                 for profile in available_serial_profiles
             ):
                 continue
-            endpoint = str(entry.get("device") or entry.get("target") or "")
+            endpoint = str(
+                entry.get("device")
+                or entry.get("ble_identifier")
+                or entry.get("target")
+                or ""
+            )
             if (transport, endpoint) in seen:
                 continue
             seen.add((transport, endpoint))
@@ -172,6 +213,7 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         Binding("down", "next_choice", "Neste", priority=True),
         Binding("up", "previous_choice", "Førre", priority=True),
         Binding("f4", "toggle_serial_ports", "Alle serieportar", priority=True),
+        Binding("f5", "refresh_discovery", "Søk på nytt", priority=True),
     ]
 
     CSS = """
@@ -200,6 +242,11 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
     #picker-description {
         height: 2;
         color: #9ba4a7;
+    }
+
+    #discovery-status {
+        height: 2;
+        color: #e4c65b;
     }
 
     #connection-input {
@@ -246,10 +293,23 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
     }
     """
 
-    def __init__(self, discovery: dict[str, Any]):
+    def __init__(
+        self,
+        discovery: dict[str, Any],
+        *,
+        settings: Settings | None = None,
+        requester=request,
+        auto_discover: bool = False,
+    ):
         super().__init__()
         self.discovery = discovery
+        self.settings = settings
+        self.requester = requester
+        self.auto_discover = auto_discover
         self.show_all_serial = False
+        self._discovering = False
+        self._discovery_generation = 0
+        self._closed = False
         self.all_choices = build_connection_choices(discovery)
         choices_with_all_serial = build_connection_choices(
             discovery,
@@ -259,21 +319,24 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         self.filtered_choices = list(self.all_choices)
 
     def compose(self) -> ComposeResult:
+        description = (
+            "Vel ei oppdaga/lagra eining, eller skriv IP, vertsnamn, "
+            "seriellsti eller ble://identifikator."
+        )
         with Container(id="picker"):
             yield Static("Vel Meshtastic-tilkopling", id="picker-title")
-            yield Static(
-                "Vel ei oppdaga/lagra eining, eller skriv IP, vertsnamn eller seriellsti.",
-                id="picker-description",
-            )
+            yield Static(description, id="picker-description")
+            yield Static("", id="discovery-status")
             yield Input(
-                placeholder="192.168.1.42, meshtastic.local eller /dev/serial/by-id/…",
+                placeholder="IP, vertsnamn, seriellsti eller ble://identifikator",
                 id="connection-input",
             )
             yield Static("", id="choice-count")
             with ListView(id="connection-list"):
                 yield from (ConnectionItem(choice) for choice in self.filtered_choices)
             yield Static(
-                "Skriv: filtrer/manuelt mål   ↑/↓: vel   Enter: kopla til   Esc: avbryt",
+                "Skriv: filtrer/mål   ↑/↓: vel   Enter: kopla til   "
+                "F5: søk på nytt   Esc: avbryt",
                 id="picker-help",
             )
 
@@ -281,7 +344,45 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         choices = self.query_one("#connection-list", ListView)
         choices.index = 0 if self.filtered_choices else None
         self._update_count()
+        self._update_discovery_status()
         self.query_one("#connection-input", Input).focus()
+        if self.auto_discover:
+            self._start_discovery()
+
+    def on_unmount(self) -> None:
+        self._closed = True
+        self._discovery_generation += 1
+
+    def _update_discovery_status(self) -> None:
+        status = self.query_one("#discovery-status", Static)
+        if self.discovery.get("ble_scanning"):
+            status.update(
+                "Bluetooth / BLE: Søkjer … "
+                "(tek vanlegvis om lag 10 sekund)"
+            )
+            return
+        error = str(self.discovery.get("ble_error") or "").strip()
+        if error:
+            status.update(f"Bluetooth / BLE: {error}  ·  F5: søk på nytt")
+            return
+        ble_scanned = self.discovery.get(
+            "ble_scanned",
+            "ble" in self.discovery,
+        )
+        if not ble_scanned:
+            status.update("Bluetooth / BLE: Ventar på søk  ·  F5: start søk")
+            return
+        count = len(self.discovery.get("ble", []))
+        if count:
+            suffix = "eining funnen" if count == 1 else "einingar funne"
+            status.update(
+                f"Bluetooth / BLE: {count} {suffix}  ·  F5: søk på nytt"
+            )
+        else:
+            status.update(
+                "Bluetooth / BLE: Ingen Meshtastic-einingar funne  ·  "
+                "F5: søk på nytt"
+            )
 
     def _update_count(self) -> None:
         shown = len(self.filtered_choices)
@@ -305,6 +406,127 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         choices.index = 0 if self.filtered_choices else None
         self._update_count()
 
+    async def _rebuild_choices(self) -> None:
+        self.all_choices = build_connection_choices(
+            self.discovery,
+            include_all_serial=self.show_all_serial,
+        )
+        choices_with_all_serial = build_connection_choices(
+            self.discovery,
+            include_all_serial=True,
+        )
+        self.hidden_serial_count = len(choices_with_all_serial) - len(
+            build_connection_choices(self.discovery)
+        )
+        query = self.query_one("#connection-input", Input).value.strip().casefold()
+        await self._replace_choices(query)
+
+    def _start_discovery(self) -> None:
+        if self._discovering:
+            self.notify("Eit BLE-søk er allereie i gang")
+            return
+        if self.settings is None:
+            self.notify("Oppdaging er ikkje tilgjengeleg", severity="error")
+            return
+        self._discovering = True
+        self._discovery_generation += 1
+        generation = self._discovery_generation
+        self.discovery["ble_scanning"] = True
+        self.discovery["ble_error"] = None
+        self.discovery["ble_scanned"] = False
+        self.discovery["ble"] = []
+        self._update_discovery_status()
+        self.run_worker(
+            lambda: self._discovery_worker(generation),
+            name="connection-discovery",
+            group="connection-discovery",
+            thread=True,
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    def _can_deliver_discovery(self, generation: int) -> bool:
+        return not self._closed and generation == self._discovery_generation
+
+    def _deliver_discovery(self, callback, generation: int, *args: Any) -> None:
+        if not self._can_deliver_discovery(generation):
+            return
+        with suppress(RuntimeError):
+            self.call_from_thread(callback, generation, *args)
+
+    def _discovery_worker(self, generation: int) -> None:
+        try:
+            local = self.requester(
+                self.settings,
+                {
+                    "command": "discover_connections",
+                    "include_ble": False,
+                },
+                timeout=DISCOVERY_TIMEOUT_SECONDS,
+            )["data"]
+            self._deliver_discovery(
+                self._apply_local_discovery,
+                generation,
+                local,
+            )
+            if not self._can_deliver_discovery(generation):
+                return
+            ble = self.requester(
+                self.settings,
+                {"command": "discover_ble_connections"},
+                timeout=DISCOVERY_TIMEOUT_SECONDS,
+            )["data"]
+            self._deliver_discovery(
+                self._finish_discovery,
+                generation,
+                ble,
+                None,
+            )
+        except Exception as exc:
+            self._deliver_discovery(
+                self._finish_discovery,
+                generation,
+                None,
+                str(exc),
+            )
+
+    async def _apply_local_discovery(
+        self,
+        generation: int,
+        data: dict[str, Any],
+    ) -> None:
+        if not self._can_deliver_discovery(generation):
+            return
+        preserved_ble = list(self.discovery.get("ble", []))
+        self.discovery.update(data)
+        self.discovery["ble"] = preserved_ble
+        self.discovery["serial_scanned"] = True
+        self.discovery["ble_scanning"] = True
+        self.discovery["ble_scanned"] = False
+        await self._rebuild_choices()
+        self._update_discovery_status()
+
+    async def _finish_discovery(
+        self,
+        generation: int,
+        data: dict[str, Any] | None,
+        error: str | None,
+    ) -> None:
+        if not self._can_deliver_discovery(generation):
+            return
+        if data is not None:
+            self.discovery.update(data)
+        if error:
+            self.discovery["ble"] = []
+            self.discovery["ble_error"] = (
+                f"Klarte ikkje fullføre søket: {error}"
+            )
+        self.discovery["ble_scanning"] = False
+        self.discovery["ble_scanned"] = True
+        self._discovering = False
+        await self._rebuild_choices()
+        self._update_discovery_status()
+
     @on(Input.Changed, "#connection-input")
     async def filter_choices(self, event: Input.Changed) -> None:
         query = event.value.strip().casefold()
@@ -320,6 +542,9 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         )
         query = self.query_one("#connection-input", Input).value.strip().casefold()
         await self._replace_choices(query)
+
+    def action_refresh_discovery(self) -> None:
+        self._start_discovery()
 
     @on(Input.Submitted, "#connection-input")
     def submit_input(self, event: Input.Submitted) -> None:
@@ -365,6 +590,8 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         self._move(-1)
 
     def action_cancel(self) -> None:
+        self._closed = True
+        self._discovery_generation += 1
         self.exit(None)
 
 
@@ -372,5 +599,21 @@ def choose_connection(
     settings: Settings,
     requester=request,
 ) -> dict[str, Any] | None:
-    discovery = requester(settings, {"command": "discover_connections"})["data"]
-    return ConnectionPickerApp(discovery).run()
+    connections = requester(settings, {"command": "connections"})["data"]
+    discovery = connections | {
+        "serial": [],
+        "serial_scanned": False,
+        "tcp": [],
+        "tcp_error": None,
+        "scanned_subnets": [],
+        "ble": [],
+        "ble_error": None,
+        "ble_scanned": False,
+        "ble_scanning": False,
+    }
+    return ConnectionPickerApp(
+        discovery,
+        settings=settings,
+        requester=requester,
+        auto_discover=True,
+    ).run()

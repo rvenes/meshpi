@@ -2,6 +2,7 @@ import pytest
 
 from meshpi.cli import (
     _battery,
+    _configure_console_output,
     _format_message,
     _normalize_argv,
     _print_status,
@@ -20,6 +21,25 @@ def test_battery_display_handles_external_power():
     assert _battery(0) == "Straum"
     assert _battery(75) == "75%"
     assert _battery(None) == "–"
+
+
+def test_windows_console_replaces_unencodable_characters(monkeypatch):
+    class Stream:
+        errors = None
+
+        def reconfigure(self, *, errors):
+            self.errors = errors
+
+    stdout = Stream()
+    stderr = Stream()
+    monkeypatch.setattr("meshpi.cli.sys.platform", "win32")
+    monkeypatch.setattr("meshpi.cli.sys.stdout", stdout)
+    monkeypatch.setattr("meshpi.cli.sys.stderr", stderr)
+
+    _configure_console_output()
+
+    assert stdout.errors == "replace"
+    assert stderr.errors == "replace"
 
 
 def test_message_display_contains_context_and_metadata():

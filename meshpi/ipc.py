@@ -63,6 +63,45 @@ class IPCApplication:
             None,
         )
 
+    @staticmethod
+    def _visible_conversations(
+        conversations: list[dict[str, Any]],
+        preferred_conversation: str = "",
+    ) -> list[dict[str, Any]]:
+        visible: list[dict[str, Any]] = []
+        dm_positions: dict[str, int] = {}
+
+        def dm_priority(item: dict[str, Any]) -> tuple[bool, bool, bool, str]:
+            conversation = str(item.get("conversation") or "")
+            return (
+                item.get("sendable") is True,
+                conversation == preferred_conversation,
+                conversation.startswith("dm:"),
+                str(item.get("last_timestamp") or ""),
+            )
+
+        for item in conversations:
+            if (
+                item.get("kind") == "public"
+                and str(item.get("channel_key") or "").startswith("legacy:")
+            ):
+                continue
+            if item.get("kind") != "dm":
+                visible.append(item)
+                continue
+            peer = str(
+                item.get("peer_node")
+                or item.get("conversation")
+                or ""
+            ).lower()
+            position = dm_positions.get(peer)
+            if position is None:
+                dm_positions[peer] = len(visible)
+                visible.append(item)
+            elif dm_priority(item) > dm_priority(visible[position]):
+                visible[position] = item
+        return visible
+
     def matches_message_event(
         self,
         event: dict[str, Any],
@@ -132,7 +171,14 @@ class IPCApplication:
         if command == "connections":
             return {"ok": True, "data": self.service.list_connections()}
         if command == "discover_connections":
-            return {"ok": True, "data": self.service.discover_connections()}
+            return {
+                "ok": True,
+                "data": self.service.discover_connections(
+                    include_ble=request.get("include_ble") is not False
+                ),
+            }
+        if command == "discover_ble_connections":
+            return {"ok": True, "data": self.service.discover_ble_connections()}
         if command == "connect":
             return {
                 "ok": True,
@@ -257,7 +303,13 @@ class IPCApplication:
                     )
                     or dm_sendable,
                 )
-            return {"ok": True, "data": conversations}
+            return {
+                "ok": True,
+                "data": self._visible_conversations(
+                    conversations,
+                    str(request.get("preferred_conversation") or ""),
+                ),
+            }
         if command == "channels":
             channel_lister = getattr(self.service, "list_channels", None)
             return {

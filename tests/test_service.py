@@ -4,11 +4,18 @@ from types import SimpleNamespace
 
 import pytest
 
+from meshpi.channels import dm_conversation_id
 from meshpi.config import Settings
 from meshpi.connections import ConnectionProfile
 from meshpi.database import Database
 from meshpi.events import EventHub
-from meshpi.models import MessageStatus
+from meshpi.models import (
+    ConversationKind,
+    Direction,
+    Message,
+    MessageStatus,
+    Transport,
+)
 from meshpi.service import MeshtasticService, reconnect_delay
 
 
@@ -63,6 +70,77 @@ def service(tmp_path):
     value._sync_channels(interface)
     value._set_status("tilkopla")
     return value, interface, database
+
+
+def test_discover_connections_includes_ble_results(service, monkeypatch):
+    value, _, _ = service
+    monkeypatch.setattr("meshpi.service.discover_serial", list)
+    monkeypatch.setattr("meshpi.service.discover_local_subnets", list)
+    monkeypatch.setattr(
+        "meshpi.service.discover_ble",
+        lambda: [
+            {
+                "transport": "ble",
+                "target": "ble://A1:B2:C3:D4:E5:F6",
+                "ble_identifier": "A1:B2:C3:D4:E5:F6",
+                "name": "Mesh-node",
+            }
+        ],
+    )
+
+    result = value.discover_connections()
+
+    assert result["ble"][0]["ble_identifier"] == "A1:B2:C3:D4:E5:F6"
+    assert result["ble_error"] is None
+
+
+def test_discover_connections_can_return_local_results_without_ble(
+    service, monkeypatch
+):
+    value, _, _ = service
+    monkeypatch.setattr("meshpi.service.discover_serial", list)
+    monkeypatch.setattr("meshpi.service.discover_local_subnets", list)
+
+    def unexpected_ble_scan():
+        raise AssertionError("BLE-søk skal ikkje starte")
+
+    monkeypatch.setattr("meshpi.service.discover_ble", unexpected_ble_scan)
+
+    result = value.discover_connections(include_ble=False)
+
+    assert result["serial"] == []
+    assert result["tcp"] == []
+    assert result["ble"] == []
+    assert result["ble_error"] is None
+
+
+def test_discover_connections_reports_concurrent_ble_scan(service, monkeypatch):
+    value, _, _ = service
+    monkeypatch.setattr("meshpi.service.discover_serial", list)
+    monkeypatch.setattr("meshpi.service.discover_local_subnets", list)
+    value._ble_operation_lock.acquire()
+    try:
+        result = value.discover_connections()
+    finally:
+        value._ble_operation_lock.release()
+
+    assert result["ble"] == []
+    assert "allereie i gang" in result["ble_error"]
+
+
+def test_service_saves_ble_profile_and_exposes_identifier(service):
+    value, interface, _ = service
+
+    status = value.connect(
+        target="ble://243E23AE-4A99-406C-B317-18F1BD7B4CBE",
+        name="Handhalden",
+    )
+
+    assert interface.closed is True
+    assert status["state"] == "koplar til"
+    assert status["transport"] == "ble"
+    assert status["ble_identifier"] == "243E23AE-4A99-406C-B317-18F1BD7B4CBE"
+    assert value.connections.active_profile().name == "Handhalden"
 
 
 def test_send_public_channel_zero(service):
@@ -203,6 +281,41 @@ def test_unknown_received_channel_is_not_sendable_and_is_rebound(service):
         "public",
         conversation_id="channel:provisional:!710365c8:5",
     ) == []
+
+
+def test_channel_sync_merges_safe_legacy_dm_into_sendable_route(service):
+    value, interface, database = service
+    local_node = str(value._local_node_id)
+    peer_node = "!11112222"
+    legacy = Message(
+        packet_id=811,
+        timestamp="2026-07-20T12:00:00+00:00",
+        from_node=peer_node,
+        to_node=local_node,
+        channel=0,
+        kind=ConversationKind.DM,
+        peer_node=peer_node,
+        text="Eldre historikk",
+        direction=Direction.INCOMING,
+        transport=Transport.RF,
+        status=MessageStatus.RECEIVED,
+        conversation_id=peer_node,
+    )
+    database.insert_message(legacy)
+
+    value._sync_channels(interface)
+
+    channel = value.list_channels()[0]
+    route = dm_conversation_id(
+        local_node,
+        peer_node,
+        str(channel["channel_key"]),
+    )
+    conversations = database.conversations()
+    assert [item["conversation"] for item in conversations] == [route]
+    assert database.list_messages("dm", conversation_id=route)[0]["text"] == (
+        "Eldre historikk"
+    )
 
 
 def test_received_public_message_on_secondary_channel_is_logged(service):
@@ -390,6 +503,7 @@ def test_dm_failure_status(service):
     )
     row = database.list_messages("dm", "!11112222")[0]
     assert row["status"] == str(MessageStatus.FAILED)
+    assert row["raw_metadata"]["failure_reason"] == "NO_ROUTE"
 
 
 def test_very_early_ack_is_not_lost(service):
@@ -830,6 +944,128 @@ def test_service_retries_after_connection_failure(tmp_path, monkeypatch):
     assert len(attempts) == 2
     assert attempts[0].transport == "tcp"
     assert attempts[0].endpoint == "192.0.2.42:4403"
+
+
+def test_ble_service_retries_with_searching_status(tmp_path, monkeypatch):
+    monkeypatch.setattr("meshpi.service.RECONNECT_DELAYS", (0, 0, 0, 0))
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    attempts = []
+    states = []
+    holder = {}
+
+    def factory(profile):
+        attempts.append(profile)
+        states.append(holder["service"].status()["state"])
+        if len(attempts) == 1:
+            raise OSError("utanfor rekkevidd")
+        holder["service"]._stop.set()
+        return FakeInterface()
+
+    value = MeshtasticService(
+        Settings(database_path=database.path),
+        database,
+        EventHub(),
+        interface_factory=factory,
+    )
+    holder["service"] = value
+    value.connect(target="ble://A1:B2:C3:D4:E5:F6")
+    value.start()
+    deadline = time.monotonic() + 2
+    while value._thread and value._thread.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    value.stop()
+
+    assert [profile.transport for profile in attempts] == ["ble", "ble"]
+    assert states == ["søkjer", "søkjer"]
+
+
+def test_service_switches_from_ble_to_tcp_and_closes_each_interface_once(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr("meshpi.service.RECONNECT_DELAYS", (0, 0, 0, 0))
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    attempts = []
+    interfaces = []
+
+    class CountingInterface(FakeInterface):
+        def __init__(self):
+            super().__init__()
+            self.close_calls = 0
+
+        def close(self):
+            self.close_calls += 1
+            super().close()
+
+    def factory(profile):
+        attempts.append(profile)
+        interface = CountingInterface()
+        interfaces.append(interface)
+        return interface
+
+    value = MeshtasticService(
+        Settings(database_path=database.path),
+        database,
+        EventHub(),
+        interface_factory=factory,
+    )
+    value.connect(target="ble://A1:B2:C3:D4:E5:F6")
+    value.start()
+    deadline = time.monotonic() + 2
+    while len(attempts) < 1 and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    value.connect(target="192.0.2.42")
+    deadline = time.monotonic() + 2
+    while len(attempts) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    value.stop()
+
+    assert [profile.transport for profile in attempts[:2]] == ["ble", "tcp"]
+    assert interfaces[0].close_calls == 1
+    assert interfaces[1].close_calls == 1
+
+
+def test_service_closes_ble_interface_created_during_shutdown(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    factory_started = threading.Event()
+    release_factory = threading.Event()
+
+    class CountingInterface(FakeInterface):
+        close_calls = 0
+
+        def close(self):
+            self.close_calls += 1
+            super().close()
+
+    interface = CountingInterface()
+
+    def factory(_profile):
+        factory_started.set()
+        assert release_factory.wait(2)
+        return interface
+
+    value = MeshtasticService(
+        Settings(database_path=database.path),
+        database,
+        EventHub(),
+        interface_factory=factory,
+    )
+    value.connect(target="ble://A1:B2:C3:D4:E5:F6")
+    value.start()
+    assert factory_started.wait(2)
+
+    stopper = threading.Thread(target=value.stop)
+    stopper.start()
+    release_factory.set()
+    stopper.join(timeout=2)
+
+    assert not stopper.is_alive()
+    assert value._thread is not None
+    assert not value._thread.is_alive()
+    assert interface.close_calls == 1
 
 
 def test_running_service_switches_from_tcp_to_serial_without_backoff(

@@ -1,9 +1,11 @@
 import asyncio
+import threading
 
 from meshpi.connect_tui import (
     ConnectionItem,
     ConnectionPickerApp,
     build_connection_choices,
+    choose_connection,
 )
 
 
@@ -52,15 +54,25 @@ def discovery_data():
                 "port": 4403,
             },
         ],
+        "ble": [
+            {
+                "name": "Handhalden",
+                "transport": "ble",
+                "target": "ble://A1:B2:C3:D4:E5:F6",
+                "ble_identifier": "A1:B2:C3:D4:E5:F6",
+            }
+        ],
+        "ble_error": None,
     }
 
 
 def test_connection_choices_include_saved_serial_and_discovered_tcp():
     choices = build_connection_choices(discovery_data())
-    assert len(choices) == 3
+    assert len(choices) == 4
     assert {choice["section"] for choice in choices} == {
         "Lagra",
         "USB / seriell",
+        "Bluetooth / BLE",
         "TCP på lokalnettet",
     }
 
@@ -71,7 +83,7 @@ def test_connection_choices_can_include_secondary_serial_ports():
         include_all_serial=True,
     )
 
-    assert len(choices) == 4
+    assert len(choices) == 5
     assert any(choice["endpoint"] == "/dev/ttyS4" for choice in choices)
 
 
@@ -180,7 +192,7 @@ def test_connection_picker_filters_and_selects_usb():
         app = ConnectionPickerApp(discovery_data())
         async with app.run_test(size=(120, 42)) as pilot:
             await pilot.pause(0.2)
-            assert len(app.query(ConnectionItem)) == 3
+            assert len(app.query(ConnectionItem)) == 4
             await pilot.press(*"xiao")
             await pilot.pause(0.2)
             assert len(app.query(ConnectionItem)) == 1
@@ -198,14 +210,14 @@ def test_connection_picker_toggles_secondary_serial_ports():
         app = ConnectionPickerApp(discovery_data())
         async with app.run_test(size=(120, 42)) as pilot:
             await pilot.pause(0.2)
-            assert len(app.query(ConnectionItem)) == 3
+            assert len(app.query(ConnectionItem)) == 4
             assert "1 serieportar skjulte" in str(
                 app.query_one("#choice-count").render()
             )
 
             await pilot.press("f4")
             await pilot.pause(0.2)
-            assert len(app.query(ConnectionItem)) == 4
+            assert len(app.query(ConnectionItem)) == 5
             assert any(
                 item.choice["endpoint"] == "/dev/ttyS4"
                 for item in app.query(ConnectionItem)
@@ -213,7 +225,7 @@ def test_connection_picker_toggles_secondary_serial_ports():
 
             await pilot.press("f4")
             await pilot.pause(0.2)
-            assert len(app.query(ConnectionItem)) == 3
+            assert len(app.query(ConnectionItem)) == 4
 
     asyncio.run(scenario())
 
@@ -237,3 +249,225 @@ def test_hidden_serial_count_excludes_port_deduplicated_by_saved_profile():
         data,
         include_all_serial=True,
     )
+
+
+def test_saved_ble_profile_is_deduplicated_and_available():
+    data = discovery_data()
+    data["profiles"].append(
+        {
+            "profile_id": "ble-handhalden",
+            "name": "Lagra handhalden",
+            "transport": "ble",
+            "ble_identifier": "A1:B2:C3:D4:E5:F6",
+            "endpoint": "A1:B2:C3:D4:E5:F6",
+        }
+    )
+
+    choices = build_connection_choices(data)
+    saved = next(choice for choice in choices if choice.get("profile_id") == "ble-handhalden")
+
+    assert saved["available"] is True
+    assert len(
+        [
+            choice
+            for choice in choices
+            if choice["endpoint"] == "A1:B2:C3:D4:E5:F6"
+        ]
+    ) == 1
+
+
+def test_discovered_ble_choice_uses_ble_target():
+    choice = next(
+        item
+        for item in build_connection_choices(discovery_data())
+        if item["transport"] == "ble"
+    )
+
+    assert ConnectionPickerApp._result(choice) == {
+        "target": "ble://A1:B2:C3:D4:E5:F6",
+        "name": "Handhalden",
+    }
+
+
+def test_picker_shows_ble_error():
+    async def scenario():
+        data = discovery_data()
+        data["ble"] = []
+        data["ble_error"] = "Bluetooth er slått av."
+        app = ConnectionPickerApp(data)
+        async with app.run_test(size=(120, 42)) as pilot:
+            await pilot.pause(0.2)
+            assert "Bluetooth er slått av" in str(
+                app.query_one("#discovery-status").render()
+            )
+
+    asyncio.run(scenario())
+
+
+def test_choose_connection_opens_with_saved_profiles_before_discovery(
+    monkeypatch,
+):
+    captured = {}
+    calls = []
+
+    class Picker:
+        def __init__(self, discovery, **kwargs):
+            captured["discovery"] = discovery
+            captured["kwargs"] = kwargs
+
+        def run(self):
+            return {"profile_id": "tcp-main"}
+
+    def requester(settings, payload, **kwargs):
+        calls.append((settings, payload, kwargs))
+        return {
+            "data": {
+                "active_profile_id": "tcp-main",
+                "profiles": discovery_data()["profiles"],
+            }
+        }
+
+    monkeypatch.setattr("meshpi.connect_tui.ConnectionPickerApp", Picker)
+    settings = object()
+
+    result = choose_connection(settings, requester=requester)
+
+    assert result == {"profile_id": "tcp-main"}
+    assert [call[1]["command"] for call in calls] == ["connections"]
+    assert captured["discovery"]["profiles"] == discovery_data()["profiles"]
+    assert captured["discovery"]["ble_scanned"] is False
+    assert captured["kwargs"]["auto_discover"] is True
+
+
+def test_picker_shows_local_results_while_ble_search_runs_and_supports_f5():
+    release_ble = threading.Event()
+    ble_started = threading.Event()
+    ble_calls = []
+    data = discovery_data()
+    initial = {
+        "active_profile_id": data["active_profile_id"],
+        "profiles": data["profiles"],
+        "serial": [],
+        "serial_scanned": False,
+        "tcp": [],
+        "ble": [],
+        "ble_error": None,
+        "ble_scanned": False,
+    }
+
+    def requester(_settings, payload, *, timeout):
+        assert timeout == 30
+        if payload["command"] == "discover_connections":
+            assert payload["include_ble"] is False
+            local = discovery_data()
+            local["ble"] = []
+            local["ble_error"] = None
+            return {"data": local}
+        if payload["command"] == "discover_ble_connections":
+            ble_calls.append(object())
+            ble_started.set()
+            assert release_ble.wait(2)
+            return {
+                "data": {
+                    "ble": discovery_data()["ble"],
+                    "ble_error": None,
+                }
+            }
+        raise AssertionError(payload)
+
+    async def scenario():
+        app = ConnectionPickerApp(
+            initial,
+            settings=object(),
+            requester=requester,
+            auto_discover=True,
+        )
+        async with app.run_test(size=(120, 42)) as pilot:
+            for _ in range(20):
+                if ble_started.is_set():
+                    break
+                await pilot.pause(0.05)
+            assert ble_started.is_set()
+            assert "Søkjer" in str(app.query_one("#discovery-status").render())
+            assert any(
+                item.choice["transport"] == "serial"
+                for item in app.query(ConnectionItem)
+            )
+            assert not any(
+                item.choice["transport"] == "ble"
+                for item in app.query(ConnectionItem)
+            )
+
+            await pilot.press("f5")
+            await pilot.pause(0.05)
+            assert len(ble_calls) == 1
+
+            release_ble.set()
+            for _ in range(20):
+                if any(
+                    item.choice["transport"] == "ble"
+                    for item in app.query(ConnectionItem)
+                ):
+                    break
+                await pilot.pause(0.05)
+            assert any(
+                item.choice["transport"] == "ble"
+                for item in app.query(ConnectionItem)
+            )
+            assert "1 eining funnen" in str(
+                app.query_one("#discovery-status").render()
+            )
+
+            await pilot.press("f5")
+            for _ in range(20):
+                if len(ble_calls) == 2:
+                    break
+                await pilot.pause(0.05)
+            assert len(ble_calls) == 2
+
+    asyncio.run(scenario())
+
+
+def test_picker_discards_late_ble_result_after_cancel():
+    release_ble = threading.Event()
+    ble_started = threading.Event()
+    initial = discovery_data()
+    initial["ble"] = []
+    initial["ble_scanned"] = False
+
+    def requester(_settings, payload, *, timeout):
+        del timeout
+        if payload["command"] == "discover_connections":
+            local = discovery_data()
+            local["ble"] = []
+            return {"data": local}
+        if payload["command"] == "discover_ble_connections":
+            ble_started.set()
+            assert release_ble.wait(2)
+            return {
+                "data": {
+                    "ble": discovery_data()["ble"],
+                    "ble_error": None,
+                }
+            }
+        raise AssertionError(payload)
+
+    async def scenario():
+        app = ConnectionPickerApp(
+            initial,
+            settings=object(),
+            requester=requester,
+            auto_discover=True,
+        )
+        async with app.run_test(size=(120, 42)) as pilot:
+            for _ in range(20):
+                if ble_started.is_set():
+                    break
+                await pilot.pause(0.05)
+            assert ble_started.is_set()
+            await pilot.press("escape")
+            release_ble.set()
+        assert app.return_value is None
+        assert app._closed is True
+
+    asyncio.run(scenario())

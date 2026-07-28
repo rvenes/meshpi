@@ -4,7 +4,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from textual.widgets import Button, Input, ListView, RichLog, Static
+from textual.widgets import Button, Input, ListView, RichLog, Select, Static
 
 from meshpi.config import Settings
 from meshpi.tui import (
@@ -298,6 +298,19 @@ def test_channel_conversation_title_uses_safe_name_and_index():
     )
 
 
+def test_dm_conversation_title_distinguishes_channel_route():
+    assert _conversation_title(
+        {
+            "conversation": "dm:!aaaaaaaa:!11112222:global:Ops:1234",
+            "kind": "dm",
+            "peer_node": "!11112222",
+            "long_name": "Testnode",
+            "channel": 2,
+            "channel_name": "Ops",
+        }
+    ) == "DM Testnode [2222] · Ops · kanal 2"
+
+
 def test_archived_and_provisional_channel_titles_are_distinct():
     assert _conversation_title(
         {
@@ -367,6 +380,26 @@ def test_tui_distinguishes_ack_from_delivery():
     assert "transport ukjend  [levert]" in delivered
 
 
+def test_tui_shows_dm_failure_reason():
+    app = MeshPiTUI(
+        Settings(), requester=FakeBackend().request, watcher=None, update_checker=None
+    )
+    rendered = app._render_message(
+        {
+            "timestamp": "2026-07-20T12:00:00+00:00",
+            "kind": "dm",
+            "direction": "ut",
+            "from_node": "!aaaaaaaa",
+            "transport": "Ukjend",
+            "status": "feila",
+            "raw_metadata": {"failure_reason": "MAX_RETRANSMIT"},
+            "text": "Hei",
+        }
+    ).plain
+
+    assert "[feila: MAX_RETRANSMIT]" in rendered
+
+
 def test_old_messages_show_a_dim_date_before_the_time():
     date_label, time_label = _message_time_parts(
         "2026-07-21T11:30:00+00:00",
@@ -430,7 +463,7 @@ def test_status_bar_shows_current_meshpi_version_and_host(monkeypatch):
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.8.2" in text
+            assert "MeshPi 0.8.3" in text
             assert "Vert: testvert" in text
 
     run_scenario(scenario)
@@ -609,6 +642,76 @@ def test_refresh_updates_existing_list_items_without_rebuilding():
             assert list(app.query(NodeSidebarItem))[1] is node_item
             assert conversation_item.conversation["last_text"] == "Oppdatert"
             assert node_item.node["battery_level"] == 60
+
+    run_scenario(scenario)
+
+
+def test_sidebar_separates_and_toggles_channels_and_direct_messages():
+    secondary_key = "global:Venes:1234"
+    secondary_conversation = f"channel:{secondary_key}"
+
+    async def scenario():
+        backend = FakeBackend()
+        backend.conversations.insert(
+            0,
+            {
+                "conversation": secondary_conversation,
+                "kind": "public",
+                "channel": 2,
+                "channel_key": secondary_key,
+                "channel_name": "Venes",
+                "local_node_id": backend.status["local_node_id"],
+                "sendable": True,
+                "last_timestamp": "2026-07-20T11:59:00+00:00",
+                "last_text": "Kanaltest",
+                "unread": 0,
+            },
+        )
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+
+            items = list(app.query(ConversationItem))
+            assert [item.conversation_id for item in items] == [
+                PUBLIC_CONVERSATION,
+                secondary_conversation,
+                RESERVE_DM_CONVERSATION,
+            ]
+            assert items[0].label_widget.render().plain.startswith("KANALAR")
+            assert items[2].label_widget.render().plain.startswith("DM-SAMTALAR")
+
+            await pilot.press("f9")
+            await pilot.pause(0.1)
+            items = list(app.query(ConversationItem))
+            assert [item.conversation_id for item in items] == [
+                PUBLIC_CONVERSATION,
+                RESERVE_DM_CONVERSATION,
+            ]
+            assert "F9 vis sekundære" in items[0].label_widget.render().plain
+
+            await pilot.press("f8")
+            await pilot.pause(0.1)
+            assert [
+                item.conversation_id for item in app.query(ConversationItem)
+            ] == [PUBLIC_CONVERSATION]
+
+            await pilot.press("f9")
+            await pilot.pause(0.1)
+            assert [
+                item.conversation_id for item in app.query(ConversationItem)
+            ] == [PUBLIC_CONVERSATION, secondary_conversation]
+
+            await pilot.press("f8")
+            await pilot.pause(0.1)
+            assert [
+                item.conversation_id for item in app.query(ConversationItem)
+            ] == [
+                PUBLIC_CONVERSATION,
+                secondary_conversation,
+                RESERVE_DM_CONVERSATION,
+            ]
 
     run_scenario(scenario)
 
@@ -1674,6 +1777,10 @@ def test_new_dm_picker_lists_and_filters_remote_nodes():
             await pilot.pause(0.2)
             assert isinstance(app.screen, NewDMScreen)
             assert len(app.screen.query(NodePickerItem)) == 2
+            assert (
+                app.screen.query_one("#new-dm-channel", Select).value
+                == PRIMARY_CHANNEL_KEY
+            )
 
             await pilot.press(*"reserve")
             await pilot.pause(0.2)
@@ -1688,6 +1795,91 @@ def test_new_dm_picker_lists_and_filters_remote_nodes():
             } in backend.calls
 
     run_scenario(scenario)
+
+
+def test_new_dm_picker_can_create_route_on_secondary_channel():
+    secondary_key = "global:Ops:1234"
+    secondary_conversation = f"channel:{secondary_key}"
+
+    async def scenario():
+        backend = FakeBackend()
+        expected_dm = (
+            f"dm:{backend.status['local_node_id']}:"
+            f"{backend.nodes[1]['node_id']}:{secondary_key}"
+        )
+        backend.conversations.insert(
+            1,
+            {
+                "conversation": secondary_conversation,
+                "kind": "public",
+                "channel": 2,
+                "channel_key": secondary_key,
+                "channel_name": "Ops",
+                "local_node_id": backend.status["local_node_id"],
+                "sendable": True,
+                "last_timestamp": None,
+                "last_text": None,
+                "unread": 0,
+            },
+        )
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("ctrl+d")
+            await pilot.pause(0.2)
+            screen = app.screen
+            assert isinstance(screen, NewDMScreen)
+            screen.query_one("#new-dm-channel", Select).value = secondary_key
+            await pilot.press(*"reserve")
+            await pilot.pause(0.2)
+            await pilot.press("enter")
+            await pilot.pause(0.3)
+
+            assert app.current_conversation == expected_dm
+            route = app._conversation_data(expected_dm)
+            assert route is not None
+            assert route["channel"] == 2
+            assert route["channel_name"] == "Ops"
+
+    run_scenario(scenario)
+
+
+def test_current_dm_route_replaces_other_route_for_same_peer_in_sidebar():
+    backend = FakeBackend()
+    app = MeshPiTUI(
+        Settings(), requester=backend.request, watcher=None, update_checker=None
+    )
+    secondary_key = "global:Ops:1234"
+    peer_node = str(backend.nodes[1]["node_id"])
+    secondary_route = (
+        f"dm:{backend.status['local_node_id']}:{peer_node}:{secondary_key}"
+    )
+    app.current_conversation = secondary_route
+
+    visible = app._with_public(
+        backend.conversations
+        + [
+            {
+                "conversation": f"channel:{secondary_key}",
+                "kind": "public",
+                "channel": 2,
+                "channel_key": secondary_key,
+                "channel_name": "Ops",
+                "local_node_id": backend.status["local_node_id"],
+                "sendable": True,
+            }
+        ]
+    )
+
+    peer_routes = [
+        item
+        for item in visible
+        if item.get("kind") == "dm"
+        and item.get("peer_node") == peer_node
+    ]
+    assert [item["conversation"] for item in peer_routes] == [secondary_route]
 
 
 def test_tui_closes_socket_safely_if_watch_worker_clears_reference():

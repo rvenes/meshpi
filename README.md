@@ -1,7 +1,7 @@
 # MeshPi
 
 MeshPi er ein liten og stabil Meshtastic-klient for terminalen. Han held eitt
-TCP-samband til ein Meshtastic-node ope i bakgrunnen, lagrar meldingar i SQLite
+samband til ein Meshtastic-node ope i bakgrunnen, lagrar meldingar i SQLite
 og gir eit nynorsk fullskjermsgrensesnitt og vanlege CLI-kommandoar over SSH.
 
 > [!WARNING]
@@ -23,7 +23,8 @@ likevel skilde frå CLI-en, slik at eit webgrensesnitt kan leggjast til seinare.
 - viser kjende nodar og tilgjengeleg nodeinformasjon
 - loggar motteken telemetri og GPS-posisjonar per kjeldenode i SQLite
 - samlar nodeinfo, telemetri, posisjonar og traceroute-logg i éi vising
-- kan byte mellom lagra, oppdaga eller manuelle TCP- og USB/serielle profilar
+- kan byte mellom lagra, oppdaga eller manuelle TCP-, USB/serielle og
+  eksperimentelle BLE-profilar
 - viser RF, MQTT eller «Ukjend» utan å gjette
 - viser RSSI, SNR og hoppinformasjon når ho finst
 - skil vanleg/implisitt ACK frå ende-til-ende-ACK til DM-mottakaren
@@ -52,11 +53,12 @@ berre eitt program om gongen bruker TCP-sambandet til radioen.
 
 - Linux med systemd, macOS eller Windows 10/11
 - Python 3.11 eller nyare
-- ein Meshtastic-node via TCP eller USB/seriell
+- ein Meshtastic-node via TCP, USB/seriell eller BLE
 
 Ei ny installering har ingen førehandsvald node. Første gong du køyrer
-`meshpi`, opnar nodeveljaren automatisk og viser oppdaga TCP- og USB-einingar.
-Du kan òg skrive IP, vertsnamn, COM-port eller seriellsti manuelt.
+`meshpi`, opnar nodeveljaren automatisk og viser oppdaga TCP-, USB- og
+BLE-einingar. Du kan òg skrive IP, vertsnamn, COM-port, seriellsti eller
+`ble://IDENTIFIKATOR` manuelt.
 
 ## Installere
 
@@ -265,6 +267,7 @@ tilgjengeleg:
 ```bash
 meshpi connect 10.0.0.135
 meshpi connect /dev/ttyACM0 --name "USB-node"
+meshpi connect "ble://A1:B2:C3:D4:E5:F6" --name "BLE-node"
 ```
 
 Opne den interaktive tilkoplingsveljaren:
@@ -273,10 +276,12 @@ Opne den interaktive tilkoplingsveljaren:
 meshpi new
 ```
 
-Veljaren viser lagra profilar, oppdaga USB-portar og Meshtastic TCP-portar i det
-konfigurerte lokalnettet. Skriv for å filtrere eller skrive eit manuelt mål,
-bruk `↑`/`↓`, og trykk Enter for å byte og opne TUI-en. Ein lagra seriellprofil
-blir merkt `IKKJE TILKOPLA` og lagd nedst dersom USB-identiteten ikkje finst.
+Veljaren opnar straks med lagra profilar. Oppdaga USB-portar og Meshtastic
+TCP-portar i det konfigurerte lokalnettet kjem inn først, medan BLE-linja viser
+«Søkjer …». BLE-resultata kjem normalt etter om lag ti sekund. Trykk F5 for
+eit nytt søk. Skriv for å filtrere eller skrive eit manuelt mål, bruk `↑`/`↓`,
+og trykk Enter for å byte og opne TUI-en. Ein lagra seriell- eller BLE-profil
+blir merkt `IKKJE TILKOPLA` og lagd nedst dersom eininga ikkje finst.
 Innebygde Linux-portar som `/dev/ttyS*` er skjulte som standard; trykk F4 for å
 vise dei. Vis profilane utan å byte:
 
@@ -296,10 +301,19 @@ noden. Ei historisk, ukjend eller mellombels rute er lesbar, men ikkje sendbar,
 og fell aldri stille tilbake til kanal 0. Dersom ei melding kjem før
 kanaloversikta er klar, blir ho lagra på ei mellombels rute og automatisk bunden
 om når noden leverer den verkelege kanalbindinga.
+Når du opprettar ein ny DM med `Ctrl+D`, vel du først kva lokal kanal ruta skal
+bruke. Kanalindeksen kan vere ulik på mottakarnoden. Dersom radioen avviser
+meldinga, viser MeshPi òg Meshtastic-årsaka, til dømes `NO_CHANNEL`, i staden
+for berre «feila».
 
-Bluetooth/BLE er ikkje aktivert i denne versjonen. Det blir ei eiga seinare
-fase, sidan Linux-tenesta då òg må handtere Bluetooth-oppdaging, paring og
-tilgangsrettar på ein føreseieleg måte.
+Bluetooth/BLE-støtta er førebels eksperimentell. `meshpi new` startar eit
+uttrykkeleg BLE-søk i bakgrunnen som normalt tek om lag ti sekund. Veljaren
+kan lukkast medan søket går; eit eventuelt seint svar blir då forkasta. MeshPi
+lagrar plattformidentifikatoren som ei ugjennomsiktig verdi; på macOS er dette ein
+maskinspesifikk CoreBluetooth-UUID, ikkje ei MAC-adresse. Paring og
+Bluetooth-løyve blir handterte i operativsystemet. MeshPi lagrar ingen PIN og
+endrar ikkje Bluetooth- eller radiokonfigurasjonen på noden. BLE i
+systemtenester på Linux/macOS og BLE i Docker er ikkje ferdig plattformtesta.
 
 ## Fullskjermsgrensesnitt
 
@@ -310,6 +324,9 @@ DM som kjem til ei anna samtale, gir eit synleg varsel. Marker ein node i
 høgrepanelet for å vise detaljane, og trykk Enter for å opne DM. «Ny DM» viser
 òg heile nodelista og kan filtrerast på namn eller node-ID. Høgreklikk på
 ein node, eller marker han og trykk `Shift+F10`, for å opne nodehandlingane.
+Samtalelista viser berre éi DM-oppføring per motpart, sjølv om eldre data har
+fleire kanalruter til same node. Gamle «Public (arkiv …)»-ruter blir ikkje
+viste, men historikken blir verande i databasen.
 Her kan du mellom anna sende traceroute. Status og resultat kjem som ei tydeleg
 ramme i DM-samtalen med noden, slik at resten av appen kan brukast medan du
 ventar. Vel «Nodeinfo og loggar» i den same menyen for ei samla vising med
@@ -345,6 +362,8 @@ Ctrl+L             flytt markøren til meldingsfeltet
 Ctrl+D             finn ein node og start ein ny DM
 F2                 flytt markøren til samtalelista
 F3                 flytt markøren til nodelista
+F8                 vis eller skjul DM-samtalane
+F9                 vis eller skjul sekundærkanalane; primærkanalen blir ståande
 Shift+F10          opne handlingar for markert node
 Delete             lukk vald DM utan å slette historikken
 Ctrl+R             oppdater status, samtalar og nodar
@@ -377,8 +396,8 @@ Alle CLI-kommandoane:
 | Kommando | Kva han gjer |
 |---|---|
 | `meshpi` eller `meshpi tui` | Start fullskjermsgrensesnittet. |
-| `meshpi new` | Oppdag, vel eller legg til ei tilkopling, og opne TUI-en. |
-| `meshpi connect MÅL [--name NAMN]` | Byt til ei TCP- eller serielltilkopling. |
+| `meshpi new` | Oppdag, vel eller legg til ei tilkopling; F5 søkjer på nytt. |
+| `meshpi connect MÅL [--name NAMN]` | Byt til ei TCP-, seriell- eller BLE-tilkopling. |
 | `meshpi connections` | Vis lagra tilkoplingsprofilar. |
 | `meshpi daemon` | Køyr bakgrunnstenesta i framgrunnen; mest for feilsøking og tenesteoppsett. |
 | `meshpi doctor [--offline]` | Køyr sjølvtest; `--offline` krev ikkje ein tilgjengeleg node. |
@@ -417,12 +436,13 @@ meshpi tui
 meshpi new
 meshpi connect 192.0.2.42 --name "Heimenode"
 meshpi connect COM4 --name "USB-node"
+meshpi connect "ble://A1:B2:C3:D4:E5:F6" --name "BLE-node"
 meshpi connections
 ```
 
-Du kan òg skrive eit TCP-mål eller ei seriellsti direkte, til dømes
-`meshpi 192.0.2.42` eller `meshpi COM4`. Det er ein snarveg til `meshpi
-connect MÅL`.
+Du kan òg skrive eit TCP-mål, ei seriellsti eller eit BLE-mål direkte, til
+dømes `meshpi 192.0.2.42`, `meshpi COM4` eller
+`meshpi ble://A1:B2:C3:D4:E5:F6`. Det er ein snarveg til `meshpi connect MÅL`.
 
 ### Status og nodar
 
@@ -580,6 +600,8 @@ Når `DISCOVERY_SUBNET` er tom, finn MeshPi det lokale IPv4-nettet automatisk
 og søkjer der. Set til dømes `DISCOVERY_SUBNET=192.168.1.0/24` for å avgrense
 TCP-søket manuelt. Nettet kan maksimalt vere `/22`. Seriell oppdaging brukar
 systemet si portliste og føretrekkjer stabile stiar under `/dev/serial/by-id`.
+BLE-oppdaging skjer berre når tilkoplingsveljaren blir opna og filtrerer på
+Meshtastic sin BLE-service.
 To elles like USB-einingar utan serienummer eller annan stabil maskinvare-ID
 kan byte portnamn etter fråkopling eller omstart. Gi slike profilar tydelege
 namn og kontroller porten før bruk.

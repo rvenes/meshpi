@@ -766,6 +766,7 @@ class Database:
         packet_id: int,
         status: MessageStatus,
         local_node_id: str | None = None,
+        failure_reason: str | None = None,
     ) -> bool:
         if status == MessageStatus.ACKNOWLEDGED:
             allowed_statuses = (str(MessageStatus.QUEUED), "stadfesta")
@@ -788,22 +789,53 @@ class Database:
             (local_node_id,) if local_node_id else ()
         )
         with self._connect() as connection:
-            cursor = connection.execute(
+            row = connection.execute(
                 f"""
-                UPDATE messages SET status = ?
-                WHERE id = (
-                    SELECT id FROM messages
-                    WHERE packet_id = ? AND direction = 'ut'
-                      AND status IN ({placeholders})
-                      {local_filter}
-                    ORDER BY id DESC LIMIT 1
-                )
+                SELECT id, raw_metadata FROM messages
+                WHERE packet_id = ? AND direction = 'ut'
+                  AND status IN ({placeholders})
+                  {local_filter}
+                ORDER BY id DESC LIMIT 1
                 """,  # nosec B608 -- ledda kjem frå lokale, faste konstantar
                 (
-                    str(status),
                     packet_id,
                     *allowed_statuses,
                     *local_params,
+                ),
+            ).fetchone()
+            if row is None:
+                return False
+            metadata: dict[str, Any] = {}
+            if row["raw_metadata"]:
+                try:
+                    parsed = json.loads(row["raw_metadata"])
+                    if isinstance(parsed, dict):
+                        metadata = parsed
+                except (TypeError, json.JSONDecodeError):
+                    pass
+            if failure_reason:
+                metadata["failure_reason"] = failure_reason
+            elif status != MessageStatus.FAILED:
+                metadata.pop("failure_reason", None)
+            cursor = connection.execute(
+                f"""
+                UPDATE messages
+                SET status=?, raw_metadata=?
+                WHERE id=? AND status IN ({placeholders})
+                """,  # nosec B608 -- plasshaldarane er lokalt bygde
+                (
+                    str(status),
+                    (
+                        json.dumps(
+                            metadata,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        )
+                        if metadata
+                        else None
+                    ),
+                    row["id"],
+                    *allowed_statuses,
                 ),
             )
             return cursor.rowcount > 0
@@ -1159,6 +1191,166 @@ class Database:
                         WHERE message_id=?
                         """,
                         (channel_index, channel_key, row["id"]),
+                    )
+                old_conversation_id = str(row["conversation_id"] or "")
+                if old_conversation_id:
+                    connection.execute(
+                        """
+                        INSERT OR IGNORE INTO archived_conversation_ids (
+                            conversation_id, archived_at
+                        )
+                        SELECT ?, archived_at
+                        FROM archived_conversation_ids
+                        WHERE conversation_id=?
+                        """,
+                        (conversation_id, old_conversation_id),
+                    )
+                    connection.execute(
+                        """
+                        DELETE FROM archived_conversation_ids
+                        WHERE conversation_id=?
+                        """,
+                        (old_conversation_id,),
+                    )
+                rebound += 1
+        return rebound
+
+    def rebind_legacy_primary_dms(
+        self,
+        local_node_id: str,
+        channel_index: int,
+        channel_key: str,
+    ) -> int:
+        """Bind trygg, eldre DM-historikk til den stadfesta primærkanalen."""
+        if channel_index != 0:
+            raise ValueError("Eldre DM-historikk kan berre bindast til primærkanalen")
+        rebound = 0
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM messages
+                WHERE kind='dm'
+                  AND channel=0
+                  AND channel_key IS NULL
+                  AND conversation_id=peer_node
+                  AND peer_node IS NOT NULL
+                  AND LOWER(peer_node)<>LOWER(?)
+                  AND (
+                      local_node_id IS NULL
+                      OR LOWER(local_node_id)=LOWER(?)
+                  )
+                  AND (
+                      (
+                          LOWER(from_node)=LOWER(?)
+                          AND LOWER(to_node)=LOWER(peer_node)
+                      )
+                      OR (
+                          LOWER(to_node)=LOWER(?)
+                          AND LOWER(from_node)=LOWER(peer_node)
+                      )
+                  )
+                ORDER BY id
+                """,
+                (
+                    local_node_id,
+                    local_node_id,
+                    local_node_id,
+                    local_node_id,
+                ),
+            ).fetchall()
+            for row in rows:
+                peer_node = str(row["peer_node"]).lower()
+                conversation_id = dm_conversation_id(
+                    local_node_id,
+                    peer_node,
+                    channel_key,
+                )
+                duplicate = None
+                if row["packet_id"] is not None:
+                    duplicate = connection.execute(
+                        """
+                        SELECT id
+                        FROM messages
+                        WHERE id<>?
+                          AND packet_id=?
+                          AND direction=?
+                          AND COALESCE(from_node, '')=COALESCE(?, '')
+                          AND COALESCE(to_node, '')=COALESCE(?, '')
+                          AND COALESCE(conversation_id, '')=?
+                          AND text=?
+                        ORDER BY id
+                        LIMIT 1
+                        """,
+                        (
+                            row["id"],
+                            row["packet_id"],
+                            row["direction"],
+                            row["from_node"],
+                            row["to_node"],
+                            conversation_id,
+                            row["text"],
+                        ),
+                    ).fetchone()
+                observations = connection.execute(
+                    """
+                    SELECT *
+                    FROM message_observations
+                    WHERE message_id=?
+                    ORDER BY id
+                    """,
+                    (row["id"],),
+                ).fetchall()
+                target_message_id = (
+                    int(duplicate["id"]) if duplicate is not None else int(row["id"])
+                )
+                if duplicate is None:
+                    connection.execute(
+                        """
+                        UPDATE messages
+                        SET local_node_id=?, channel=?, channel_key=?,
+                            conversation_id=?
+                        WHERE id=?
+                        """,
+                        (
+                            local_node_id.lower(),
+                            channel_index,
+                            channel_key,
+                            conversation_id,
+                            row["id"],
+                        ),
+                    )
+                    connection.execute(
+                        "DELETE FROM message_observations WHERE message_id=?",
+                        (row["id"],),
+                    )
+                for observation in observations:
+                    connection.execute(
+                        """
+                        INSERT OR IGNORE INTO message_observations (
+                            message_id, observed_at, local_node_id,
+                            gateway_profile_id, channel_index, channel_key,
+                            transport, rssi, snr, hop_limit, hop_start
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            target_message_id,
+                            observation["observed_at"],
+                            local_node_id.lower(),
+                            observation["gateway_profile_id"],
+                            channel_index,
+                            channel_key,
+                            observation["transport"],
+                            observation["rssi"],
+                            observation["snr"],
+                            observation["hop_limit"],
+                            observation["hop_start"],
+                        ),
+                    )
+                if duplicate is not None:
+                    connection.execute(
+                        "DELETE FROM messages WHERE id=?",
+                        (row["id"],),
                     )
                 old_conversation_id = str(row["conversation_id"] or "")
                 if old_conversation_id:
