@@ -112,6 +112,7 @@ def test_discover_connections_can_return_local_results_without_ble(
     assert result["tcp"] == []
     assert result["ble"] == []
     assert result["ble_error"] is None
+    assert result["ble_scanned"] is False
 
 
 def test_discover_connections_reports_concurrent_ble_scan(service, monkeypatch):
@@ -126,6 +127,40 @@ def test_discover_connections_reports_concurrent_ble_scan(service, monkeypatch):
 
     assert result["ble"] == []
     assert "allereie i gang" in result["ble_error"]
+    assert result["ble_scanned"] is False
+
+
+def test_discover_connections_distinguishes_ble_connect_from_scan(service):
+    value, _, _ = service
+    value._ble_connect_active.set()
+    value._ble_operation_lock.acquire()
+    try:
+        result = value.discover_ble_connections()
+    finally:
+        value._ble_operation_lock.release()
+        value._ble_connect_active.clear()
+
+    assert result["ble"] == []
+    assert "ferd med å kople til" in result["ble_error"]
+    assert result["ble_scanned"] is False
+
+
+def test_waiting_ble_connect_does_not_mislabel_active_scan(service):
+    value, _, _ = service
+    value.interface_factory = lambda _profile: FakeInterface()
+    profile = ConnectionProfile.ble("A1:B2:C3:D4:E5:F6")
+    value._ble_operation_lock.acquire()
+    worker = threading.Thread(target=value._create_interface, args=(profile,))
+    worker.start()
+    try:
+        assert value._ble_connect_active.is_set() is False
+        result = value.discover_ble_connections()
+    finally:
+        value._ble_operation_lock.release()
+        worker.join(timeout=2)
+
+    assert "allereie i gang" in result["ble_error"]
+    assert "kople til" not in result["ble_error"]
 
 
 def test_service_saves_ble_profile_and_exposes_identifier(service):

@@ -383,6 +383,12 @@ class Database:
             ON messages(conversation_id, id DESC)
             """
         )
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS messages_channel_binding
+            ON messages(local_node_id, channel_key, kind)
+            """
+        )
 
     def _prune_messages(self, connection: sqlite3.Connection) -> None:
         connection.execute(
@@ -868,12 +874,17 @@ class Database:
         kind: str,
         peer_node: str | None = None,
         conversation_id: str | None = None,
+        conversation_ids: list[str] | None = None,
         channel_index: int | None = None,
         limit: int = 100,
         mark_read: bool = False,
     ) -> list[dict[str, Any]]:
         limit = max(1, min(limit, 1000))
-        if conversation_id:
+        if conversation_ids:
+            placeholders = ", ".join("?" for _ in conversation_ids)
+            where = f"kind = ? AND conversation_id IN ({placeholders})"
+            params = (kind, *conversation_ids)
+        elif conversation_id:
             where = "conversation_id = ?"
             params: tuple[Any, ...] = (conversation_id,)
         elif kind == "public":
@@ -934,7 +945,8 @@ class Database:
                 CASE WHEN kind = 'public' THEN 'public' ELSE peer_node END
             )
         )
-        SELECT grouped.conversation, grouped.kind, messages.timestamp AS last_timestamp,
+        SELECT grouped.conversation, grouped.kind, grouped.last_message_id,
+               messages.timestamp AS last_timestamp,
                grouped.unread, messages.text AS last_text, messages.from_node, messages.to_node,
                messages.channel, messages.channel_key, messages.local_node_id,
                messages.peer_node, messages.gateway_profile_id,

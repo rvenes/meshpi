@@ -24,7 +24,15 @@ set_env_value() {
         { print }
         END { if (!found) print key "=" value }
     ' "$CONFIG_FILE" >"$TMP_DIR/config-update"
-    cat "$TMP_DIR/config-update" >"$CONFIG_FILE"
+    config_tmp="$(mktemp "${CONFIG_FILE}.tmp.XXXXXX")"
+    if cp -p "$CONFIG_FILE" "$config_tmp" &&
+        cat "$TMP_DIR/config-update" >"$config_tmp" &&
+        mv -f "$config_tmp" "$CONFIG_FILE"
+    then
+        return 0
+    fi
+    rm -f "$config_tmp"
+    return 1
 }
 
 resolve_ipc_socket_gid() {
@@ -478,6 +486,7 @@ EOF
         "$SYSTEMCTL" stop meshpi.service >/dev/null 2>&1 || true
         if [ -n "$OLD_RELEASE" ] && [ -d "$OLD_RELEASE" ]; then
             switch_link "$OLD_RELEASE"
+            rm -f "$PREVIOUS_LINK"
             "$SYSTEMCTL" start meshpi.service || true
             echo "Oppdateringa feila. Førre versjon er sett tilbake." >&2
         else

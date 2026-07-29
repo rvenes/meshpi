@@ -71,6 +71,19 @@ def test_database_is_private_on_posix(tmp_path):
     assert path.stat().st_mode & 0o777 == 0o600
 
 
+def test_database_indexes_periodic_channel_rebinding(tmp_path):
+    path = tmp_path / "messages.db"
+    Database(path).initialize()
+
+    with sqlite3.connect(path) as connection:
+        indexes = {
+            row[1]
+            for row in connection.execute("PRAGMA index_list(messages)").fetchall()
+        }
+
+    assert "messages_channel_binding" in indexes
+
+
 def test_store_retrieve_and_deduplicate_message(tmp_path):
     database = Database(tmp_path / "messages.db")
     database.initialize()

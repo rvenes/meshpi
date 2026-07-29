@@ -2397,6 +2397,30 @@ class MeshPiTUI(App[str | None]):
             return None
         return conversation if conversation.startswith("!") else None
 
+    def _message_conversation_query(self, conversation: str) -> dict[str, Any]:
+        item = self._conversation_data(conversation)
+        if item and item.get("merged_routes"):
+            return {
+                "conversations": [
+                    conversation,
+                    *(
+                        str(route)
+                        for route in item.get("merged_routes", [])
+                    ),
+                ]
+            }
+        return {"conversation": conversation}
+
+    def _conversation_contains_route(
+        self,
+        conversation: str,
+        route: str,
+    ) -> bool:
+        if route == conversation:
+            return True
+        item = self._conversation_data(conversation)
+        return bool(item and route in item.get("merged_routes", []))
+
     def select_conversation(self, conversation: str) -> None:
         self.current_conversation = conversation
         selected_data = self._conversation_data(conversation)
@@ -2429,9 +2453,9 @@ class MeshPiTUI(App[str | None]):
             messages = self._call(
                 {
                     "command": "messages",
-                    "conversation": conversation,
                     "limit": 300,
                     "mark_read": True,
+                    **self._message_conversation_query(conversation),
                 }
             )["data"]
             node_actions = (
@@ -2943,14 +2967,20 @@ class MeshPiTUI(App[str | None]):
             data.get("conversation_id")
             or ("public" if data.get("kind") == "public" else data.get("peer_node"))
         )
-        if conversation == self.current_conversation:
+        if self._conversation_contains_route(
+            self.current_conversation,
+            str(conversation),
+        ):
             self.query_one("#message-log", RichLog).write(
                 self._render_message(data),
                 scroll_end=True,
             )
             if data.get("direction") == "inn":
+                selected_conversation = self.current_conversation
                 self.run_worker(
-                    lambda: self._mark_conversation_read_worker(str(conversation)),
+                    lambda: self._mark_conversation_read_worker(
+                        selected_conversation
+                    ),
                     name=f"mark-read-{conversation}",
                     group="mark-read",
                     thread=True,
@@ -2989,9 +3019,9 @@ class MeshPiTUI(App[str | None]):
             self._call(
                 {
                     "command": "messages",
-                    "conversation": conversation,
                     "limit": 1,
                     "mark_read": True,
+                    **self._message_conversation_query(conversation),
                 }
             )
             conversations = self._call(
@@ -3040,6 +3070,10 @@ class MeshPiTUI(App[str | None]):
         self.query_one("#message-input", Input).focus()
 
     def action_focus_conversations(self) -> None:
+        if not self.query_one("#conversation-panel", Vertical).display:
+            self.query_one("#message-input", Input).focus()
+            self.notify("Samtalelista er skjult i denne vindaugsbreidda", timeout=3)
+            return
         self.query_one("#conversation-list", ListView).focus()
 
     def action_focus_nodes(self) -> None:

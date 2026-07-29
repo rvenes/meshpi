@@ -7,10 +7,11 @@ import sys
 import threading
 from contextlib import suppress
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from meshpi import __version__
-from meshpi.channels import parse_public_conversation_id
+from meshpi.channels import parse_dm_conversation_id, parse_public_conversation_id
 from meshpi.client import CLIError
 from meshpi.client import open_watch as _open_watch
 from meshpi.client import request as _request
@@ -66,6 +67,16 @@ def _normalize_argv(argv: list[str]) -> list[str]:
     if argv and not argv[0].startswith("-") and argv[0] not in COMMANDS:
         return ["connect", argv[0], *argv[1:]]
     return argv
+
+
+def _default_env_file() -> str:
+    """Bruk installatøren sin UTF-8-sidepeikar når launcheren har ein."""
+    try:
+        pointer = Path(sys.argv[0]).resolve().with_name("meshpi.env-path")
+        configured = pointer.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return ".env"
+    return configured or ".env"
 
 
 def _local_time(value: str | int | None) -> str:
@@ -368,6 +379,26 @@ def _watch(settings: Settings, conversation: str, raw_json: bool = False) -> Non
         sock.close()
 
 
+def _chat_dm_peer(
+    conversation: str,
+    history: list[dict[str, Any]],
+) -> str:
+    if not conversation.startswith("dm:"):
+        return conversation
+    peer = next(
+        (
+            str(message["peer_node"])
+            for message in reversed(history)
+            if message.get("peer_node")
+        ),
+        "",
+    )
+    if peer:
+        return peer
+    _, peer, _ = parse_dm_conversation_id(conversation)
+    return peer
+
+
 def _chat(settings: Settings, conversation: str, limit: int) -> None:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.patch_stdout import patch_stdout
@@ -386,18 +417,7 @@ def _chat(settings: Settings, conversation: str, limit: int) -> None:
             "mark_read": True,
         },
     )["data"]
-    dm_peer = normalized
-    if normalized.startswith("dm:"):
-        dm_peer = next(
-            (
-                str(message["peer_node"])
-                for message in reversed(history)
-                if message.get("peer_node")
-            ),
-            "",
-        )
-        if not dm_peer:
-            raise CLIError("Fann ikkje mottakarnoden for DM-samtalen")
+    dm_peer = _chat_dm_peer(normalized, history)
     label = (
         "Public – primærkanal"
         if normalized == "public"
@@ -504,7 +524,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--env-file",
-        default=".env",
+        default=_default_env_file(),
         help="sti til miljøfil (standard: .env)",
     )
     parser.add_argument(

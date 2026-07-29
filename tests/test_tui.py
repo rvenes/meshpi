@@ -194,10 +194,31 @@ class FakeBackend:
         elif command == "nodes":
             data = self.nodes
         elif command == "messages":
-            data = self.messages.get(payload["conversation"], [])
+            requested_routes = payload.get("conversations")
+            requested_conversation = payload.get("conversation")
+            if requested_routes:
+                data = [
+                    message
+                    for route in requested_routes
+                    for message in self.messages.get(route, [])
+                ]
+            else:
+                data = self.messages.get(requested_conversation)
+            if data is None and str(requested_conversation).startswith("!"):
+                data = [
+                    message
+                    for messages in self.messages.values()
+                    for message in messages
+                    if message.get("peer_node") == requested_conversation
+                ]
+            data = data or []
             if payload.get("mark_read"):
                 for conversation in self.conversations:
-                    if conversation["conversation"] == payload["conversation"]:
+                    if (
+                        conversation["conversation"] == requested_conversation
+                        or conversation.get("peer_node") == requested_conversation
+                        or conversation["conversation"] in (requested_routes or [])
+                    ):
                         conversation["unread"] = 0
         elif command == "node":
             data = next(
@@ -447,6 +468,150 @@ def test_tui_uses_enter_to_activate_and_tab_to_move_between_panes():
             assert app.query_one("#conversation-list", ListView).has_focus
             await pilot.press("shift+tab")
             assert app.query_one("#node-list", ListView).has_focus
+
+    run_scenario(scenario)
+
+
+def test_merged_dm_loads_all_routes_and_accepts_live_message_from_old_route():
+    async def scenario():
+        backend = FakeBackend()
+        old_route = "dm:!aaaaaaaa:!710365c8:legacy:serial-old:0"
+        backend.conversations[1]["merged_routes"] = [old_route]
+        backend.conversations[1]["unread"] = 2
+        backend.messages[old_route] = [
+            {
+                "timestamp": "2026-07-19T12:01:00+00:00",
+                "kind": "dm",
+                "direction": "inn",
+                "from_node": "!710365c8",
+                "peer_node": "!710365c8",
+                "transport": "RF",
+                "text": "Gammal rute",
+            }
+        ]
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("f2", "down", "enter")
+            await pilot.pause(0.3)
+
+            rendered = "\n".join(
+                line.text for line in app.query_one("#message-log", RichLog).lines
+            )
+            assert "Hei" in rendered
+            assert "Gammal rute" in rendered
+            assert {
+                "command": "messages",
+                "limit": 300,
+                "mark_read": True,
+                "conversations": [
+                    RESERVE_DM_CONVERSATION,
+                    old_route,
+                ],
+            } in backend.calls
+
+            app.post_message(
+                LiveEvent(
+                    {
+                        "type": "message",
+                        "data": {
+                            "conversation_id": old_route,
+                            "timestamp": "2026-07-20T12:02:00+00:00",
+                            "kind": "dm",
+                            "direction": "inn",
+                            "from_node": "!710365c8",
+                            "peer_node": "!710365c8",
+                            "transport": "RF",
+                            "text": "Ny på gammal rute",
+                        },
+                    }
+                )
+            )
+            await pilot.pause(0.2)
+            rendered = "\n".join(
+                line.text for line in app.query_one("#message-log", RichLog).lines
+            )
+            assert "Ny på gammal rute" in rendered
+
+    run_scenario(scenario)
+
+
+def test_archived_route_stays_hidden_from_merged_dm_history():
+    async def scenario():
+        backend = FakeBackend()
+        visible_route = "dm:!bbbbbbbb:!710365c8:global:LongFast:1234"
+        archived_route = "dm:!aaaaaaaa:!710365c8:legacy:serial-old:0"
+        backend.conversations[1]["merged_routes"] = [visible_route]
+        backend.messages[visible_route] = [
+            {
+                "timestamp": "2026-07-19T12:01:00+00:00",
+                "kind": "dm",
+                "direction": "inn",
+                "from_node": "!710365c8",
+                "peer_node": "!710365c8",
+                "transport": "RF",
+                "text": "Synleg eldre rute",
+            }
+        ]
+        backend.messages[archived_route] = [
+            {
+                "timestamp": "2026-07-18T12:01:00+00:00",
+                "kind": "dm",
+                "direction": "inn",
+                "from_node": "!710365c8",
+                "peer_node": "!710365c8",
+                "transport": "RF",
+                "text": "Skal vere arkivert",
+            }
+        ]
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("f2", "down", "enter")
+            await pilot.pause(0.3)
+
+            rendered = "\n".join(
+                line.text for line in app.query_one("#message-log", RichLog).lines
+            )
+            assert "Hei" in rendered
+            assert "Synleg eldre rute" in rendered
+            assert "Skal vere arkivert" not in rendered
+            assert {
+                "command": "messages",
+                "limit": 300,
+                "mark_read": True,
+                "conversations": [
+                    RESERVE_DM_CONVERSATION,
+                    visible_route,
+                ],
+            } in backend.calls
+
+            app.post_message(
+                LiveEvent(
+                    {
+                        "type": "message",
+                        "data": {
+                            "conversation_id": archived_route,
+                            "timestamp": "2026-07-20T12:02:00+00:00",
+                            "kind": "dm",
+                            "direction": "inn",
+                            "from_node": "!710365c8",
+                            "peer_node": "!710365c8",
+                            "transport": "RF",
+                            "text": "Live frå arkiv",
+                        },
+                    }
+                )
+            )
+            await pilot.pause(0.2)
+            rendered = "\n".join(
+                line.text for line in app.query_one("#message-log", RichLog).lines
+            )
+            assert "Live frå arkiv" not in rendered
 
     run_scenario(scenario)
 
@@ -855,6 +1020,22 @@ def test_tui_hides_node_panel_in_narrow_terminal():
             await pilot.pause(0.3)
             assert app.query_one("#node-panel").display is False
             assert app.query_one("#conversation-panel").display is True
+
+    run_scenario(scenario)
+
+
+def test_f2_does_not_focus_hidden_conversation_list():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(55, 36)) as pilot:
+            await pilot.pause(0.3)
+            assert app.query_one("#conversation-panel").display is False
+            await pilot.press("f2")
+            assert app.query_one("#message-input", Input).has_focus
+            assert not app.query_one("#conversation-list", ListView).has_focus
 
     run_scenario(scenario)
 

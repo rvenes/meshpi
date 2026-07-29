@@ -70,13 +70,17 @@ class IPCApplication:
     ) -> list[dict[str, Any]]:
         visible: list[dict[str, Any]] = []
         dm_positions: dict[str, int] = {}
+        dm_routes: dict[str, list[dict[str, Any]]] = {}
 
-        def dm_priority(item: dict[str, Any]) -> tuple[bool, bool, bool, str]:
+        def dm_priority(
+            item: dict[str, Any],
+        ) -> tuple[bool, bool, bool, int, str]:
             conversation = str(item.get("conversation") or "")
             return (
                 item.get("sendable") is True,
                 conversation == preferred_conversation,
                 conversation.startswith("dm:"),
+                int(item.get("last_message_id") or 0),
                 str(item.get("last_timestamp") or ""),
             )
 
@@ -97,9 +101,35 @@ class IPCApplication:
             position = dm_positions.get(peer)
             if position is None:
                 dm_positions[peer] = len(visible)
-                visible.append(item)
-            elif dm_priority(item) > dm_priority(visible[position]):
-                visible[position] = item
+                dm_routes[peer] = [item]
+                visible.append(dict(item))
+            else:
+                dm_routes[peer].append(item)
+                if dm_priority(item) > dm_priority(visible[position]):
+                    visible[position] = dict(item)
+
+        for peer, routes in dm_routes.items():
+            position = dm_positions[peer]
+            selected = visible[position]
+            selected_conversation = str(selected.get("conversation") or "")
+            newest = max(
+                routes,
+                key=lambda route: (
+                    int(route.get("last_message_id") or 0),
+                    str(route.get("last_timestamp") or ""),
+                ),
+            )
+            selected["last_message_id"] = newest.get("last_message_id")
+            selected["last_timestamp"] = newest.get("last_timestamp")
+            selected["last_text"] = newest.get("last_text")
+            selected["unread"] = sum(
+                int(route.get("unread") or 0) for route in routes
+            )
+            selected["merged_routes"] = [
+                str(route.get("conversation") or "")
+                for route in routes
+                if str(route.get("conversation") or "") != selected_conversation
+            ]
         return visible
 
     def matches_message_event(
@@ -345,7 +375,32 @@ class IPCApplication:
             conversation = str(request.get("conversation", "public"))
             limit = int(request.get("limit", 100))
             mark_read = bool(request.get("mark_read", False))
-            if conversation == "public":
+            requested_routes = request.get("conversations")
+            if requested_routes is not None:
+                if (
+                    not isinstance(requested_routes, list)
+                    or not 1 <= len(requested_routes) <= 64
+                ):
+                    raise ValueError("Samtalerutene må vere ei liste med 1–64 ruter")
+                routes: list[str] = []
+                peers: set[str] = set()
+                for value in requested_routes:
+                    route_local, route_peer, route_key = parse_dm_conversation_id(
+                        str(value)
+                    )
+                    routes.append(
+                        dm_conversation_id(route_local, route_peer, route_key)
+                    )
+                    peers.add(route_peer)
+                if len(peers) != 1:
+                    raise ValueError("Samanslåtte DM-ruter må ha same mottakar")
+                data = self.database.list_messages(
+                    "dm",
+                    conversation_ids=list(dict.fromkeys(routes)),
+                    limit=limit,
+                    mark_read=mark_read,
+                )
+            elif conversation == "public":
                 primary = self.active_channel(
                     int(request.get("channel_index", 0))
                 )

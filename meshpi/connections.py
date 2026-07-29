@@ -19,6 +19,10 @@ CONNECTION_FILE_VERSION = 2
 SUPPORTED_TRANSPORTS = {"tcp", "serial", "ble"}
 WINDOWS_PORT = re.compile(r"^COM\d+$", re.IGNORECASE)
 LINUX_LEGACY_SERIAL = re.compile(r"^/dev/ttyS\d+$")
+BLE_MAC_ADDRESS = re.compile(r"^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
+BLE_UUID = re.compile(
+    r"^[0-9A-Fa-f]{8}-(?:[0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$"
+)
 
 
 class SerialIdentityMismatchError(RuntimeError):
@@ -28,6 +32,14 @@ class SerialIdentityMismatchError(RuntimeError):
 def _profile_id(transport: str, endpoint: str) -> str:
     digest = hashlib.sha256(f"{transport}:{endpoint}".encode()).hexdigest()[:12]
     return f"{transport}-{digest}"
+
+
+def canonical_ble_identifier(identifier: str) -> str:
+    """Normaliser kjende BLE-adresser, men bevar ugjennomsiktige plattform-ID-ar."""
+    identifier = identifier.strip()
+    if BLE_MAC_ADDRESS.fullmatch(identifier) or BLE_UUID.fullmatch(identifier):
+        return identifier.upper()
+    return identifier
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,7 +125,7 @@ class ConnectionProfile:
         identifier: str,
         name: str | None = None,
     ) -> ConnectionProfile:
-        identifier = identifier.strip()
+        identifier = canonical_ble_identifier(identifier)
         if not identifier:
             raise ValueError("BLE-identifikatoren kan ikkje vere tom")
         return cls(
@@ -211,18 +223,31 @@ class ConnectionStore:
         with self._lock:
             if self.path.is_file():
                 data = self._read()
-                if data["version"] == 1:
-                    self._write(
-                        {
-                            "version": CONNECTION_FILE_VERSION,
-                            "active_profile_id": data.get("active_profile_id"),
-                            "profiles": [
-                                ConnectionProfile.from_dict(item).as_dict()
-                                for item in data["profiles"]
-                                if isinstance(item, dict)
-                            ],
-                        }
-                    )
+                active_id = str(data.get("active_profile_id") or "")
+                active_profile_id: str | None = None
+                profiles_by_id: dict[str, tuple[str, ConnectionProfile]] = {}
+                for item in data["profiles"]:
+                    if not isinstance(item, dict):
+                        continue
+                    profile = ConnectionProfile.from_dict(item)
+                    requested_id = str(item.get("profile_id") or "")
+                    current = profiles_by_id.get(profile.profile_id)
+                    if current is None or requested_id == active_id:
+                        profiles_by_id[profile.profile_id] = (requested_id, profile)
+                    if requested_id == active_id:
+                        active_profile_id = profile.profile_id
+                profiles = [entry[1].as_dict() for entry in profiles_by_id.values()]
+                normalized = {
+                    "version": CONNECTION_FILE_VERSION,
+                    "active_profile_id": active_profile_id or (
+                        active_id if any(
+                            profile["profile_id"] == active_id for profile in profiles
+                        ) else None
+                    ),
+                    "profiles": profiles,
+                }
+                if data != normalized:
+                    self._write(normalized)
                 return
             self._write(
                 {

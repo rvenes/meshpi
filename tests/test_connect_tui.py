@@ -106,6 +106,32 @@ def test_empty_saved_serial_profile_is_unavailable():
     assert saved["available"] is False
 
 
+def test_saved_ble_profile_matches_discovery_case_insensitively_without_duplicate():
+    data = discovery_data()
+    data["profiles"].append(
+        {
+            "profile_id": "ble-saved",
+            "name": "Lagra BLE",
+            "transport": "ble",
+            "ble_identifier": "a1:b2:c3:d4:e5:f6",
+            "endpoint": "a1:b2:c3:d4:e5:f6",
+        }
+    )
+    data["ble_scanned"] = True
+
+    choices = build_connection_choices(data)
+    matching = [
+        choice
+        for choice in choices
+        if choice["transport"] == "ble"
+        and choice["endpoint"].casefold() == "a1:b2:c3:d4:e5:f6"
+    ]
+
+    assert len(matching) == 1
+    assert matching[0]["profile_id"] == "ble-saved"
+    assert matching[0]["available"] is True
+
+
 def test_saved_serial_profile_is_marked_unavailable_and_sorted_last():
     data = discovery_data()
     data["profiles"].append(
@@ -469,5 +495,93 @@ def test_picker_discards_late_ble_result_after_cancel():
             release_ble.set()
         assert app.return_value is None
         assert app._closed is True
+
+    asyncio.run(scenario())
+
+
+def test_picker_keeps_ble_search_when_local_discovery_fails():
+    calls = []
+    initial = discovery_data()
+    initial["serial"] = []
+    initial["tcp"] = []
+    initial["ble"] = []
+    initial["ble_scanned"] = False
+
+    def requester(_settings, payload, *, timeout):
+        del timeout
+        calls.append(payload["command"])
+        if payload["command"] == "discover_connections":
+            raise RuntimeError("lokalt søk feila")
+        if payload["command"] == "discover_ble_connections":
+            return {
+                "data": {
+                    "ble": discovery_data()["ble"],
+                    "ble_error": None,
+                    "ble_scanned": True,
+                }
+            }
+        raise AssertionError(payload)
+
+    async def scenario():
+        app = ConnectionPickerApp(
+            initial,
+            settings=object(),
+            requester=requester,
+            auto_discover=True,
+        )
+        async with app.run_test(size=(120, 42)) as pilot:
+            for _ in range(30):
+                if not app._discovering:
+                    break
+                await pilot.pause(0.05)
+            assert calls == [
+                "discover_connections",
+                "discover_ble_connections",
+            ]
+            assert app.discovery["local_error"] == "lokalt søk feila"
+            assert app.discovery["ble_error"] is None
+            assert app.discovery["ble_scanned"] is True
+            assert "Lokal oppdaging feila: lokalt søk feila" in str(
+                app.query_one("#discovery-status").render()
+            )
+            assert any(
+                item.choice["transport"] == "ble"
+                for item in app.query(ConnectionItem)
+            )
+
+    asyncio.run(scenario())
+
+
+def test_picker_does_not_mark_ble_unavailable_when_scan_did_not_run():
+    initial = discovery_data()
+    initial["profiles"].append(
+        {
+            "profile_id": "ble-saved",
+            "name": "Lagra BLE",
+            "transport": "ble",
+            "ble_identifier": "A1:B2:C3:D4:E5:F6",
+            "endpoint": "A1:B2:C3:D4:E5:F6",
+        }
+    )
+
+    async def scenario():
+        app = ConnectionPickerApp(initial)
+        async with app.run_test(size=(120, 42)) as pilot:
+            await app._finish_discovery(
+                app._discovery_generation,
+                {
+                    "ble": [],
+                    "ble_error": "BLE-noden koplar til.",
+                    "ble_scanned": False,
+                },
+                None,
+            )
+            await pilot.pause()
+            saved = next(
+                item.choice
+                for item in app.query(ConnectionItem)
+                if item.choice.get("profile_id") == "ble-saved"
+            )
+            assert saved["available"] is None
 
     asyncio.run(scenario())

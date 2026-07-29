@@ -246,9 +246,9 @@ meshpi
 Du kan byte TCP-node direkte. Profilen blir lagra og vald før TUI-en opnar:
 
 ```bash
-meshpi 10.0.0.135
+meshpi 192.0.2.42
 meshpi meshtastic.local
-meshpi 10.0.0.135:4403
+meshpi 192.0.2.42:4403
 ```
 
 USB/seriell fungerer på same måte. MeshPi lagrar USB-identiteten når eininga
@@ -265,7 +265,7 @@ På Windows kan målet vere til dømes `COM3`. Den eksplisitte forma er òg
 tilgjengeleg:
 
 ```bash
-meshpi connect 10.0.0.135
+meshpi connect 192.0.2.42
 meshpi connect /dev/ttyACM0 --name "USB-node"
 meshpi connect "ble://A1:B2:C3:D4:E5:F6" --name "BLE-node"
 ```
@@ -449,8 +449,8 @@ dømes `meshpi 192.0.2.42`, `meshpi COM4` eller
 ```bash
 meshpi status
 meshpi nodes
-meshpi nodes --search venes --sort name
-meshpi node 710365c8
+meshpi nodes --search fjell --sort name
+meshpi node deadbeef
 ```
 
 Ei stjerne i nodelista markerer den lokale Meshtastic-noden.
@@ -463,7 +463,7 @@ meshpi channels
 meshpi public
 meshpi public --channel 2
 meshpi public --limit 200
-meshpi dm 710365c8
+meshpi dm deadbeef
 ```
 
 Slett alle public-kanalar, alle DM-ar eller begge delar med éin kommando:
@@ -486,7 +486,7 @@ chat:
 ```bash
 meshpi send-public "Test på primærkanalen"
 meshpi send-public "Test på kanal 2" --channel 2
-meshpi send-dm 710365c8 "Direkte testmelding" --channel 2
+meshpi send-dm deadbeef "Direkte testmelding" --channel 2
 ```
 
 Tekst blir validert som UTF-8 og kan vere maksimalt 237 byte. DM-node-ID må
@@ -506,18 +506,18 @@ berre den aktive primærkanalen; bruk `all` for alle kanalar og DM-ar:
 ```bash
 meshpi watch public
 meshpi watch channel:global:Ops:1234
-meshpi watch 710365c8
+meshpi watch deadbeef
 ```
 
 Start ein interaktiv samtale:
 
 ```bash
 meshpi chat public
-meshpi chat 710365c8
+meshpi chat deadbeef
 ```
 
 Du kan bruke `!` framfor node-ID, men i Bash må argumentet då stå i enkle
-hermeteikn, til dømes `meshpi dm '!710365c8'`. Utan hermeteikn tolkar Bash
+hermeteikn, til dømes `meshpi dm '!deadbeef'`. Utan hermeteikn tolkar Bash
 utropsteiknet som historikkutviding.
 
 I chatten:

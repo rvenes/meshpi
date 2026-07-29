@@ -12,6 +12,7 @@ from textual.widgets import Input, ListItem, ListView, Static
 
 from meshpi.client import request
 from meshpi.config import Settings
+from meshpi.connections import canonical_ble_identifier
 
 DISCOVERY_TIMEOUT_SECONDS = 30
 
@@ -52,13 +53,23 @@ def _ble_profile_available(
     identifier = str(
         profile.get("ble_identifier") or profile.get("endpoint") or ""
     ).strip()
+    canonical_identifier = canonical_ble_identifier(identifier)
     return bool(identifier) and any(
-        identifier
-        == str(
-            entry.get("ble_identifier")
-            or str(entry.get("target") or "").removeprefix("ble://")
-        ).strip()
+        canonical_identifier
+        == canonical_ble_identifier(
+            str(
+                entry.get("ble_identifier")
+                or str(entry.get("target") or "").removeprefix("ble://")
+            )
+        )
         for entry in ble_entries
+    )
+
+
+def _connection_key(transport: str, endpoint: str) -> tuple[str, str]:
+    return (
+        transport,
+        canonical_ble_identifier(endpoint) if transport == "ble" else endpoint,
     )
 
 
@@ -129,7 +140,12 @@ def build_connection_choices(
         )
     )
     for choice in saved_available:
-        seen.add((str(choice["transport"]), str(choice["endpoint"])))
+        seen.add(
+            _connection_key(
+                str(choice["transport"]),
+                str(choice["endpoint"]),
+            )
+        )
         choices.append(choice)
 
     for section, entries in (
@@ -156,9 +172,10 @@ def build_connection_choices(
                 or entry.get("target")
                 or ""
             )
-            if (transport, endpoint) in seen:
+            key = _connection_key(transport, endpoint)
+            if key in seen:
                 continue
-            seen.add((transport, endpoint))
+            seen.add(key)
             choices.append(
                 {
                     "section": section,
@@ -355,32 +372,44 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
 
     def _update_discovery_status(self) -> None:
         status = self.query_one("#discovery-status", Static)
+        local_error = str(self.discovery.get("local_error") or "").strip()
+        local_prefix = (
+            f"Lokal oppdaging feila: {local_error}  ·  "
+            if local_error
+            else ""
+        )
         if self.discovery.get("ble_scanning"):
             status.update(
-                "Bluetooth / BLE: Søkjer … "
+                f"{local_prefix}Bluetooth / BLE: Søkjer … "
                 "(tek vanlegvis om lag 10 sekund)"
             )
             return
         error = str(self.discovery.get("ble_error") or "").strip()
         if error:
-            status.update(f"Bluetooth / BLE: {error}  ·  F5: søk på nytt")
+            status.update(
+                f"{local_prefix}Bluetooth / BLE: {error}  ·  F5: søk på nytt"
+            )
             return
         ble_scanned = self.discovery.get(
             "ble_scanned",
             "ble" in self.discovery,
         )
         if not ble_scanned:
-            status.update("Bluetooth / BLE: Ventar på søk  ·  F5: start søk")
+            status.update(
+                f"{local_prefix}Bluetooth / BLE: Ventar på søk  ·  F5: start søk"
+            )
             return
         count = len(self.discovery.get("ble", []))
         if count:
             suffix = "eining funnen" if count == 1 else "einingar funne"
             status.update(
-                f"Bluetooth / BLE: {count} {suffix}  ·  F5: søk på nytt"
+                f"{local_prefix}Bluetooth / BLE: {count} {suffix}  ·  "
+                "F5: søk på nytt"
             )
         else:
             status.update(
-                "Bluetooth / BLE: Ingen Meshtastic-einingar funne  ·  "
+                f"{local_prefix}Bluetooth / BLE: Ingen Meshtastic-einingar "
+                "funne  ·  "
                 "F5: søk på nytt"
             )
 
@@ -433,6 +462,7 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         generation = self._discovery_generation
         self.discovery["ble_scanning"] = True
         self.discovery["ble_error"] = None
+        self.discovery["local_error"] = None
         self.discovery["ble_scanned"] = False
         self.discovery["ble"] = []
         self._update_discovery_status()
@@ -469,8 +499,15 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
                 generation,
                 local,
             )
-            if not self._can_deliver_discovery(generation):
-                return
+        except Exception as exc:
+            self._deliver_discovery(
+                self._apply_local_discovery_error,
+                generation,
+                str(exc),
+            )
+        if not self._can_deliver_discovery(generation):
+            return
+        try:
             ble = self.requester(
                 self.settings,
                 {"command": "discover_ble_connections"},
@@ -490,6 +527,21 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
                 str(exc),
             )
 
+    async def _apply_local_discovery_error(
+        self,
+        generation: int,
+        error: str,
+    ) -> None:
+        if not self._can_deliver_discovery(generation):
+            return
+        self.discovery["local_error"] = error
+        self.discovery["serial_scanned"] = False
+        self.notify(
+            f"Klarte ikkje søkje etter lokale tilkoplingar: {error}",
+            severity="error",
+        )
+        self._update_discovery_status()
+
     async def _apply_local_discovery(
         self,
         generation: int,
@@ -499,6 +551,7 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
             return
         preserved_ble = list(self.discovery.get("ble", []))
         self.discovery.update(data)
+        self.discovery["local_error"] = None
         self.discovery["ble"] = preserved_ble
         self.discovery["serial_scanned"] = True
         self.discovery["ble_scanning"] = True
@@ -522,7 +575,9 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
                 f"Klarte ikkje fullføre søket: {error}"
             )
         self.discovery["ble_scanning"] = False
-        self.discovery["ble_scanned"] = True
+        self.discovery["ble_scanned"] = bool(
+            data.get("ble_scanned", True) if data is not None else False
+        )
         self._discovering = False
         await self._rebuild_choices()
         self._update_discovery_status()

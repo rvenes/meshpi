@@ -90,7 +90,7 @@ function Write-Utf8NoBom {
 function Set-EnvValue {
     param([string]$Path, [string]$Name, [string]$Value)
     $lines = if (Test-Path -LiteralPath $Path) {
-        @(Get-Content -LiteralPath $Path)
+        @(Get-Content -LiteralPath $Path -Encoding UTF8)
     } else {
         @()
     }
@@ -119,7 +119,7 @@ function Set-EnvValue {
 function Get-EnvValue {
     param([string]$Path, [string]$Name)
     if (-not (Test-Path -LiteralPath $Path)) { return $null }
-    $match = Get-Content -LiteralPath $Path |
+    $match = Get-Content -LiteralPath $Path -Encoding UTF8 |
         Where-Object { $_ -match ("^" + [regex]::Escape($Name) + "=(.*)$") } |
         Select-Object -First 1
     if ($match -and $match -match "^[^=]+=(.*)$") { return $Matches[1] }
@@ -222,7 +222,7 @@ if len(raw) != size or pad < 8 or not hmac.compare_digest(actual, expected):
     Write-Utf8NoBom $verifierFile $verifier
     Invoke-NativeChecked $python.Exe (@($python.Prefix) + @($verifierFile, $manifestFile)) `
         "Signaturen på versjonsmanifestet stemmer ikkje."
-    $manifest = Get-Content -Raw $manifestFile | ConvertFrom-Json
+    $manifest = Get-Content -Raw -Encoding UTF8 $manifestFile | ConvertFrom-Json
     $version = [string]$manifest.latest_version
     if ($version -notmatch "^\d+\.\d+\.\d+$") {
         throw "Ugyldig versjon i version.json."
@@ -299,7 +299,10 @@ BACKGROUND_MODE=$modeValue
 
     $release = Join-Path $releasesDir $version
     $oldRelease = if (Test-Path -LiteralPath $currentFile) {
-        (Get-Content -Raw $currentFile).Trim()
+        ([IO.File]::ReadAllText(
+            $currentFile,
+            [Text.Encoding]::UTF8
+        )).Trim()
     } else {
         ""
     }
@@ -357,17 +360,23 @@ BACKGROUND_MODE=$modeValue
     }
     Set-CurrentRelease $currentFile $release
 
+    $nativeLauncher = Join-Path $binDir "meshpi.exe"
     $meshpiCmd = Join-Path $binDir "meshpi.cmd"
     $daemonCmd = Join-Path $binDir "meshpi-daemon.cmd"
+    $launcherFile = Join-Path $binDir "meshpi-launcher.ps1"
+    $envPointerFile = Join-Path $binDir "meshpi.env-path"
+    Copy-Item -LiteralPath $releaseMeshPi -Destination $nativeLauncher -Force
+    Remove-Item -LiteralPath $launcherFile -Force -ErrorAction SilentlyContinue
+    Write-Utf8NoBom $envPointerFile ($configFile + "`n")
     @"
 @echo off
-set /p MESHPI_CURRENT=<"$currentFile"
-"%MESHPI_CURRENT%\venv\Scripts\meshpi.exe" --env-file "$configFile" %*
+"%~dp0meshpi.exe" %*
+exit /b %errorlevel%
 "@ | Set-Content -Encoding ASCII $meshpiCmd
     @"
 @echo off
-set /p MESHPI_CURRENT=<"$currentFile"
-"%MESHPI_CURRENT%\venv\Scripts\meshpi.exe" --env-file "$configFile" daemon
+"%~dp0meshpi.exe" daemon
+exit /b %errorlevel%
 "@ | Set-Content -Encoding ASCII $daemonCmd
     $supervisorFile = Join-Path $binDir "meshpi-supervisor.ps1"
     $managerFile = Join-Path $binDir "meshpi-service.ps1"
@@ -379,7 +388,10 @@ set /p MESHPI_CURRENT=<"$currentFile"
     @"
 `$ErrorActionPreference = "Continue"
 while (`$true) {
-    `$current = (Get-Content -Raw "$currentFile").Trim()
+    `$current = ([IO.File]::ReadAllText(
+        "$currentFile",
+        [Text.Encoding]::UTF8
+    )).Trim()
     & (Join-Path `$current "venv\Scripts\meshpi.exe") --env-file "$configFile" daemon
     if (`$LASTEXITCODE -eq 0) {
         break
@@ -464,6 +476,11 @@ if (`$Action -eq "enable") {
             Stop-MeshPiProcesses $installRoot
             if ($oldRelease -and (Test-Path -LiteralPath $oldRelease)) {
                 Set-CurrentRelease $currentFile $oldRelease
+                Copy-Item -LiteralPath (
+                    Join-Path $oldRelease "venv\Scripts\meshpi.exe"
+                ) -Destination $nativeLauncher -Force
+                Remove-Item -LiteralPath $previousFile -Force `
+                    -ErrorAction SilentlyContinue
                 & $powerShellExe -NoProfile -ExecutionPolicy Bypass `
                     -File $managerFile start
                 throw "Oppdateringa feila. Førre versjon er sett tilbake."

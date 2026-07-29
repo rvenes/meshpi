@@ -448,7 +448,7 @@ def test_conversation_view_hides_public_archives_and_groups_dm_routes(tmp_path):
         ),
         (
             2,
-            "2026-07-20T12:01:00+00:00",
+            "2026-07-20T11:59:00+00:00",
             3,
             secondary_key,
             secondary_route,
@@ -497,6 +497,13 @@ def test_conversation_view_hides_public_archives_and_groups_dm_routes(tmp_path):
             "preferred_conversation": primary_route,
         }
     )["data"]
+    merged_history = app.dispatch(
+        {
+            "command": "messages",
+            "conversations": [primary_route, secondary_route],
+            "limit": 100,
+        }
+    )["data"]
 
     assert all(
         not str(item.get("channel_key") or "").startswith("legacy:")
@@ -505,9 +512,31 @@ def test_conversation_view_hides_public_archives_and_groups_dm_routes(tmp_path):
     assert [
         item["conversation"] for item in default if item["kind"] == "dm"
     ] == [secondary_route]
+    default_dm = next(item for item in default if item["kind"] == "dm")
+    assert default_dm["unread"] == 2
+    assert default_dm["last_text"] == "DM 2"
+    assert default_dm["merged_routes"] == [primary_route]
     assert [
         item["conversation"] for item in preferred if item["kind"] == "dm"
     ] == [primary_route]
+    preferred_dm = next(item for item in preferred if item["kind"] == "dm")
+    assert preferred_dm["unread"] == 2
+    assert preferred_dm["last_text"] == "DM 2"
+    assert preferred_dm["merged_routes"] == [secondary_route]
+    assert {message["packet_id"] for message in merged_history} == {1, 2}
+
+    other_peer_route = dm_conversation_id(
+        "!aaaaaaaa",
+        "!33334444",
+        primary_key,
+    )
+    with pytest.raises(ValueError, match="same mottakar"):
+        app.dispatch(
+            {
+                "command": "messages",
+                "conversations": [primary_route, other_peer_route],
+            }
+        )
 
 
 def test_public_watch_matches_only_the_active_primary_channel(tmp_path):

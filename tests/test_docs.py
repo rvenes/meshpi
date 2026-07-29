@@ -1,3 +1,4 @@
+import re
 from html import unescape
 from pathlib import Path
 
@@ -30,3 +31,18 @@ def test_readme_and_website_include_every_f1_shortcut():
         assert description.casefold() in readme
         assert key.casefold() in website
         assert description.casefold() in website
+
+
+def test_public_examples_do_not_contain_development_network_addresses():
+    public_files = [
+        ROOT / "README.md",
+        ROOT / "meshpi" / "models.py",
+        *(ROOT / "website").glob("*"),
+        *(ROOT / "installers").glob("*"),
+    ]
+
+    for path in public_files:
+        if not path.is_file():
+            continue
+        source = path.read_text(encoding="utf-8-sig")
+        assert re.search(r"\b10\.0\.0\.\d{1,3}\b", source) is None, path

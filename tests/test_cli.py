@@ -2,7 +2,9 @@ import pytest
 
 from meshpi.cli import (
     _battery,
+    _chat_dm_peer,
     _configure_console_output,
+    _default_env_file,
     _format_message,
     _normalize_argv,
     _print_status,
@@ -21,6 +23,30 @@ def test_battery_display_handles_external_power():
     assert _battery(0) == "Straum"
     assert _battery(75) == "75%"
     assert _battery(None) == "–"
+
+
+def test_chat_can_resolve_peer_from_empty_dm_route_history():
+    route = "dm:!aaaaaaaa:!deadbeef:global:LongFast:1234"
+
+    assert _chat_dm_peer(route, []) == "!deadbeef"
+
+
+def test_cli_uses_utf8_environment_pointer_next_to_installed_launcher(
+    tmp_path,
+    monkeypatch,
+):
+    launcher = tmp_path / "Brukar Håkon" / "bin" / "meshpi.exe"
+    launcher.parent.mkdir(parents=True)
+    launcher.touch()
+    configured = tmp_path / "Profil Øyvind" / "MeshPi" / "meshpi.env"
+    launcher.with_name("meshpi.env-path").write_text(
+        f"{configured}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("meshpi.cli.sys.argv", [str(launcher)])
+
+    assert _default_env_file() == str(configured)
+    assert build_parser().parse_args(["status"]).env_file == str(configured)
 
 
 def test_windows_console_replaces_unencodable_characters(monkeypatch):

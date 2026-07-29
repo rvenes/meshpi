@@ -158,6 +158,7 @@ class MeshtasticService:
         self._switch_requested = threading.Event()
         self._lock = threading.RLock()
         self._ble_operation_lock = threading.Lock()
+        self._ble_connect_active = threading.Event()
         self._channel_sync_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._interface: Interface | None = None
@@ -258,23 +259,31 @@ class MeshtasticService:
         else:
             result["ble"] = []
             result["ble_error"] = None
+            result["ble_scanned"] = False
         return result
 
     def discover_ble_connections(self) -> dict[str, Any]:
         if not self._ble_operation_lock.acquire(blocking=False):
             return {
                 "ble": [],
-                "ble_error": "Eit BLE-søk er allereie i gang.",
+                "ble_error": (
+                    "BLE-noden er i ferd med å kople til. Vent litt og prøv på nytt."
+                    if self._ble_connect_active.is_set()
+                    else "Eit BLE-søk er allereie i gang."
+                ),
+                "ble_scanned": False,
             }
         try:
             return {
                 "ble": discover_ble(),
                 "ble_error": None,
+                "ble_scanned": True,
             }
         except BLEDiscoveryError as exc:
             return {
                 "ble": [],
                 "ble_error": str(exc),
+                "ble_scanned": False,
             }
         finally:
             self._ble_operation_lock.release()
@@ -371,7 +380,11 @@ class MeshtasticService:
     def _create_interface(self, profile: ConnectionProfile) -> Interface:
         if profile.transport == "ble":
             with self._ble_operation_lock:
-                return self.interface_factory(profile)
+                self._ble_connect_active.set()
+                try:
+                    return self.interface_factory(profile)
+                finally:
+                    self._ble_connect_active.clear()
         return self.interface_factory(profile)
 
     def _run(self) -> None:

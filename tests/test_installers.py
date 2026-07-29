@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import re
@@ -26,6 +27,18 @@ def _shell_function(source: str, name: str) -> str:
     return match.group(0)
 
 
+def _powershell_function(source: str, name: str) -> str:
+    start = source.index(f"function {name} {{")
+    depth = 0
+    end = start
+    for line in source[start:].splitlines(keepends=True):
+        depth += line.count("{") - line.count("}")
+        end += len(line)
+        if depth == 0:
+            return source[start:end]
+    raise AssertionError(f"Ufullstendig PowerShell-funksjon: {name}")
+
+
 def test_manifest_matches_all_dependency_locks() -> None:
     manifest = json.loads((ROOT / "website" / "version.json").read_text(encoding="utf-8"))
 
@@ -39,6 +52,26 @@ def test_manifest_matches_all_dependency_locks() -> None:
         assert manifest["locks"][platform_name]["sha256"] == _sha256(lock)
         assert manifest["locks"][platform_name]["size"] == lock.stat().st_size
         assert "--hash=sha256:" in lock.read_text(encoding="utf-8")
+
+
+def test_manifest_matches_all_installers() -> None:
+    manifest = json.loads((ROOT / "website" / "version.json").read_text(encoding="utf-8"))
+
+    for platform_name, filename in (
+        ("linux", "install-linux.sh"),
+        ("macos", "install-macos.sh"),
+        ("windows", "install-windows.ps1"),
+    ):
+        installer = ROOT / "installers" / filename
+        assert manifest["installers"][platform_name]["sha256"] == _sha256(installer)
+        assert manifest["installers"][platform_name]["size"] == installer.stat().st_size
+
+
+def test_repository_pins_platform_script_line_endings() -> None:
+    attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+
+    assert "*.sh text eol=lf" in attributes
+    assert "*.ps1 text eol=crlf" in attributes
 
 
 def test_installers_use_locked_dependencies_and_offline_selftest() -> None:
@@ -164,6 +197,7 @@ resolve_ipc_socket_gid test-user
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env={"PATH": "/usr/bin:/bin", "TEST_GID": gid, "TEST_PASSWD": passwd_entries},
     )
 
@@ -240,6 +274,149 @@ def test_windows_installer_reports_progress_and_ignores_missing_legacy_task() ->
     assert '$ErrorActionPreference = "SilentlyContinue"' in windows
     assert '$ErrorActionPreference = $savedErrorActionPreference' in windows
     assert '& schtasks.exe /Delete /TN $taskName /F *> $null' in windows
+
+
+def test_windows_installer_reads_utf8_paths_and_environment() -> None:
+    windows = _text("install-windows.ps1")
+
+    assert "Get-Content -LiteralPath $Path -Encoding UTF8" in windows
+    assert "[IO.File]::ReadAllText(" in windows
+    assert 'Copy-Item -LiteralPath $releaseMeshPi -Destination $nativeLauncher' in windows
+    assert 'Write-Utf8NoBom $envPointerFile ($configFile + "`n")' in windows
+    assert '"%~dp0meshpi.exe" %*' in windows
+    assert "ValueFromRemainingArguments" not in windows
+    assert "Set-Content -Encoding ASCII $meshpiCmd" in windows
+    assert 'set /p MESHPI_CURRENT=<' not in windows
+    assert "Remove-Item -LiteralPath $previousFile" in windows
+
+
+@pytest.mark.skipif(
+    shutil.which("powershell.exe") is None,
+    reason="krev Windows PowerShell",
+)
+def test_windows_env_helpers_preserve_non_ascii_values(tmp_path) -> None:
+    source = _text("install-windows.ps1")
+    functions = "\n".join(
+        (
+            _powershell_function(source, "Write-Utf8NoBom"),
+            _powershell_function(source, "Set-EnvValue"),
+            _powershell_function(source, "Get-EnvValue"),
+        )
+    )
+    config = tmp_path / "Brukar Øyvind" / "meshpi.env"
+    config.parent.mkdir()
+    config.write_text("DATABASE_PATH=C:\\Data\\Blåbær\\meshpi.db\n", encoding="utf-8")
+    result_file = tmp_path / "result.txt"
+
+    def ps_quote(path: Path) -> str:
+        return str(path).replace("'", "''")
+
+    script = tmp_path / "utf8-test.ps1"
+    script.write_text(
+        "\ufeff"
+        + functions
+        + "\n"
+        + f"Set-EnvValue -Path '{ps_quote(config)}' -Name 'PROFILE' "
+        + "-Value 'Røynd profil'\n"
+        + f"$value = Get-EnvValue -Path '{ps_quote(config)}' -Name 'DATABASE_PATH'\n"
+        + f"Write-Utf8NoBom -Path '{ps_quote(result_file)}' -Content $value\n",
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    assert "Blåbær" in config.read_text(encoding="utf-8")
+    assert "PROFILE=Røynd profil" in config.read_text(encoding="utf-8")
+    assert result_file.read_text(encoding="utf-8") == "C:\\Data\\Blåbær\\meshpi.db"
+
+
+@pytest.mark.skipif(shutil.which("cmd.exe") is None, reason="krev cmd.exe")
+def test_windows_launcher_preserves_all_arguments_and_exit_code(tmp_path) -> None:
+    bin_dir = tmp_path / "Brukar Håkon" / "bin"
+    bin_dir.mkdir(parents=True)
+    probe = bin_dir / "meshpi.exe"
+    source = """
+using System;
+using System.IO;
+using System.Linq;
+using System.Text;
+public static class Probe {
+    public static int Main(string[] args) {
+        File.WriteAllLines(
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "args.txt"),
+            args.Select(value => Convert.ToBase64String(Encoding.UTF8.GetBytes(value)))
+        );
+        return 7;
+    }
+}
+"""
+    compile_script = tmp_path / "compile-probe.ps1"
+    compile_script.write_text(
+        "\ufeff"
+        + "$source = @'\n"
+        + source
+        + "'@\n"
+        + f"Add-Type -TypeDefinition $source -OutputAssembly '{probe}' "
+        + "-OutputType ConsoleApplication\n",
+        encoding="utf-8",
+    )
+    subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(compile_script),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    wrapper = bin_dir / "meshpi.cmd"
+    wrapper.write_text(
+        "@echo off\r\n"
+        '"%~dp0meshpi.exe" %*\r\n'
+        "exit /b %errorlevel%\r\n",
+        encoding="ascii",
+        newline="",
+    )
+    arguments = ["-d", "--daemon", "-Daemon", "status", "", "blåbær"]
+
+    result = subprocess.run(
+        [str(wrapper), *arguments],
+        check=False,
+        capture_output=True,
+    )
+
+    assert result.returncode == 7, (result.stdout, result.stderr)
+    encoded = (bin_dir / "args.txt").read_text(encoding="utf-8").splitlines()
+    decoded = [
+        base64.b64decode(value).decode("utf-8")
+        for value in encoded
+    ]
+    assert decoded == arguments
+
+
+def test_posix_installers_replace_config_atomically_and_clear_bad_rollback() -> None:
+    for name in ("install-linux.sh", "install-macos.sh"):
+        source = _text(name)
+        assert 'mktemp "${CONFIG_FILE}.tmp.XXXXXX"' in source
+        assert 'mv -f "$config_tmp" "$CONFIG_FILE"' in source
+        assert 'cat "$TMP_DIR/config-update" >"$CONFIG_FILE"' not in source
+        assert 'switch_link "$OLD_RELEASE"\n            rm -f "$PREVIOUS_LINK"' in source
 
 
 def test_posix_installers_report_the_same_progress_as_windows() -> None:

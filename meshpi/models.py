@@ -80,7 +80,7 @@ def normalize_node_id(value: str) -> str:
     if node_id.startswith("!"):
         node_id = node_id[1:]
     if len(node_id) != 8 or any(ch not in "0123456789abcdef" for ch in node_id):
-        raise ValueError("Node-ID må vere åtte heksadesimale teikn, til dømes !710365c8")
+        raise ValueError("Node-ID må vere åtte heksadesimale teikn, til dømes !deadbeef")
     if node_id == "ffffffff":
         raise ValueError("Broadcast-ID kan ikkje brukast som DM-mottakar")
     return f"!{node_id}"

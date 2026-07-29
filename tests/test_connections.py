@@ -109,6 +109,30 @@ def test_ble_profiles_with_duplicate_names_keep_distinct_ids():
     assert first.profile_id != second.profile_id
 
 
+def test_ble_mac_addresses_are_case_insensitive_and_use_platform_spelling():
+    lower = ConnectionProfile.ble("a1:b2:c3:d4:e5:f6")
+    upper = ConnectionProfile.ble("A1:B2:C3:D4:E5:F6")
+
+    assert lower.profile_id == upper.profile_id
+    assert lower.ble_identifier == "A1:B2:C3:D4:E5:F6"
+
+
+def test_ble_uuids_are_canonical_but_other_opaque_identifiers_are_preserved():
+    lower_uuid = ConnectionProfile.ble(
+        "243e23ae-4a99-406c-b317-18f1bd7b4cbe"
+    )
+    upper_uuid = ConnectionProfile.ble(
+        "243E23AE-4A99-406C-B317-18F1BD7B4CBE"
+    )
+    opaque_lower = ConnectionProfile.ble("platform-Token")
+    opaque_upper = ConnectionProfile.ble("platform-TOKEN")
+
+    assert lower_uuid == upper_uuid
+    assert lower_uuid.ble_identifier == "243E23AE-4A99-406C-B317-18F1BD7B4CBE"
+    assert opaque_lower.ble_identifier == "platform-Token"
+    assert opaque_lower.profile_id != opaque_upper.profile_id
+
+
 def test_ble_profile_id_is_always_derived_from_identifier():
     profile = ConnectionProfile.from_dict(
         {
@@ -122,6 +146,43 @@ def test_ble_profile_id_is_always_derived_from_identifier():
     assert profile.profile_id == ConnectionProfile.ble(
         "A1:B2:C3:D4:E5:F6"
     ).profile_id
+
+
+def test_connection_store_migrates_case_variant_ble_profiles(tmp_path):
+    path = tmp_path / "connections.json"
+    lower = "a1:b2:c3:d4:e5:f6"
+    old_active_id = "ble-old-case-sensitive-id"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "active_profile_id": old_active_id,
+                "profiles": [
+                    {
+                        "profile_id": ConnectionProfile.ble(lower).profile_id,
+                        "name": "Første",
+                        "transport": "ble",
+                        "ble_identifier": "A1:B2:C3:D4:E5:F6",
+                    },
+                    {
+                        "profile_id": old_active_id,
+                        "name": "Aktiv",
+                        "transport": "ble",
+                        "ble_identifier": lower,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    store = ConnectionStore(path)
+
+    assert [profile.name for profile in store.list_profiles()] == ["Aktiv"]
+    active = store.active_profile()
+    assert active is not None
+    assert active.name == "Aktiv"
+    assert active.ble_identifier == "A1:B2:C3:D4:E5:F6"
 
 
 def test_connection_store_migrates_version_one_and_preserves_active_profile(tmp_path):

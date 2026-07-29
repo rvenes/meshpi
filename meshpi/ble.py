@@ -13,12 +13,19 @@ class BLEConnectionError(RuntimeError):
 
 
 def _discovery_error_message(exc: Exception) -> str:
-    from bleak.exc import (
-        BleakBluetoothNotAvailableError,
-        BleakBluetoothNotAvailableReason,
-    )
+    try:
+        from bleak.exc import (
+            BleakBluetoothNotAvailableError,
+            BleakBluetoothNotAvailableReason,
+        )
+    except (ImportError, AttributeError):
+        BleakBluetoothNotAvailableError = ()  # type: ignore[assignment,misc]
+        BleakBluetoothNotAvailableReason = None  # type: ignore[assignment,misc]
 
-    if isinstance(exc, BleakBluetoothNotAvailableError):
+    if BleakBluetoothNotAvailableReason is not None and isinstance(
+        exc,
+        BleakBluetoothNotAvailableError,
+    ):
         if exc.reason == BleakBluetoothNotAvailableReason.POWERED_OFF:
             return "Bluetooth er slått av. Slå på Bluetooth og prøv på nytt."
         if exc.reason in {
