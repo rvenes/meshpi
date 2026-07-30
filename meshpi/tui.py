@@ -2262,7 +2262,7 @@ class MeshPiTUI(App[str | None]):
         visible_by_id = {_conversation_id(item): item for item in visible}
         visible_ids = list(visible_by_id)
 
-        if existing and set(existing_ids) == set(visible_ids):
+        if existing and existing_ids == visible_ids:
             for item in existing:
                 item.update_conversation(visible_by_id[item.conversation_id])
             return

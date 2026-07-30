@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.8.3",
-  "published_at": "2026-07-29T08:57:14Z",
+  "latest_version": "0.8.4",
+  "published_at": "2026-07-30T09:41:51Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.8.3",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.8.4",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.8.3-py3-none-any.whl",
-    "filename": "meshpi-0.8.3-py3-none-any.whl",
-    "sha256": "5dba4451cd4cfde1ceb73f18e034d128f6a0ac14d4dc44da58c4ad9b6a6c1536",
-    "size": 123209,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.8.4-py3-none-any.whl",
+    "filename": "meshpi-0.8.4-py3-none-any.whl",
+    "sha256": "1ed27f123f681cd59e370b80bc4d8b62c21ccb2fa010f16e5f7b9381de065f0d",
+    "size": 123207,
     "format": "wheel"
   },
   "locks": {
@@ -55,14 +55,11 @@
     }
   },
   "release_notes": [
-    "Eksperimentell BLE-oppdaging, lagra BLE-profilar og reconnect er live-testa på Windows.",
-    "Nodeveljaren viser TCP og USB straks, søkjer etter BLE i bakgrunnen og støttar F5 for nytt søk.",
-    "DM-ar får eksplisitt kanalval og viser Meshtastic si NAK-årsak når sendinga blir avvist.",
-    "Samtalelista viser éin DM per node, skil kanalar frå DM-ar og kan filtrerast med F8 og F9."
+    "Rettar at DM-ar kunne bli ståande visuelt under Kanalar når samtalerekkjefølgja endra seg."
   ],
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "Zdpom5FDH99QJR0u/IjCOSTR28raL8J8UdkH25P4jt2IKTuAK6zkIVuTkR9aLqOblNdvliNsPBfFTNYv16dR5grYdVnsnhfJJflSAl9HxLM976lcoNrDwYx/+vhVG3Ea4eNUk0N3Y6sU8oO/sNXbnSUPejClScxVka65zGna9u3Y1I2vfbmn6Y6qA/mrbjX0amtYgoksrj9hYImZIdApIzVEFFIyvbdUfkGHhV8aG7HYIYjIwnE8AyRqKULIHXEaXe/7v/D6H1m1COGLvJ3P9d3QACvrHBoCT//ieXLvXpSSGKRGR7GfeYi03M2qjiHIRlEMmCORTzv2rpON8PZD3HwPl2Fe8omPNQbqnXrT3SSB8yaOcO5Evl1t/cKrTAHZe2R7/vFITuEBlgqkf3xPkDvSZB7SnB3DD/m5nDkJbcyo/391yEUs9EeGbp6JSd3jdXGC158vyi+qRw7IjeLmBpkbxTHLWTMA3WtdfJ6UI8knlXP+8sx51OsKPxgBk245"
+    "value": "Yt9iV8avenKuEcXvhcm6/ajXP3eAlAFLyCR7qYKM6Bzi+YzgQKW/P1DRT2iNsYicE/Iyqpbzwtf15OnWF/uKr/Uyusl5Nez0yPvTdPTXZVLw3vOjfnjwPSvwD7obt+BlK8IBpP5avxx1TmrgMlyY7XqLRF0fuQ9oU9R+bNNkk/yHl/eGRID99bZkwSal8ApZoabqZI9tmCk4QFVc7hNxxO9vS4yvhhIC7yq6sbp7O04BbjTXcdlq3Bum9yVkovO4slmAU/H5NE5Rii+zRJd7cd3394JzeCl3/DdT+R8TAX8Xb8IjlChPz9p3AQs3stGixP2hahbUyUyunjqT6CxpaoJHgzVxxy2e43mN0Bgj9skTviK2zr0T7xKV2+2WiMEuJwRHRgX0lcWawJuIbsTFhAc11glzqXozbfvUKjtUWmXXlzetloO7B5CajSx+ieRkoHHV+yRTLWBExOKs38pMqUM+hZ4kBOqGfHGeX8Q+wF58AFsNzIpMhTABkkQeZMFl"
   }
 }

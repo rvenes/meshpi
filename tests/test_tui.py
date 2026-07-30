@@ -628,7 +628,7 @@ def test_status_bar_shows_current_meshpi_version_and_host(monkeypatch):
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.8.3" in text
+            assert "MeshPi 0.8.4" in text
             assert "Vert: testvert" in text
 
     run_scenario(scenario)
@@ -807,6 +807,59 @@ def test_refresh_updates_existing_list_items_without_rebuilding():
             assert list(app.query(NodeSidebarItem))[1] is node_item
             assert conversation_item.conversation["last_text"] == "Oppdatert"
             assert node_item.node["battery_level"] == 60
+
+    run_scenario(scenario)
+
+
+def test_refresh_reorders_direct_messages_before_moving_section_heading():
+    async def scenario():
+        backend = FakeBackend()
+        venessol = {
+            "conversation": VENESSOL_DM_CONVERSATION,
+            "kind": "dm",
+            "peer_node": "!2f779c48",
+            "channel": 0,
+            "channel_key": PRIMARY_CHANNEL_KEY,
+            "local_node_id": "!040840a0",
+            "sendable": True,
+            "last_timestamp": "2026-07-20T11:59:00+00:00",
+            "last_text": "Eldre melding",
+            "unread": 0,
+            "long_name": "VenesSol-A 9c48",
+            "short_name": "9c48",
+        }
+        backend.conversations.append(venessol)
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            assert [
+                item.conversation_id for item in app.query(ConversationItem)
+            ] == [
+                PUBLIC_CONVERSATION,
+                RESERVE_DM_CONVERSATION,
+                VENESSOL_DM_CONVERSATION,
+            ]
+
+            venessol["last_timestamp"] = "2026-07-20T12:02:00+00:00"
+            venessol["last_text"] = "Ny melding"
+            backend.conversations = [
+                backend.conversations[0],
+                venessol,
+                backend.conversations[1],
+            ]
+            await app._apply_refresh(backend.conversations, backend.nodes)
+
+            items = list(app.query(ConversationItem))
+            assert [item.conversation_id for item in items] == [
+                PUBLIC_CONVERSATION,
+                VENESSOL_DM_CONVERSATION,
+                RESERVE_DM_CONVERSATION,
+            ]
+            assert items[0].label_widget.render().plain.startswith("KANALAR")
+            assert items[1].label_widget.render().plain.startswith("DM-SAMTALAR")
+            assert not items[2].label_widget.render().plain.startswith("DM-SAMTALAR")
 
     run_scenario(scenario)
 
