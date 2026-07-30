@@ -570,6 +570,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="stadfest installasjonen utan interaktivt spørsmål",
     )
+    update.add_argument(
+        "--beta",
+        action="store_true",
+        help="bruk den interne betakanalen på venes.org",
+    )
     sub.add_parser("status", help="vis tilkoplingsstatus")
 
     nodes = sub.add_parser("nodes", help="vis kjende nodar")
@@ -681,25 +686,36 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
             data, args.action
         )
     elif command == "update":
-        notice = check_for_update(settings)
+        channel = "beta" if args.beta else "stable"
+        notice = check_for_update(settings, channel=channel)
         if notice is None:
-            result = {"updated": False, "version": __version__}
+            result = {
+                "updated": False,
+                "version": __version__,
+                "channel": channel,
+            }
             if args.json:
                 print(json.dumps(result, ensure_ascii=False))
             else:
-                print(f"MeshPi {__version__} er allereie oppdatert.")
+                channel_label = "betakanalen" if args.beta else "stabilkanalen"
+                print(
+                    f"Ingen nyare MeshPi-utgåve finst i {channel_label} "
+                    f"(installert: {__version__})."
+                )
             return None
         if args.check:
             result = {
                 "updated": False,
                 "current_version": notice.current_version,
                 "latest_version": notice.latest_version,
+                "channel": channel,
             }
             if args.json:
                 print(json.dumps(result, ensure_ascii=False))
             else:
                 print(
-                    f"MeshPi {notice.latest_version} er tilgjengeleg "
+                    f"MeshPi {notice.latest_version} er tilgjengeleg i "
+                    f"{'betakanalen' if args.beta else 'stabilkanalen'} "
                     f"(installert: {notice.current_version})."
                 )
             return None
@@ -712,7 +728,11 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
             if answer.strip() != "OPPDATER":
                 print("Oppdateringa blei avbroten.")
                 return None
-        installed = apply_update(settings, expected_version=notice.latest_version)
+        installed = apply_update(
+            settings,
+            expected_version=notice.latest_version,
+            channel=channel,
+        )
         result = {
             "updated": installed is not None,
             "version": installed or __version__,

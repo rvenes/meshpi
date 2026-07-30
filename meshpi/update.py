@@ -17,13 +17,15 @@ from meshpi import __version__
 from meshpi.config import Settings
 from meshpi.platform_service import windows_powershell_path
 from meshpi.signing import SignatureError, verify_manifest_signature
+from meshpi.versions import VersionError, version_key
 
 MAX_MANIFEST_BYTES = 128 * 1024
 MAX_INSTALLER_BYTES = 2 * 1024 * 1024
 MAX_LOCK_BYTES = 5 * 1024 * 1024
 MAX_PACKAGE_BYTES = 50 * 1024 * 1024
-SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+BETA_UPDATE_URL = "https://venes.org/meshpi/beta/version.json"
+UPDATE_CHANNELS = frozenset({"stable", "beta"})
 
 
 class UpdateCheckError(RuntimeError):
@@ -36,6 +38,7 @@ class UpdateNotice:
     latest_version: str
     command: str
     release_notes_url: str | None = None
+    channel: str = "stable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,11 +63,11 @@ class UpdatePlan:
     lock: UpdateArtifact
 
 
-def _version_key(value: str) -> tuple[int, int, int]:
-    match = SEMVER.fullmatch(value.strip())
-    if match is None:
-        raise UpdateCheckError(f"Ugyldig versjonsnummer: {value}")
-    return tuple(int(part) for part in match.groups())
+def _channel(value: str) -> str:
+    channel = value.strip().lower()
+    if channel not in UPDATE_CHANNELS:
+        raise UpdateCheckError(f"Ugyldig oppdateringskanal: {value}")
+    return channel
 
 
 def platform_key(platform_name: str | None = None) -> str:
@@ -126,6 +129,7 @@ def _parse_update_plan(
     *,
     current_version: str,
     platform_name: str | None,
+    channel: str,
 ) -> UpdatePlan | None:
     try:
         verify_manifest_signature(manifest)
@@ -133,8 +137,22 @@ def _parse_update_plan(
         raise UpdateCheckError(str(exc)) from exc
     if manifest.get("schema_version") != 1:
         raise UpdateCheckError("Ustøtta versjonsmanifest")
+    expected_channel = _channel(channel)
+    manifest_channel = str(manifest.get("channel", "stable")).strip().lower()
+    if manifest_channel not in UPDATE_CHANNELS:
+        raise UpdateCheckError("Versjonsmanifestet har ein ugyldig kanal")
+    if manifest_channel != expected_channel:
+        raise UpdateCheckError(
+            f"Versjonsmanifestet er for {manifest_channel}-kanalen, "
+            f"ikkje {expected_channel}-kanalen"
+        )
     latest = str(manifest.get("latest_version", "")).strip()
-    if _version_key(latest) <= _version_key(current_version):
+    try:
+        available_key = version_key(latest)
+        current_key = version_key(current_version)
+    except VersionError as exc:
+        raise UpdateCheckError(str(exc)) from exc
+    if available_key <= current_key:
         return None
     platform = platform_key(platform_name)
     installers = manifest.get("installers")
@@ -181,6 +199,7 @@ def parse_update_manifest(
     current_version: str = __version__,
     platform_name: str | None = None,
     background_mode: str = "always",
+    channel: str = "stable",
 ) -> UpdateNotice | None:
     raw = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
     plan = _parse_update_plan(
@@ -188,21 +207,25 @@ def parse_update_manifest(
         raw,
         current_version=current_version,
         platform_name=platform_name,
+        channel=channel,
     )
     if plan is None:
         return None
     notes = str(manifest.get("release_notes_url", "")).strip() or None
     if notes is not None:
         notes = _https_url(notes, "Utgåvenotata")
+    selected_channel = _channel(channel)
+    command_suffix = " --beta" if selected_channel == "beta" else ""
     return UpdateNotice(
         current_version=current_version,
         latest_version=plan.latest_version,
         command=(
-            "sudo meshpi update"
+            f"sudo meshpi update{command_suffix}"
             if plan.platform == "linux" and background_mode == "always"
-            else "meshpi update"
+            else f"meshpi update{command_suffix}"
         ),
         release_notes_url=notes,
+        channel=selected_channel,
     )
 
 
@@ -213,8 +236,16 @@ def _read_limited(response: BinaryIO, maximum: int, label: str) -> bytes:
     return raw
 
 
-def _fetch_manifest(settings: Settings) -> tuple[dict[str, Any], bytes]:
-    url = _https_url(settings.update_url, "Oppdateringsadressa")
+def _fetch_manifest(
+    settings: Settings,
+    *,
+    channel: str = "stable",
+) -> tuple[dict[str, Any], bytes]:
+    selected_channel = _channel(channel)
+    configured_url = (
+        settings.update_url if selected_channel == "stable" else BETA_UPDATE_URL
+    )
+    url = _https_url(configured_url, "Oppdateringsadressa")
     request = Request(
         url,
         headers={
@@ -240,13 +271,18 @@ def _fetch_manifest(settings: Settings) -> tuple[dict[str, Any], bytes]:
     return manifest, raw
 
 
-def check_for_update(settings: Settings) -> UpdateNotice | None:
+def check_for_update(
+    settings: Settings,
+    *,
+    channel: str = "stable",
+) -> UpdateNotice | None:
     if not settings.update_url.strip():
         return None
-    manifest, _raw = _fetch_manifest(settings)
+    manifest, _raw = _fetch_manifest(settings, channel=channel)
     return parse_update_manifest(
         manifest,
         background_mode=settings.background_mode,
+        channel=channel,
     )
 
 
@@ -255,13 +291,15 @@ def prepare_update(
     *,
     current_version: str = __version__,
     platform_name: str | None = None,
+    channel: str = "stable",
 ) -> UpdatePlan | None:
-    manifest, raw = _fetch_manifest(settings)
+    manifest, raw = _fetch_manifest(settings, channel=channel)
     return _parse_update_plan(
         manifest,
         raw,
         current_version=current_version,
         platform_name=platform_name,
+        channel=channel,
     )
 
 
@@ -386,6 +424,7 @@ def apply_update(
     current_version: str = __version__,
     platform_name: str | None = None,
     expected_version: str | None = None,
+    channel: str = "stable",
 ) -> str | None:
     platform = platform_key(platform_name)
     if platform == "linux" and hasattr(os, "geteuid"):
@@ -402,6 +441,7 @@ def apply_update(
         settings,
         current_version=current_version,
         platform_name=platform_name,
+        channel=channel,
     )
     if plan is None:
         return None

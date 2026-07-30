@@ -16,6 +16,11 @@ wheel-pakke til ei privat mellombels mappe. Signert storleik og SHA-256 må
 stemme for alle tre før den lokalt verifiserte installatøren blir køyrd.
 Oppdateraren køyrer aldri `update_command` eller annan kommando frå manifestet.
 
+Stabil- og betakanalen har kvar si HTTPS-adresse og ein signert `channel`-verdi.
+`meshpi update` godtek berre stabilmanifestet, medan `meshpi update --beta`
+berre godtek betamanifestet. Begge kanalane bruker den same allowlista
+utgjevingsnøkkelen og dei same kontrollane av storleik og SHA-256.
+
 HTTPS er framleis viktig mot nedgradering og tenestenekt, men å endre
 manifestet eller artefaktane på webserveren er ikkje nok til å få kode køyrd
 utan den private utgjevingsnøkkelen.

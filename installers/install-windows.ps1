@@ -224,10 +224,19 @@ if len(raw) != size or pad < 8 or not hmac.compare_digest(actual, expected):
         "Signaturen på versjonsmanifestet stemmer ikkje."
     $manifest = Get-Content -Raw -Encoding UTF8 $manifestFile | ConvertFrom-Json
     $version = [string]$manifest.latest_version
-    if ($version -notmatch "^\d+\.\d+\.\d+$") {
+    if (
+        $version -notmatch (
+            "^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)" +
+            "(?:(?:a|b|rc)(0|[1-9]\d*))?$"
+        )
+    ) {
         throw "Ugyldig versjon i version.json."
     }
     $packageUrl = [string]$manifest.package.url
+    $packageFilename = [string]$manifest.package.filename
+    if ($packageFilename -cne "meshpi-$version-py3-none-any.whl") {
+        throw "Ugyldig pakkenamn i version.json."
+    }
     $expectedHash = ([string]$manifest.package.sha256).ToLowerInvariant()
     $lockUrl = [string]$manifest.locks.windows.url
     $expectedLockHash = ([string]$manifest.locks.windows.sha256).ToLowerInvariant()
@@ -237,7 +246,7 @@ if len(raw) != size or pad < 8 or not hmac.compare_digest(actual, expected):
     if ($expectedLockHash -notmatch "^[0-9a-f]{64}$") {
         throw "Ugyldig låsefil-hash i version.json."
     }
-    $wheelFile = Join-Path $tempDir "meshpi-$version-py3-none-any.whl"
+    $wheelFile = Join-Path $tempDir $packageFilename
     Write-InstallStep 3 "Lastar ned MeshPi $version og låste avhengigheiter …"
     if ($env:MESHPI_PACKAGE_FILE) {
         Copy-Item -LiteralPath $env:MESHPI_PACKAGE_FILE -Destination $wheelFile

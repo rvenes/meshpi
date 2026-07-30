@@ -193,6 +193,10 @@ def test_cli_has_verified_update_command():
     args = build_parser().parse_args(["update", "--check"])
     assert args.command == "update"
     assert args.check is True
+    assert args.beta is False
+
+    beta = build_parser().parse_args(["update", "--beta", "--check"])
+    assert beta.beta is True
 
 
 def test_update_command_does_not_start_daemon(monkeypatch):
@@ -215,7 +219,10 @@ def test_update_command_does_not_start_daemon(monkeypatch):
 def test_update_command_requires_explicit_confirmation(monkeypatch, capsys):
     calls = []
     notice = UpdateNotice("0.6.4", "0.7.0", "meshpi update")
-    monkeypatch.setattr("meshpi.cli.check_for_update", lambda _settings: notice)
+    monkeypatch.setattr(
+        "meshpi.cli.check_for_update",
+        lambda _settings, *, channel: notice,
+    )
     monkeypatch.setattr("builtins.input", lambda _prompt: "nei")
     monkeypatch.setattr(
         "meshpi.cli.apply_update",
@@ -231,19 +238,51 @@ def test_update_command_requires_explicit_confirmation(monkeypatch, capsys):
 def test_update_command_installs_confirmed_version(monkeypatch, capsys):
     notice = UpdateNotice("0.6.4", "0.7.0", "meshpi update")
     calls = []
-    monkeypatch.setattr("meshpi.cli.check_for_update", lambda _settings: notice)
+    monkeypatch.setattr(
+        "meshpi.cli.check_for_update",
+        lambda _settings, *, channel: notice,
+    )
     monkeypatch.setattr("builtins.input", lambda _prompt: "OPPDATER")
 
-    def update(_settings, *, expected_version):
-        calls.append(expected_version)
+    def update(_settings, *, expected_version, channel):
+        calls.append((expected_version, channel))
         return "0.7.0"
 
     monkeypatch.setattr("meshpi.cli.apply_update", update)
 
     run(build_parser().parse_args(["update"]), Settings())
 
-    assert calls == ["0.7.0"]
+    assert calls == [("0.7.0", "stable")]
     assert "0.7.0 er installert" in capsys.readouterr().out
+
+
+def test_beta_update_uses_beta_channel(monkeypatch, capsys):
+    notice = UpdateNotice(
+        "0.8.6",
+        "0.9.0b1",
+        "meshpi update --beta",
+        channel="beta",
+    )
+    calls = []
+
+    def check(_settings, *, channel):
+        calls.append(("check", channel))
+        return notice
+
+    def update(_settings, *, expected_version, channel):
+        calls.append(("update", expected_version, channel))
+        return expected_version
+
+    monkeypatch.setattr("meshpi.cli.check_for_update", check)
+    monkeypatch.setattr("meshpi.cli.apply_update", update)
+
+    run(build_parser().parse_args(["update", "--beta", "--yes"]), Settings())
+
+    assert calls == [
+        ("check", "beta"),
+        ("update", "0.9.0b1", "beta"),
+    ]
+    assert "0.9.0b1 er installert" in capsys.readouterr().out
 
 
 def test_main_starts_stopped_always_service_before_running_command(monkeypatch):

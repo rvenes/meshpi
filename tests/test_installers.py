@@ -90,6 +90,19 @@ def test_installers_use_locked_dependencies_and_offline_selftest() -> None:
     assert "MESHPI_FORCE_HEALTH_FAILURE" in windows
 
 
+def test_installers_accept_signed_pep440_beta_package_names() -> None:
+    for name in ("install-linux.sh", "install-macos.sh"):
+        source = _text(name)
+        assert 'PACKAGE_FILENAME="$(manifest_value package.filename)"' in source
+        assert 'WHEEL="$TMP_DIR/$PACKAGE_FILENAME"' in source
+        assert '(?:a|b|rc)' in source
+
+    windows = _text("install-windows.ps1")
+    assert "$packageFilename = [string]$manifest.package.filename" in windows
+    assert '$wheelFile = Join-Path $tempDir $packageFilename' in windows
+    assert "(?:a|b|rc)" in windows
+
+
 def test_installers_have_a_rotatable_signing_key_registry() -> None:
     for name in ("install-linux.sh", "install-macos.sh", "install-windows.ps1"):
         source = _text(name)
@@ -114,6 +127,8 @@ def test_macos_switches_current_symlink_without_following_it() -> None:
     assert "os.replace(sys.argv[1], sys.argv[2])" in source
     assert 'mv -f "$temporary" "$CURRENT_LINK"' not in source
     assert 'while launchctl print "$DOMAIN/$LABEL"' in source
+    assert 'if [ "$SKIP_SERVICE" != "1" ]; then\n    launchctl bootout' in source
+    assert 'if [ "$SKIP_SERVICE" = "1" ]; then\n    :' in source
 
 
 def test_uninstallers_preserve_data_without_explicit_purge() -> None:
@@ -230,6 +245,15 @@ def test_linux_checks_venv_before_downloading_release_files() -> None:
     assert source.index('VENV_CHECK="$TMP_DIR/venv-check"') < source.index(
         'install_step 2 "Hentar'
     )
+
+
+def test_linux_skip_service_avoids_all_service_stop_paths() -> None:
+    source = _text("install-linux.sh")
+    assert (
+        'if [ "$SKIP_SERVICE" != "1" ]; then\n'
+        '    if [ "$MODE" = "always" ]; then\n'
+        '        "$SYSTEMCTL" stop meshpi.service'
+    ) in source
 
 
 def test_updater_can_supply_python_and_local_files_without_curl() -> None:

@@ -4,7 +4,7 @@
   "latest_version": "0.8.6",
   "published_at": "2026-07-30T20:46:03Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.8.6",
+  "release_notes_url": "https://venes.org/meshpi/beta/",
   "package": {
     "url": "https://venes.org/meshpi/downloads/meshpi-0.8.6-py3-none-any.whl",
     "filename": "meshpi-0.8.6-py3-none-any.whl",
@@ -39,29 +39,29 @@
       "url": "https://venes.org/meshpi/install-linux.sh",
       "sha256": "7471460c319ec5fea241a1030ffa263cf422ba9c4e2a3fcbaf6086987aa49e9c",
       "size": 16868,
-      "update_command": "curl -fLO https://venes.org/meshpi/install-linux.sh && sudo sh install-linux.sh"
+      "update_command": "sudo meshpi update --beta"
     },
     "macos": {
       "url": "https://venes.org/meshpi/install-macos.sh",
       "sha256": "623987164c3bb1abe445b7b546bd886d40cc611417168e83b6bd39d6d854e1f8",
       "size": 14136,
-      "update_command": "curl -fLO https://venes.org/meshpi/install-macos.sh && sh install-macos.sh"
+      "update_command": "meshpi update --beta"
     },
     "windows": {
       "url": "https://venes.org/meshpi/install-windows.ps1",
       "sha256": "f8d91420b51b22291f42efcbf684773842a0790bbf3a4170d4c77441016c1dd4",
       "size": 20917,
-      "update_command": "Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; .\\install-windows.ps1"
+      "update_command": "meshpi update --beta"
     }
   },
   "release_notes": [
     "Legg til ein separat, uttrykkeleg betakanal med meshpi update --beta.",
     "Støttar signerte førehandsversjonar som 0.9.0b1 utan å påverke stabilkanalen."
   ],
-  "channel": "stable",
+  "channel": "beta",
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "KMoIOzq9PxIdT7UmM2/k2JFQXJyVB5yO4pEYwOpWem0Fbkm/waEEVC9o2TyzxViyV6i2NTnmC8/IFSWnoCCszBX7DG8GGdKl3czG048T7JTsWJMjSMSRHDWPbhg2e3DTrJt9d66B7vCj4aJkhSumqHNoHQS2hK6/euHuWxhJovlYxmCgS6zSUfKZt3RMuaQtMWmQxdFvPGf37RLeJfy1Wdr8CuGBOr7gvyhYjeEvAdqcqzwNSp5mz9DgFuQqzg/asCyhcDFNSJpeTNeXK8jHKSG1IIzqEDnkGoggdI8b1T6bsInjePaM+0QeiLVLKtVxVodKLvWlXweDRlgSGb0DDqJRUwX/sW8i7S7NY1s4yM4tfkXQfURBfqmHxuQS6O9YdnvWQyNkDKTqihfWKabFveVRKilmfU0mbQ0lgVBoL4jjFeoOUq8u0+PLNRTiNV/GnaC47G1eKjpS6dVG4maDJdx8+Z884+1Cgd28DlMPXDiOnzimXxYr25GcE1DmrZMP"
+    "value": "qb/ewLmk6lFfug87NT52hvbgucHDNzmRm6+HGgVa/MVqgw3gi0EqwGQCfTJJrCeQdfCIY2N/7htWuh8Sr7PIa/NQ/XFxXKb+f6KrtTP/Mnk/EZ0TMpZV9VR6qwnhLQbsdsgZIP8bD5Y72YZjn5Hb+l+Osgno6MV9tHUYdxvhF84UmCMRlgQAEUPZ9TfysfjgKRWYtTFJjEEg3klXwCFN1PQKv7x9XAjb72oWNMGLR5E81i8ATrvqsU5n6MgMYVZYgWwU6/kod+wz8NlHil6hw/OzmkNNX0Tg8FfPTPA3rCME4oR7rpZWSMwbcKwWuLCbyeWi0WLRGbyvUaoTxZixNe4hjx0E2rIOmzP6mXsNvLCuIGja8UDseHJhb7izzMc0ZNRMVPVisl0XLTFw7vpfraKlMEEp+af4jAseUu7ggNn4MQiFrX3GFnyZA2hHNfc4wGCRP9BVGAdjr4i7hJdH/vZqt4hiMv8iP8dtT0iqHKznb9PrjA8KpdVpJSXir6LL"
   }
 }

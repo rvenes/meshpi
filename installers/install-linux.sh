@@ -267,13 +267,22 @@ PY
 
 VERSION="$(manifest_value latest_version)"
 PACKAGE_URL="$(manifest_value package.url)"
+PACKAGE_FILENAME="$(manifest_value package.filename)"
 EXPECTED_SHA256="$(manifest_value package.sha256)"
 LOCK_URL="$(manifest_value locks.linux.url)"
 EXPECTED_LOCK_SHA256="$(manifest_value locks.linux.sha256)"
 IPC_TOKEN="$("$PYTHON" -c 'import secrets; print(secrets.token_hex(32))')"
-case "$VERSION" in
-    *[!0-9.]* | *.*.*.* | .* | *.) echo "Ugyldig versjon i manifestet" >&2; exit 1 ;;
-esac
+"$PYTHON" - "$VERSION" "$PACKAGE_FILENAME" <<'PY'
+import re
+import sys
+
+version, filename = sys.argv[1:]
+pattern = r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:(?:a|b|rc)(0|[1-9]\d*))?"
+if re.fullmatch(pattern, version) is None:
+    raise SystemExit("Ugyldig versjon i manifestet")
+if filename != f"meshpi-{version}-py3-none-any.whl":
+    raise SystemExit("Ugyldig pakkenamn i manifestet")
+PY
 case "$EXPECTED_SHA256" in
     *[!0-9a-fA-F]* | "") echo "Ugyldig SHA-256 i version.json" >&2; exit 1 ;;
 esac
@@ -289,7 +298,7 @@ esac
     exit 1
 }
 
-WHEEL="$TMP_DIR/meshpi-$VERSION-py3-none-any.whl"
+WHEEL="$TMP_DIR/$PACKAGE_FILENAME"
 LOCK_FILE="$TMP_DIR/requirements-linux.txt"
 install_step 3 "Lastar ned MeshPi $VERSION og låste avhengigheiter …"
 if [ -n "${MESHPI_PACKAGE_FILE:-}" ]; then
@@ -399,10 +408,12 @@ switch_link() {
 }
 
 install_step 7 "Aktiverer MeshPi og konfigurerer bakgrunnstenesta …"
-if [ "$MODE" = "always" ] && [ "$SKIP_SERVICE" != "1" ]; then
-    "$SYSTEMCTL" stop meshpi.service >/dev/null 2>&1 || true
-elif [ -x "$BIN_FILE" ]; then
-    "$BIN_FILE" service stop >/dev/null 2>&1 || true
+if [ "$SKIP_SERVICE" != "1" ]; then
+    if [ "$MODE" = "always" ]; then
+        "$SYSTEMCTL" stop meshpi.service >/dev/null 2>&1 || true
+    elif [ -x "$BIN_FILE" ]; then
+        "$BIN_FILE" service stop >/dev/null 2>&1 || true
+    fi
 fi
 
 if [ -z "$OLD_RELEASE" ] && [ -d "$PREFIX/.venv" ]; then

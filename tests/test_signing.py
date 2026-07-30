@@ -22,11 +22,28 @@ def manifest():
     return json.loads((ROOT / "website" / "version.json").read_text(encoding="utf-8"))
 
 
+def beta_manifest():
+    return json.loads(
+        (ROOT / "website" / "beta" / "version.json").read_text(encoding="utf-8")
+    )
+
+
 def test_manifest_accepts_key_from_explicit_trust_registry():
     verify_manifest_signature(
         manifest(),
         trusted_keys={SIGNING_KEY_ID: (PUBLIC_EXPONENT, PUBLIC_MODULUS)},
     )
+
+
+def test_beta_seed_manifest_is_signed_and_keeps_stable_manifest_isolated():
+    stable = manifest()
+    beta = beta_manifest()
+
+    verify_manifest_signature(beta)
+    assert stable["channel"] == "stable"
+    assert beta["channel"] == "beta"
+    assert beta["latest_version"] == stable["latest_version"]
+    assert beta["package"] == stable["package"]
 
 
 def test_manifest_rejects_revoked_signing_key():

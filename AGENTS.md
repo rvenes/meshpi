@@ -192,6 +192,11 @@ MeshPi er i 0.x-serien. Bruk normalt:
 - patchversjon for feilrettingar og mindre UI-forbetringar;
 - minorversjon for større funksjonar eller merkbare grensesnittendringar.
 
+Interne førehandsutgåver bruker PEP 440-forma `X.Y.ZbN`, til dømes `0.9.0b1`.
+Dei skal byggjast med `scripts/prepare_release.py --channel beta`, publiserast
+berre under `website/beta/` og veljast uttrykkeleg med `meshpi update --beta`.
+Den stabile `website/version.json` skal aldri peike på ei førehandsutgåve.
+
 Ved versjonsauke skal desse stadene kontrollerast:
 
 - `pyproject.toml`

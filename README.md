@@ -187,6 +187,25 @@ Bruk `meshpi update --check` for berre å sjekke. Sjølve installasjonen krev at
 du skriv `OPPDATER`, eller at du legg til `--yes` for ei uttrykkeleg
 ikkje-interaktiv stadfesting.
 
+Interne testarar kan uttrykkeleg velje den separate betakanalen på venes.org:
+
+```bash
+# Linux, always-modus
+sudo meshpi update --beta
+
+# Linux session-modus og macOS
+meshpi update --beta
+```
+
+```powershell
+# Windows
+meshpi update --beta
+```
+
+Beta er eit eingongsval for kvar oppdatering. TUI-en og `meshpi update` utan
+`--beta` sjekkar alltid berre den stabile kanalen. Betautgåver bruker versjonar
+som `0.9.0b1`; den endelege `0.9.0` blir rekna som nyare enn alle 0.9.0-betaer.
+
 TUI-en sjekkar `https://venes.org/meshpi/version.json` ved oppstart og viser
 `meshpi update` i ei lokal systemmelding når ein ny versjon finst. Kommandoen
 blir aldri lagd i sendefeltet eller sendt over Meshtastic. Oppdateraren
@@ -405,7 +424,7 @@ Alle CLI-kommandoane:
 | `meshpi daemon` | Køyr bakgrunnstenesta i framgrunnen; mest for feilsøking og tenesteoppsett. |
 | `meshpi doctor [--offline]` | Køyr sjølvtest; `--offline` krev ikkje ein tilgjengeleg node. |
 | `meshpi service {status,start,stop,enable,disable}` | Vis eller styr bakgrunnstenesta og autostart. |
-| `meshpi update [--check] [--yes]` | Sjekk eller installer ei signert og hashkontrollert oppdatering. |
+| `meshpi update [--check] [--yes] [--beta]` | Sjekk eller installer ei signert oppdatering; `--beta` vel den interne betakanalen. |
 | `meshpi status` | Vis sambands- og tilkoplingsstatus. |
 | `meshpi nodes [--search TEKST] [--sort name\|seen\|id]` | Vis, filtrer og sorter kjende nodar. |
 | `meshpi node NODE-ID` | Vis alle lagra detaljar om éin node. |

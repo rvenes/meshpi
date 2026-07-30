@@ -16,4 +16,20 @@ Ved ei ny utgåve:
 7. Kontroller manifestet mot faktiske byte, installer alle tre plattformer og
    test automatisk rollback før produksjonsklienten blir oppdatert.
 
+Ei intern beta blir bygd med ein PEP 440-versjon som `0.9.0b1`:
+
+```text
+python scripts/prepare_release.py --channel beta \
+  --release-note "Kort utgåvenotat" --signing-key <privat-nøkkelsti>
+```
+
+Beta skal publiserast under `meshpi/beta/` med `version.json` og installatørane
+i rota, låsefiler under `locks/` og wheel under `downloads/`. Betafiler skal
+aldri erstatte den stabile `meshpi/version.json`. Sida `beta/index.html` er
+med vilje ikkje lenkja frå hovudsida.
+
+Før første beta kan den stabile releasebygginga bruke `--seed-beta`. Det lagar
+eit signert betamanifest som peikar på den stabile utgåva, slik at
+`meshpi update --beta` svarar at ingen nyare utgåve finst i staden for HTTP 404.
+
 WinSCP lastar publiseringsmappa automatisk opp til webhotellet.

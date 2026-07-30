@@ -30,7 +30,7 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.8.5</div>
+        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.8.6</div>
         <h1>Meshtastic-chat.<br><span>Rett i terminalen.</span></h1>
         <p class="lead">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
@@ -55,7 +55,7 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.8.5</b><i>●</i> Tilkopla
+          <b>MeshPi 0.8.6</b><i>●</i> Tilkopla
           <span>BLE Meshtastic</span>
         </div>
         <div class="terminal-grid">
@@ -255,6 +255,11 @@
           blir tekne vare på.
         </p>
         <p>
+          Interne testarar kan velje ei signert førehandsutgåve med
+          <code>meshpi update --beta</code>. Utan <code>--beta</code> blir berre
+          den stabile kanalen brukt.
+        </p>
+        <p>
           MeshPi sjekkar <a href="version.json">version.json</a> ved oppstart.
           Når ein ny versjon finst, blir oppdateringskommandoen vist som ei lokal
           systemmelding i chatloggen. Han blir aldri sendt til mesh-nettet.
@@ -323,7 +328,7 @@
         <div><code>meshpi daemon</code><span>Køyr bakgrunnstenesta i framgrunnen for feilsøking eller tenesteoppsett.</span></div>
         <div><code>meshpi doctor [--offline]</code><span>Køyr sjølvtest; offline krev ikkje ein tilgjengeleg node.</span></div>
         <div><code>meshpi service {status,start,stop,enable,disable}</code><span>Vis eller styr tenesta og autostart.</span></div>
-        <div><code>meshpi update [--check] [--yes]</code><span>Sjekk eller installer ei signert og hashkontrollert oppdatering.</span></div>
+        <div><code>meshpi update [--check] [--yes] [--beta]</code><span>Sjekk eller installer ei signert oppdatering; <code>--beta</code> vel den interne betakanalen.</span></div>
         <div><code>meshpi status</code><span>Vis sambands- og tilkoplingsstatus.</span></div>
         <div><code>meshpi nodes [--search TEKST] [--sort name|seen|id]</code><span>Vis, filtrer og sorter kjende nodar.</span></div>
         <div><code>meshpi node NODE-ID</code><span>Vis alle lagra detaljar om éin node.</span></div>
@@ -378,18 +383,18 @@
       </div>
     </section>
 
-    <section id="release-0.8.5" class="section release-section">
+    <section id="release-0.8.6" class="section release-section">
       <div class="section-heading">
         <span>Siste versjon</span>
-        <h2>MeshPi 0.8.5</h2>
+        <h2>MeshPi 0.8.6</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li>Gjer BLE-tilkopling raskare og meir føreseieleg på macOS ved å halde søk og tilkopling i same CoreBluetooth-økt</li>
-          <li>Forklarer macOS sin PIN-dialog og åtvarar mot samtidige Meshtastic-klientar</li>
+          <li>Legg til ein separat, uttrykkeleg betakanal med <code>meshpi update --beta</code></li>
+          <li>Støttar signerte førehandsversjonar som <code>0.9.0b1</code> utan å påverke stabilkanalen</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.8.5-py3-none-any.whl">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.8.6-py3-none-any.whl">Last ned Python-pakken</a>
           <a href="https://github.com/rvenes/meshpi">Kjeldekode på GitHub</a>
         </div>
       </div>

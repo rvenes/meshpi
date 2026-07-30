@@ -9,19 +9,28 @@ import pytest
 
 from meshpi.config import Settings
 from meshpi.update import (
+    BETA_UPDATE_URL,
     UpdateArtifact,
     UpdateCheckError,
     UpdatePlan,
+    _fetch_manifest,
     apply_update,
     parse_update_manifest,
     platform_key,
 )
+from meshpi.versions import VersionError, is_prerelease, version_key
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def manifest():
     return json.loads((ROOT / "website" / "version.json").read_text(encoding="utf-8"))
+
+
+def beta_manifest():
+    return json.loads(
+        (ROOT / "website" / "beta" / "version.json").read_text(encoding="utf-8")
+    )
 
 
 def test_update_manifest_selects_platform_command():
@@ -31,7 +40,7 @@ def test_update_manifest_selects_platform_command():
         platform_name="win32",
     )
     assert notice is not None
-    assert notice.latest_version == "0.8.5"
+    assert notice.latest_version == "0.8.6"
     assert notice.command == "meshpi update"
 
 
@@ -61,7 +70,7 @@ def test_update_manifest_returns_none_for_current_or_newer_version():
     assert (
         parse_update_manifest(
             manifest(),
-            current_version="0.8.5",
+            current_version="0.8.6",
             platform_name="linux",
         )
         is None
@@ -69,7 +78,7 @@ def test_update_manifest_returns_none_for_current_or_newer_version():
     assert (
         parse_update_manifest(
             manifest(),
-            current_version="0.8.6",
+            current_version="0.8.7",
             platform_name="linux",
         )
         is None
@@ -98,6 +107,74 @@ def test_platform_key():
     assert platform_key("linux") == "linux"
     assert platform_key("darwin") == "macos"
     assert platform_key("win32") == "windows"
+
+
+def test_prerelease_versions_are_ordered_before_the_stable_release():
+    assert version_key("0.9.0a1") < version_key("0.9.0b1")
+    assert version_key("0.9.0b1") < version_key("0.9.0b2")
+    assert version_key("0.9.0b2") < version_key("0.9.0rc1")
+    assert version_key("0.9.0rc1") < version_key("0.9.0")
+    assert is_prerelease("0.9.0b1")
+    assert not is_prerelease("0.9.0")
+    with pytest.raises(VersionError):
+        version_key("0.9.0-beta.1")
+
+
+def test_beta_manifest_requires_beta_channel_and_builds_beta_command(monkeypatch):
+    value = manifest()
+    value["channel"] = "beta"
+    value["latest_version"] = "0.9.0b1"
+    monkeypatch.setattr("meshpi.update.verify_manifest_signature", lambda _value: None)
+
+    notice = parse_update_manifest(
+        value,
+        current_version="0.8.6",
+        platform_name="linux",
+        channel="beta",
+    )
+
+    assert notice is not None
+    assert notice.channel == "beta"
+    assert notice.command == "sudo meshpi update --beta"
+
+
+def test_update_manifest_rejects_wrong_channel():
+    with pytest.raises(UpdateCheckError, match="ikkje beta-kanalen"):
+        parse_update_manifest(
+            manifest(),
+            current_version="0.8.5",
+            platform_name="linux",
+            channel="beta",
+        )
+
+
+def test_beta_seed_reports_no_update_for_current_stable_version():
+    assert (
+        parse_update_manifest(
+            beta_manifest(),
+            current_version="0.8.6",
+            platform_name="linux",
+            channel="beta",
+        )
+        is None
+    )
+
+
+def test_beta_channel_fetches_separate_venes_manifest(monkeypatch):
+    response = FakeResponse(b"{}", BETA_UPDATE_URL)
+    requested = []
+
+    def open_url(request, timeout):
+        requested.append((request.full_url, timeout))
+        return response
+
+    monkeypatch.setattr("meshpi.update.urlopen", open_url)
+
+    value, raw = _fetch_manifest(Settings(), channel="beta")
+
+    assert value == {}
+    assert raw == b"{}"
+    assert requested == [(BETA_UPDATE_URL, 3.0)]
 
 
 class FakeResponse(io.BytesIO):

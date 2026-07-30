@@ -1,7 +1,7 @@
 # Utviklingsstatus og vidare plan
 
-Sist oppdatert: 28. juli 2026
-Gjeldande utgiving: MeshPi 0.8.3
+Sist oppdatert: 30. juli 2026
+Gjeldande utgiving: MeshPi 0.8.6
 
 Denne fila er den varige overleveringa mellom utviklingstrådar. Ho skal
 oppdaterast når ei større funksjon blir ferdig, når eit viktig arkitekturval
@@ -119,6 +119,7 @@ Det viktigaste skiljet mot ein vanleg klient er derfor:
 | 0.8.0 | Nodeinfo, telemetri-, posisjons- og traceroutehistorikk |
 | 0.8.2 | Fleirkanalsmeldingar, kanalbundne DM-ruter og gatewayobservasjonar |
 | 0.8.3 | Eksperimentell BLE, betre DM-ruter og delt samtale-/kanalvising |
+| 0.8.6 | Separat, uttrykkeleg betakanal for interne 0.9.x-testutgåver |
 
 ## Avklaringar som alt er tekne
 

@@ -168,13 +168,22 @@ PY
 
 VERSION="$(manifest_value latest_version)"
 PACKAGE_URL="$(manifest_value package.url)"
+PACKAGE_FILENAME="$(manifest_value package.filename)"
 EXPECTED_SHA256="$(manifest_value package.sha256)"
 LOCK_URL="$(manifest_value locks.macos.url)"
 EXPECTED_LOCK_SHA256="$(manifest_value locks.macos.sha256)"
 IPC_TOKEN="$("$PYTHON" -c 'import secrets; print(secrets.token_hex(32))')"
-case "$VERSION" in
-    *[!0-9.]* | *.*.*.* | .* | *.) echo "Ugyldig versjon i manifestet" >&2; exit 1 ;;
-esac
+"$PYTHON" - "$VERSION" "$PACKAGE_FILENAME" <<'PY'
+import re
+import sys
+
+version, filename = sys.argv[1:]
+pattern = r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:(?:a|b|rc)(0|[1-9]\d*))?"
+if re.fullmatch(pattern, version) is None:
+    raise SystemExit("Ugyldig versjon i manifestet")
+if filename != f"meshpi-{version}-py3-none-any.whl":
+    raise SystemExit("Ugyldig pakkenamn i manifestet")
+PY
 case "$EXPECTED_SHA256" in
     *[!0-9a-fA-F]* | "") echo "Ugyldig SHA-256 i version.json" >&2; exit 1 ;;
 esac
@@ -190,7 +199,7 @@ esac
     exit 1
 }
 
-WHEEL="$TMP_DIR/meshpi-$VERSION-py3-none-any.whl"
+WHEEL="$TMP_DIR/$PACKAGE_FILENAME"
 LOCK_FILE="$TMP_DIR/requirements-macos.txt"
 install_step 3 "Lastar ned MeshPi $VERSION og låste avhengigheiter …"
 if [ -n "${MESHPI_PACKAGE_FILE:-}" ]; then
@@ -278,22 +287,23 @@ INSTALLED_VERSION="$("$RELEASE/venv/bin/meshpi" --version)"
 install_step 7 "Aktiverer MeshPi og konfigurerer bakgrunnstenesta …"
 DOMAIN="gui/$(id -u)"
 LABEL="org.venes.meshpi"
-launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
+if [ "$SKIP_SERVICE" != "1" ]; then
+    launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
 
-# launchctl may return from bootout before the old job has been removed from
-# the GUI domain.  Bootstrapping the same label during that short window fails
-# with error 5 (Input/output error), so wait for removal to finish.
-i=0
-while launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; do
-    i=$((i + 1))
-    if [ "$i" -ge 50 ]; then
-        echo "MeshPi-tenesta kunne ikkje stoppast før oppdateringa." >&2
-        exit 1
-    fi
-    sleep 0.1
-done
+    # launchctl may return from bootout before the old job has been removed
+    # from the GUI domain.  Vent før same label blir registrert på nytt.
+    i=0
+    while launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; do
+        i=$((i + 1))
+        if [ "$i" -ge 50 ]; then
+            echo "MeshPi-tenesta kunne ikkje stoppast før oppdateringa." >&2
+            exit 1
+        fi
+        sleep 0.1
+    done
+fi
 
-if [ -x "$BIN_DIR/meshpi" ]; then
+if [ "$SKIP_SERVICE" != "1" ] && [ -x "$BIN_DIR/meshpi" ]; then
     "$BIN_DIR/meshpi" service stop >/dev/null 2>&1 || true
 fi
 
@@ -343,7 +353,9 @@ then
     : >"$APP_ROOT/path-added-by-meshpi"
 fi
 
-if [ "$MODE" = "always" ] && [ "$SKIP_SERVICE" != "1" ]; then
+if [ "$SKIP_SERVICE" = "1" ]; then
+    :
+elif [ "$MODE" = "always" ]; then
     cat >"$PLIST_FILE" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
