@@ -17,6 +17,37 @@ from meshpi.channels import (
 from meshpi.models import Message, MessageStatus, Node, now_iso
 
 DATABASE_SCHEMA_VERSION = 3
+EXPORT_FORMAT_VERSION = 1
+EXPORT_TABLE_QUERIES = (
+    (
+        "logical_channels",
+        'SELECT * FROM "logical_channels" ORDER BY rowid',
+    ),
+    ("nodes", 'SELECT * FROM "nodes" ORDER BY rowid'),
+    ("messages", 'SELECT * FROM "messages" ORDER BY rowid'),
+    (
+        "channel_bindings",
+        'SELECT * FROM "channel_bindings" ORDER BY rowid',
+    ),
+    (
+        "message_observations",
+        'SELECT * FROM "message_observations" ORDER BY rowid',
+    ),
+    (
+        "telemetry_samples",
+        'SELECT * FROM "telemetry_samples" ORDER BY rowid',
+    ),
+    ("positions", 'SELECT * FROM "positions" ORDER BY rowid'),
+    ("node_actions", 'SELECT * FROM "node_actions" ORDER BY rowid'),
+    (
+        "archived_conversations",
+        'SELECT * FROM "archived_conversations" ORDER BY rowid',
+    ),
+    (
+        "archived_conversation_ids",
+        'SELECT * FROM "archived_conversation_ids" ORDER BY rowid',
+    ),
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
@@ -433,6 +464,42 @@ class Database:
                 yield connection
         finally:
             connection.close()
+
+    def export_records(self, meshpi_version: str) -> Iterator[dict[str, Any]]:
+        """Strøym eit konsistent, tekstvenleg bilete av alle brukardata."""
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            connection.execute(
+                "SELECT 1 FROM sqlite_master LIMIT 1"
+            ).fetchone()
+            schema_version = int(
+                connection.execute("PRAGMA user_version").fetchone()[0]
+            )
+            yield {
+                "record": "metadata",
+                "format": "meshpi-database-export",
+                "format_version": EXPORT_FORMAT_VERSION,
+                "meshpi_version": meshpi_version,
+                "database_schema_version": schema_version,
+                "exported_at": now_iso(),
+            }
+            counts: dict[str, int] = {}
+            for table, query in EXPORT_TABLE_QUERIES:
+                count = 0
+                rows = connection.execute(query)
+                for row in rows:
+                    yield {
+                        "record": "row",
+                        "table": table,
+                        "data": dict(row),
+                    }
+                    count += 1
+                counts[table] = count
+            yield {
+                "record": "complete",
+                "tables": counts,
+                "rows": sum(counts.values()),
+            }
 
     def insert_message(self, message: Message) -> tuple[bool, int | None]:
         conversation_id = message.conversation_id

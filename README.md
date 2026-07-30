@@ -315,6 +315,27 @@ Meshtastic-kanal-ID viser at dei er den same logiske kanalen. Kvar melding får
 dessutan lagra lokal node, gatewayprofil og kanalrute. Same melding motteken
 via fleire gatewayar blir vist éin gong, men alle mottaka blir logga.
 
+Eksporter heile databasen som UTF-8-tekst før til dømes testing av ei
+betautgåve som kan krevje ny database:
+
+```bash
+meshpi export
+meshpi export meshpi-data.jsonl
+```
+
+Utan filnamn blir eksporten lagra med tidsstempel i gjeldande mappe. Formatet
+er JSON Lines: den første linja inneheld format-, program- og
+databaseskjemaversjon, kvar datarad kjem på si eiga linje, og den siste linja
+stadfestar radtala. Eksporten omfattar meldingar, nodar, kanalar, telemetri,
+posisjonar, nodehandlingar og arkiveringsstatus. Han blir teken som eitt
+konsistent SQLite-øyeblikksbilete medan daemonen køyrer. Ei eksisterande fil
+blir ikkje overskriven utan `--force`, og ei avbroten eksportfil blir ikkje
+lagd att som ein ferdig eksport.
+
+Eksporten er meint for å ta vare på og lese data, ikkje som eit lova
+importformat. Fila kan innehalde private meldingar og nøyaktige posisjonar og
+må oppbevarast deretter.
+
 MeshPi sender berre på kanalar som er stadfesta i kanaloversikta til den aktive
 noden. Ei historisk, ukjend eller mellombels rute er lesbar, men ikkje sendbar,
 og fell aldri stille tilbake til kanal 0. Dersom ei melding kjem før
@@ -423,6 +444,7 @@ Alle CLI-kommandoane:
 | `meshpi connections` | Vis lagra tilkoplingsprofilar. |
 | `meshpi daemon` | Køyr bakgrunnstenesta i framgrunnen; mest for feilsøking og tenesteoppsett. |
 | `meshpi doctor [--offline]` | Køyr sjølvtest; `--offline` krev ikkje ein tilgjengeleg node. |
+| `meshpi export [FIL] [--force]` | Eksporter heile databasen som UTF-8 JSON Lines. |
 | `meshpi service {status,start,stop,enable,disable}` | Vis eller styr bakgrunnstenesta og autostart. |
 | `meshpi update [--check] [--yes] [--beta]` | Sjekk eller installer ei signert oppdatering; `--beta` vel den interne betakanalen. |
 | `meshpi status` | Vis sambands- og tilkoplingsstatus. |

@@ -165,3 +165,45 @@ def open_watch(
         if isinstance(exc, OSError):
             raise CLIError("Får ikkje kontakt med meshpi-tenesta") from exc
         raise
+
+
+def open_export(settings: Settings) -> tuple[socket.socket, WatchStream]:
+    """Opne ein autentisert straum med JSON-linjer frå databasen."""
+    sock: socket.socket | None = None
+    stream: WatchStream | None = None
+    try:
+        sock = _connect(settings, 10)
+        line_stream = _SocketLineStream(sock)
+        stream = line_stream
+        payload = (
+            json.dumps(
+                {
+                    "command": "export",
+                    "token": settings.ipc_token,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            + b"\n"
+        )
+        sock.sendall(payload)
+        raw = line_stream.readline(MAX_RESPONSE_BYTES + 1)
+        if not raw or len(raw) > MAX_RESPONSE_BYTES:
+            raise CLIError("Ugyldig svar frå meshpi-tenesta")
+        response = json.loads(raw)
+        if not response.get("ok"):
+            raise CLIError(
+                str(response.get("error", "Klarte ikkje starte databaseeksport"))
+            )
+        sock.settimeout(None)
+        return sock, stream
+    except Exception as exc:
+        if stream is not None:
+            stream.close()
+        if sock is not None:
+            sock.close()
+        if isinstance(exc, CLIError):
+            raise
+        if isinstance(exc, OSError):
+            raise CLIError("Får ikkje kontakt med meshpi-tenesta") from exc
+        raise

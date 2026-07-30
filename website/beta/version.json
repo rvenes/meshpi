@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.8.6",
-  "published_at": "2026-07-30T20:46:03Z",
+  "latest_version": "0.8.7",
+  "published_at": "2026-07-30T21:16:20Z",
   "minimum_python": "3.11",
   "release_notes_url": "https://venes.org/meshpi/beta/",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.8.6-py3-none-any.whl",
-    "filename": "meshpi-0.8.6-py3-none-any.whl",
-    "sha256": "4449f3b35552922eaf5b9d19e06695c6ca77cffa4f55479c1ec266a10222da5c",
-    "size": 125116,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.8.7-py3-none-any.whl",
+    "filename": "meshpi-0.8.7-py3-none-any.whl",
+    "sha256": "403fa6787539e0fd3262330cf48239c9995152c9f679765dd7cde00187a1664c",
+    "size": 127572,
     "format": "wheel"
   },
   "locks": {
@@ -55,13 +55,13 @@
     }
   },
   "release_notes": [
-    "Legg til ein separat, uttrykkeleg betakanal med meshpi update --beta.",
-    "Støttar signerte førehandsversjonar som 0.9.0b1 utan å påverke stabilkanalen."
+    "Eksporter heile databasen som UTF-8-tekst med meshpi export.",
+    "Tek eit konsistent øyeblikksbilete medan tenesta køyrer og lagrar eksporten atomisk."
   ],
   "channel": "beta",
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "qb/ewLmk6lFfug87NT52hvbgucHDNzmRm6+HGgVa/MVqgw3gi0EqwGQCfTJJrCeQdfCIY2N/7htWuh8Sr7PIa/NQ/XFxXKb+f6KrtTP/Mnk/EZ0TMpZV9VR6qwnhLQbsdsgZIP8bD5Y72YZjn5Hb+l+Osgno6MV9tHUYdxvhF84UmCMRlgQAEUPZ9TfysfjgKRWYtTFJjEEg3klXwCFN1PQKv7x9XAjb72oWNMGLR5E81i8ATrvqsU5n6MgMYVZYgWwU6/kod+wz8NlHil6hw/OzmkNNX0Tg8FfPTPA3rCME4oR7rpZWSMwbcKwWuLCbyeWi0WLRGbyvUaoTxZixNe4hjx0E2rIOmzP6mXsNvLCuIGja8UDseHJhb7izzMc0ZNRMVPVisl0XLTFw7vpfraKlMEEp+af4jAseUu7ggNn4MQiFrX3GFnyZA2hHNfc4wGCRP9BVGAdjr4i7hJdH/vZqt4hiMv8iP8dtT0iqHKznb9PrjA8KpdVpJSXir6LL"
+    "value": "qmMb8a712vogOeRbfhso23KueU6cGvFH+gRRxDzlXK0E30djkT/Imx+VQBhaF7mWel6AoLxOrW0MDRDAW1I9DRqAg+u2qDx7nkj9jyc4/3Tg38Wi6pL46h9o2F5OSCxUrpbnUXYO/k646FrIjDLqvfB2pjd/5ayF86o1VT8LWSqYKVIehRTsIhQcNljPU+JI7n4HR4SnkZgSMbTZNCfsxWQLiw6uqyQFC7HFjEARlSWVUm6DqMVTUlEQ/pbQwbO3yKQWDfVUN5M0wJd3GhbLcNkYLupBh7kxiS3YvSC1J1BWWo8jUmUhs4rJlJ1dc7t8hKSg1rKgF1mCXD1m+KOQfSbSHVJvFxuMxG18Zs1ftgI5VMzIe1y2NPsvIGPdosn0IBuicTALkunsrR2Afc1s/fo2sjp7MgXVyWCV2BQinHynJCl997nMraa2kDtfXxQKc/2n5VOh/6pr/by4hJAvcUkG/y+AmrbU1m6fB1XmZSoykOO9LnvJ5D8hHFEExxHa"
   }
 }

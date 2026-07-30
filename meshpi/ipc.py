@@ -14,6 +14,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
+from meshpi import __version__
 from meshpi.channels import (
     dm_conversation_id,
     parse_dm_conversation_id,
@@ -30,6 +31,7 @@ LOG = logging.getLogger(__name__)
 MAX_REQUEST_BYTES = 1_000_000
 MAX_IPC_CLIENTS = 32
 MAX_IPC_WATCHERS = 8
+MAX_IPC_EXPORTS = 2
 IPC_READ_TIMEOUT = 5.0
 IPC_WATCH_HEARTBEAT = 20.0
 
@@ -542,6 +544,7 @@ class _IPCServerMixin:
             MAX_IPC_CLIENTS + MAX_IPC_WATCHERS
         )
         self._watcher_slots = threading.BoundedSemaphore(MAX_IPC_WATCHERS)
+        self._export_slots = threading.BoundedSemaphore(MAX_IPC_EXPORTS)
         super().__init__(address, _IPCHandler)  # type: ignore[misc]
 
     def process_request(self, request: Any, client_address: Any) -> None:
@@ -616,6 +619,9 @@ class _IPCHandler(socketserver.StreamRequestHandler):
             if request.get("command") == "watch":
                 self._watch(request)
                 return
+            if request.get("command") == "export":
+                self._export()
+                return
             response = self.server.app.dispatch(request)
             try:
                 self._write(response)
@@ -653,6 +659,24 @@ class _IPCHandler(socketserver.StreamRequestHandler):
                         self._write(event)
         finally:
             self.server._watcher_slots.release()
+
+    def _export(self) -> None:
+        if not self.server._export_slots.acquire(blocking=False):
+            raise RuntimeError("For mange aktive databaseeksportar; prøv igjen seinare")
+        try:
+            self._write(
+                {
+                    "ok": True,
+                    "data": {
+                        "format": "meshpi-database-export",
+                        "encoding": "utf-8",
+                    },
+                }
+            )
+            for record in self.server.app.database.export_records(__version__):
+                self._write(record)
+        finally:
+            self.server._export_slots.release()
 
     def _peer_closed(self) -> bool:
         timeout = self.request.gettimeout()

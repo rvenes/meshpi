@@ -84,6 +84,45 @@ def test_database_indexes_periodic_channel_rebinding(tmp_path):
     assert "messages_channel_binding" in indexes
 
 
+def test_database_export_contains_metadata_all_tables_and_rows(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    database.insert_message(message())
+    database.upsert_node(Node(node_id="!11112222", long_name="Testnode"))
+
+    records = list(database.export_records("9.8.7"))
+
+    assert records[0]["record"] == "metadata"
+    assert records[0]["format"] == "meshpi-database-export"
+    assert records[0]["format_version"] == 1
+    assert records[0]["meshpi_version"] == "9.8.7"
+    assert records[0]["database_schema_version"] == 3
+    rows = [record for record in records if record["record"] == "row"]
+    assert any(
+        record["table"] == "messages" and record["data"]["text"] == "Test"
+        for record in rows
+    )
+    assert any(
+        record["table"] == "nodes"
+        and record["data"]["long_name"] == "Testnode"
+        for record in rows
+    )
+    assert records[-1]["record"] == "complete"
+    assert records[-1]["rows"] == len(rows)
+    assert set(records[-1]["tables"]) == {
+        "logical_channels",
+        "nodes",
+        "messages",
+        "channel_bindings",
+        "message_observations",
+        "telemetry_samples",
+        "positions",
+        "node_actions",
+        "archived_conversations",
+        "archived_conversation_ids",
+    }
+
+
 def test_store_retrieve_and_deduplicate_message(tmp_path):
     database = Database(tmp_path / "messages.db")
     database.initialize()

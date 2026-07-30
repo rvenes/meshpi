@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from meshpi.cli import (
@@ -197,6 +199,118 @@ def test_cli_has_verified_update_command():
 
     beta = build_parser().parse_args(["update", "--beta", "--check"])
     assert beta.beta is True
+
+
+def test_cli_parser_supports_database_export(tmp_path):
+    output = tmp_path / "data.txt"
+
+    args = build_parser().parse_args(["export", str(output), "--force"])
+
+    assert args.command == "export"
+    assert args.output == output
+    assert args.force is True
+
+
+def test_database_export_writes_utf8_text_atomically(tmp_path, monkeypatch, capsys):
+    output = tmp_path / "meshpi-data.jsonl"
+    records = [
+        {
+            "record": "metadata",
+            "format": "meshpi-database-export",
+            "format_version": 1,
+        },
+        {
+            "record": "row",
+            "table": "messages",
+            "data": {"text": "Melding frå Ørsta"},
+        },
+        {
+            "record": "complete",
+            "tables": {"messages": 1},
+            "rows": 1,
+        },
+    ]
+
+    class FakeSocket:
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    class FakeStream:
+        closed = False
+
+        def __iter__(self):
+            return iter(
+                [
+                    json.dumps(record, ensure_ascii=False).encode("utf-8") + b"\n"
+                    for record in records
+                ]
+            )
+
+        def close(self):
+            self.closed = True
+
+    sock = FakeSocket()
+    stream = FakeStream()
+    monkeypatch.setattr(
+        "meshpi.cli._open_export",
+        lambda _settings: (sock, stream),
+    )
+
+    run(build_parser().parse_args(["export", str(output)]), Settings())
+
+    saved = [
+        json.loads(line)
+        for line in output.read_text(encoding="utf-8").splitlines()
+    ]
+    assert saved == records
+    assert sock.closed is True
+    assert stream.closed is True
+    assert "Eksporterte 1 datarader" in capsys.readouterr().out
+
+
+def test_database_export_refuses_to_overwrite_existing_file(tmp_path, monkeypatch):
+    output = tmp_path / "eksisterer.jsonl"
+    output.write_text("behald", encoding="utf-8")
+    monkeypatch.setattr(
+        "meshpi.cli._open_export",
+        lambda _settings: (_ for _ in ()).throw(AssertionError("skal ikkje køyre")),
+    )
+
+    with pytest.raises(ValueError, match="--force"):
+        run(build_parser().parse_args(["export", str(output)]), Settings())
+
+    assert output.read_text(encoding="utf-8") == "behald"
+
+
+def test_incomplete_database_export_leaves_no_output_file(tmp_path, monkeypatch):
+    output = tmp_path / "uferdig.jsonl"
+
+    class FakeSocket:
+        def close(self):
+            pass
+
+    class FakeStream:
+        def __iter__(self):
+            yield (
+                b'{"record":"metadata","format":"meshpi-database-export",'
+                b'"format_version":1}\n'
+            )
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "meshpi.cli._open_export",
+        lambda _settings: (FakeSocket(), FakeStream()),
+    )
+
+    with pytest.raises(CLIError, match="broten"):
+        run(build_parser().parse_args(["export", str(output)]), Settings())
+
+    assert not output.exists()
+    assert list(tmp_path.glob(".*.tmp")) == []
 
 
 def test_update_command_does_not_start_daemon(monkeypatch):

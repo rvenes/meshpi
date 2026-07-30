@@ -14,7 +14,13 @@ from meshpi.channels import (
     logical_channel_key,
     public_conversation_id,
 )
-from meshpi.client import CLIError, CLIUnavailableError, open_watch, request
+from meshpi.client import (
+    CLIError,
+    CLIUnavailableError,
+    open_export,
+    open_watch,
+    request,
+)
 from meshpi.config import Settings
 from meshpi.database import Database
 from meshpi.events import EventHub
@@ -826,6 +832,63 @@ def test_ipc_socket_roundtrip(tmp_path):
     finally:
         server.shutdown()
         thread.join(timeout=2)
+
+
+def test_ipc_streams_complete_database_export(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    database.insert_message(
+        Message(
+            packet_id=17,
+            timestamp="2026-07-30T12:00:00+00:00",
+            from_node="!11112222",
+            to_node="!ffffffff",
+            channel=0,
+            kind=ConversationKind.PUBLIC,
+            peer_node=None,
+            text="Eksport frå Ørsta",
+            direction=Direction.INCOMING,
+            transport=Transport.RF,
+        )
+    )
+    server_settings = Settings(
+        database_path=database.path,
+        ipc_port=0,
+        ipc_token="e" * 64,
+        ipc_transport="tcp",
+    )
+    server = IPCServer(
+        server_settings,
+        IPCApplication(server_settings, database, FakeService(), EventHub()),
+    )
+    client_settings = Settings(
+        database_path=database.path,
+        ipc_host=server.address[0],
+        ipc_port=server.address[1],
+        ipc_token=server_settings.ipc_token,
+        ipc_transport="tcp",
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    sock = stream = None
+    try:
+        sock, stream = open_export(client_settings)
+        records = [json.loads(line) for line in stream]
+    finally:
+        if stream is not None:
+            stream.close()
+        if sock is not None:
+            sock.close()
+        server.shutdown()
+        thread.join(timeout=2)
+
+    assert records[0]["record"] == "metadata"
+    assert records[-1]["record"] == "complete"
+    assert any(
+        record.get("table") == "messages"
+        and record["data"]["text"] == "Eksport frå Ørsta"
+        for record in records
+    )
 
 
 def test_ipc_rejects_missing_token(tmp_path):

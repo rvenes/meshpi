@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import socket
 import sys
+import tempfile
 import threading
 from contextlib import suppress
 from datetime import datetime
@@ -13,6 +15,7 @@ from typing import Any
 from meshpi import __version__
 from meshpi.channels import parse_dm_conversation_id, parse_public_conversation_id
 from meshpi.client import CLIError
+from meshpi.client import open_export as _open_export
 from meshpi.client import open_watch as _open_watch
 from meshpi.client import request as _request
 from meshpi.config import Settings
@@ -38,6 +41,7 @@ COMMANDS = {
     "connections",
     "daemon",
     "doctor",
+    "export",
     "service",
     "status",
     "nodes",
@@ -77,6 +81,101 @@ def _default_env_file() -> str:
     except (OSError, UnicodeError):
         return ".env"
     return configured or ".env"
+
+
+def _default_export_path() -> Path:
+    timestamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
+    return Path.cwd() / f"meshpi-export-{timestamp}.jsonl"
+
+
+def _write_database_export(
+    settings: Settings,
+    destination: Path,
+    *,
+    force: bool = False,
+) -> tuple[Path, int]:
+    destination = destination.expanduser().absolute()
+    if destination.is_dir():
+        raise ValueError(f"Utstien er ei mappe: {destination}")
+    if (destination.exists() or destination.is_symlink()) and not force:
+        raise ValueError(
+            f"Fila finst frå før: {destination}. Bruk --force for å skrive over."
+        )
+    parent = destination.parent
+    if not parent.is_dir():
+        raise ValueError(f"Mappa finst ikkje: {parent}")
+
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            dir=parent,
+        )
+    except OSError as exc:
+        raise CLIError(f"Klarte ikkje opprette eksportfila: {exc}") from exc
+    temporary = Path(temporary_name)
+    sock = stream = None
+    row_count = 0
+    saw_metadata = False
+    saw_complete = False
+    try:
+        if os.name == "posix":
+            os.chmod(temporary, 0o600)
+        sock, stream = _open_export(settings)
+        with os.fdopen(descriptor, "wb") as output:
+            descriptor = -1
+            for raw in stream:
+                try:
+                    record = json.loads(raw)
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise CLIError("Databaseeksporten inneheld ugyldig JSON") from exc
+                if not isinstance(record, dict):
+                    raise CLIError("Databaseeksporten inneheld ei ugyldig linje")
+                if record.get("ok") is False:
+                    raise CLIError(
+                        str(record.get("error", "Databaseeksporten feila"))
+                    )
+                record_type = record.get("record")
+                if not saw_metadata:
+                    if (
+                        record_type != "metadata"
+                        or record.get("format") != "meshpi-database-export"
+                    ):
+                        raise CLIError("Databaseeksporten manglar gyldige metadata")
+                    saw_metadata = True
+                elif saw_complete:
+                    raise CLIError("Databaseeksporten har data etter sluttmarkøren")
+                elif record_type == "row":
+                    row_count += 1
+                elif record_type == "complete":
+                    expected_rows = record.get("rows")
+                    if expected_rows != row_count:
+                        raise CLIError("Databaseeksporten har feil radtal")
+                    saw_complete = True
+                else:
+                    raise CLIError("Databaseeksporten inneheld ein ukjend posttype")
+                output.write(raw if raw.endswith(b"\n") else raw + b"\n")
+            if not saw_complete:
+                raise CLIError("Databaseeksporten blei broten før han var ferdig")
+            output.flush()
+            os.fsync(output.fileno())
+        if not force and (destination.exists() or destination.is_symlink()):
+            raise ValueError(
+                f"Fila blei oppretta under eksporten: {destination}. "
+                "Bruk --force for å skrive over."
+            )
+        os.replace(temporary, destination)
+        return destination, row_count
+    except OSError as exc:
+        raise CLIError(f"Klarte ikkje lagre eksportfila: {exc}") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if stream is not None:
+            stream.close()
+        if sock is not None:
+            sock.close()
+        temporary.unlink(missing_ok=True)
 
 
 def _local_time(value: str | int | None) -> str:
@@ -551,6 +650,21 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="ikkje krev ein tilgjengeleg Meshtastic-node",
     )
+    export = sub.add_parser(
+        "export",
+        help="eksporter heile databasen som UTF-8-tekst",
+    )
+    export.add_argument(
+        "output",
+        nargs="?",
+        type=Path,
+        help="utfil (standard: tidsstempla .jsonl-fil i gjeldande mappe)",
+    )
+    export.add_argument(
+        "--force",
+        action="store_true",
+        help="skriv over utfila dersom ho finst frå før",
+    )
     service = sub.add_parser("service", help="styr bakgrunnstenesta")
     service.add_argument(
         "action",
@@ -680,6 +794,26 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
             failed = failed or not ok
         if failed:
             raise RuntimeError("Sjølvtesten fann feil")
+    elif command == "export":
+        destination, rows = _write_database_export(
+            settings,
+            args.output or _default_export_path(),
+            force=args.force,
+        )
+        result = {
+            "exported": True,
+            "path": str(destination),
+            "rows": rows,
+            "format": "meshpi-database-export",
+        }
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False))
+        else:
+            print(f"Eksporterte {rows} datarader til {destination}")
+            print(
+                "Fila kan innehalde private meldingar og posisjonar. "
+                "Oppbevar henne trygt."
+            )
     elif command == "service":
         data = manage_service(args.action, settings, args.env_file)
         print(json.dumps(data, ensure_ascii=False)) if args.json else _print_service(
