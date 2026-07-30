@@ -628,7 +628,7 @@ def test_status_bar_shows_current_meshpi_version_and_host(monkeypatch):
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.8.4" in text
+            assert "MeshPi 0.8.5" in text
             assert "Vert: testvert" in text
 
     run_scenario(scenario)

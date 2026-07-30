@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.8.4",
-  "published_at": "2026-07-30T09:41:51Z",
+  "latest_version": "0.8.5",
+  "published_at": "2026-07-30T12:09:08Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.8.4",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.8.5",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.8.4-py3-none-any.whl",
-    "filename": "meshpi-0.8.4-py3-none-any.whl",
-    "sha256": "1ed27f123f681cd59e370b80bc4d8b62c21ccb2fa010f16e5f7b9381de065f0d",
-    "size": 123207,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.8.5-py3-none-any.whl",
+    "filename": "meshpi-0.8.5-py3-none-any.whl",
+    "sha256": "657e0bfa2b801d55b875a789a991773c428be89acc3523c6b4a58f9c0898d3d1",
+    "size": 123933,
     "format": "wheel"
   },
   "locks": {
@@ -55,11 +55,12 @@
     }
   },
   "release_notes": [
-    "Rettar at DM-ar kunne bli ståande visuelt under Kanalar når samtalerekkjefølgja endra seg."
+    "Gjer BLE-tilkopling raskare og meir føreseieleg på macOS ved å halde søk og tilkopling i same CoreBluetooth-økt.",
+    "Forklarer macOS sin PIN-dialog og åtvarar mot samtidige Meshtastic-klientar."
   ],
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "Yt9iV8avenKuEcXvhcm6/ajXP3eAlAFLyCR7qYKM6Bzi+YzgQKW/P1DRT2iNsYicE/Iyqpbzwtf15OnWF/uKr/Uyusl5Nez0yPvTdPTXZVLw3vOjfnjwPSvwD7obt+BlK8IBpP5avxx1TmrgMlyY7XqLRF0fuQ9oU9R+bNNkk/yHl/eGRID99bZkwSal8ApZoabqZI9tmCk4QFVc7hNxxO9vS4yvhhIC7yq6sbp7O04BbjTXcdlq3Bum9yVkovO4slmAU/H5NE5Rii+zRJd7cd3394JzeCl3/DdT+R8TAX8Xb8IjlChPz9p3AQs3stGixP2hahbUyUyunjqT6CxpaoJHgzVxxy2e43mN0Bgj9skTviK2zr0T7xKV2+2WiMEuJwRHRgX0lcWawJuIbsTFhAc11glzqXozbfvUKjtUWmXXlzetloO7B5CajSx+ieRkoHHV+yRTLWBExOKs38pMqUM+hZ4kBOqGfHGeX8Q+wF58AFsNzIpMhTABkkQeZMFl"
+    "value": "sQTJX6/PQmSLzZjp+d8eOO1SmZTBn+EG3/xpn3uay8C0ri+De/7mylXGq9ozlJNNgNrnEzuBsLFYA32/ZVev9FLR2hLHWT+XX1eDPMIrKrKyA50Bp42j361aN2wEjp3ByfHB9P2igXA4wbuGT3WVy9GiesdoIK5iEros7pt355o8YnMIC16rrZcB34KqR2ksDOofZJoVeINFJUfNdCk82AkuumVgRRsU5MJ9Wr57305jE9vmGhvtrmLZaPrwSMKM/WDi7PkqmVr2HON5TsqvO7ILeXV1z3PCWxSHAwLfGq8UfUkoD8yoLGdVmdaAN8/33V60EUDnyBjISEESTSSnpqFszT0CBiBTEP+33f4CumbVCBKVYdHLk4oFshd3f1WIRshCbpSnFwcFabLPW5+VHBvn+s5eDvwpv8qtNvlt4HziFfBwkNZelZ4MO/1SXNV2j1mNyuGkSAIg4lQIAismL3AKgIpGszSiYTu3gQ/y5QtHYlK/Kjb9AsXff/g7pufb"
   }
 }

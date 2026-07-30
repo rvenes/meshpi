@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import socket
+import sys
 import threading
 from collections.abc import Callable
 from contextlib import suppress
@@ -81,6 +82,60 @@ def create_ble_interface(profile: ConnectionProfile) -> Interface:
                 with self._meshpi_close_lock:
                     self._meshpi_closing = False
                     self._meshpi_closed = True
+
+        def connect(self, address: str | None = None) -> Any:
+            if sys.platform != "darwin":
+                return super().connect(address)
+
+            # BLEInterface finn først ein BLEDevice i ei kortliva eventsløyfe,
+            # før Bleak må søkje på nytt i den permanente eventsløyfa. På
+            # macOS kan ikkje CoreBluetooth-eininga flyttast frå den lukka
+            # sløyfa. Søk og kople difor til med same klient og eventsløyfe.
+            from meshtastic.ble_interface import (
+                SERVICE_UUID,
+                BleakClient,
+                BLEClient,
+            )
+
+            client = BLEClient()
+            try:
+                response = client.discover(
+                    timeout=10,
+                    return_adv=True,
+                    service_uuids=[SERVICE_UUID],
+                )
+                devices = [
+                    device
+                    for device, advertisement in response.values()
+                    if SERVICE_UUID in advertisement.service_uuids
+                    and (
+                        not address
+                        or address in (device.name, device.address)
+                    )
+                ]
+                if not devices:
+                    raise self.BLEError(
+                        f"No Meshtastic BLE peripheral with identifier or "
+                        f"address '{address}' found.",
+                        self.BLEError.DEVICE_NOT_FOUND,
+                    )
+                if len(devices) > 1:
+                    raise self.BLEError(
+                        f"More than one Meshtastic BLE peripheral with "
+                        f"identifier or address '{address}' found.",
+                        self.BLEError.MULTIPLE_DEVICES,
+                    )
+
+                client.bleak_client = BleakClient(
+                    devices[0],
+                    disconnected_callback=lambda _: self.close(),
+                )
+                client.connect()
+                return client
+            except Exception:
+                with suppress(Exception):
+                    client.close()
+                raise
 
     try:
         return ManagedBLEInterface(address=profile.ble_identifier)

@@ -119,6 +119,107 @@ def test_ble_interface_uses_opaque_identifier(monkeypatch):
     }
 
 
+def test_macos_ble_interface_connects_without_rescanning(monkeypatch):
+    scanned_device = SimpleNamespace(
+        name="Meshtastic",
+        address="243E23AE-4A99-406C-B317-18F1BD7B4CBE",
+    )
+    captured = {}
+    advertisement = SimpleNamespace(service_uuids=["mesh-service"])
+
+    class BLEClient:
+        def __init__(self):
+            self.bleak_client = None
+
+        def discover(self, **kwargs):
+            captured["scan"] = kwargs
+            return {"device": (scanned_device, advertisement)}
+
+        def connect(self):
+            self.bleak_client.connect()
+
+        def close(self):
+            captured["closed"] = True
+
+    class BleakClient:
+        def __init__(self, device, **kwargs):
+            captured["device"] = device
+            captured["callback"] = kwargs["disconnected_callback"]
+
+        def connect(self):
+            captured["connected"] = True
+
+        @property
+        def services(self):
+            return SimpleNamespace(get_characteristic=lambda _specifier: None)
+
+    class BLEError(Exception):
+        DEVICE_NOT_FOUND = "device_not_found"
+        MULTIPLE_DEVICES = "multiple_devices"
+
+        def __init__(self, message, kind):
+            super().__init__(message)
+            self.kind = kind
+
+    class BLEInterface:
+        def __init__(self, *, address):
+            self.client = self.connect(address)
+
+    BLEInterface.BLEError = BLEError
+
+    monkeypatch.setattr("meshpi.transports.sys.platform", "darwin")
+    monkeypatch.setitem(
+        sys.modules,
+        "meshtastic.ble_interface",
+        SimpleNamespace(
+            BLEClient=BLEClient,
+            BLEInterface=BLEInterface,
+            BleakClient=BleakClient,
+            SERVICE_UUID="mesh-service",
+        ),
+    )
+
+    interface = create_ble_interface(
+        ConnectionProfile.ble("243E23AE-4A99-406C-B317-18F1BD7B4CBE")
+    )
+
+    assert captured["device"] is scanned_device
+    assert captured["connected"] is True
+    assert captured["scan"] == {
+        "timeout": 10,
+        "return_adv": True,
+        "service_uuids": ["mesh-service"],
+    }
+    assert callable(captured["callback"])
+    assert interface.client is not None
+
+
+def test_non_macos_ble_interface_preserves_upstream_connect(monkeypatch):
+    captured = {}
+
+    class BLEInterface:
+        def __init__(self, *, address):
+            self.client = self.connect(address)
+
+        def connect(self, address):
+            captured["address"] = address
+            return "upstream-client"
+
+    monkeypatch.setattr("meshpi.transports.sys.platform", "linux")
+    monkeypatch.setitem(
+        sys.modules,
+        "meshtastic.ble_interface",
+        SimpleNamespace(BLEInterface=BLEInterface),
+    )
+
+    interface = create_ble_interface(
+        ConnectionProfile.ble("A1:B2:C3:D4:E5:F6")
+    )
+
+    assert captured["address"] == "A1:B2:C3:D4:E5:F6"
+    assert interface.client == "upstream-client"
+
+
 def test_ble_interface_ignores_reentrant_close_callback(monkeypatch):
     closed = []
 

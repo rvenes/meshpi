@@ -311,8 +311,11 @@ uttrykkeleg BLE-søk i bakgrunnen som normalt tek om lag ti sekund. Veljaren
 kan lukkast medan søket går; eit eventuelt seint svar blir då forkasta. MeshPi
 lagrar plattformidentifikatoren som ei ugjennomsiktig verdi; på macOS er dette ein
 maskinspesifikk CoreBluetooth-UUID, ikkje ei MAC-adresse. Paring og
-Bluetooth-løyve blir handterte i operativsystemet. MeshPi lagrar ingen PIN og
-endrar ikkje Bluetooth- eller radiokonfigurasjonen på noden. BLE i
+Bluetooth-løyve blir handterte i operativsystemet. På macOS kjem PIN-spørsmålet
+som ein systemdialog; bruk koden på skjermen eller standardkoden `123456` for
+nodar som er sette opp med denne. Lukk andre Meshtastic-klientar før
+tilkopling, sidan mange nodar berre kan ha éin aktiv BLE-klient. MeshPi lagrar
+ingen PIN og endrar ikkje Bluetooth- eller radiokonfigurasjonen på noden. BLE i
 systemtenester på Linux/macOS og BLE i Docker er ikkje ferdig plattformtesta.
 
 ## Fullskjermsgrensesnitt

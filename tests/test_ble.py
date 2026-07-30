@@ -11,7 +11,7 @@ except ImportError:
     BleakBluetoothNotAvailableError = None
     BleakBluetoothNotAvailableReason = None
 
-from meshpi.ble import BLEDiscoveryError, discover_ble
+from meshpi.ble import BLEDiscoveryError, connection_error_message, discover_ble
 
 BLEAK_REASON_CASES = (
     [
@@ -103,3 +103,10 @@ def test_discover_ble_handles_older_bleak_without_new_error_types(monkeypatch):
 
     with pytest.raises(BLEDiscoveryError, match="slått av"):
         discover_ble(fail)
+
+
+def test_connection_error_explains_macos_pin_dialog():
+    message = connection_error_message(RuntimeError("authentication failed"))
+
+    assert "systemdialogen" in message
+    assert "PIN-koden" in message

@@ -82,7 +82,8 @@ def connection_error_message(exc: Exception) -> str:
     if any(marker in detail for marker in ("pair", "authentication", "encrypt")):
         return (
             "BLE-noden er ikkje para eller godkjenninga feila. "
-            "Par eininga i operativsystemet og prøv på nytt."
+            "Godkjenn paringsdialogen i operativsystemet og prøv på nytt. "
+            "På macOS må PIN-koden skrivast i systemdialogen."
         )
     adapter_message = _discovery_error_message(exc)
     if not adapter_message.startswith("BLE-søket feila"):
