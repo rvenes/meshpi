@@ -61,6 +61,7 @@ class UpdatePlan:
     installer: UpdateArtifact
     package: UpdateArtifact
     lock: UpdateArtifact
+    channel: str = "stable"
 
 
 def _channel(value: str) -> str:
@@ -190,6 +191,7 @@ def _parse_update_plan(
         installer=installer,
         package=package,
         lock=lock,
+        channel=expected_channel,
     )
 
 
@@ -449,7 +451,10 @@ def apply_update(
         raise UpdateCheckError(
             "Den tilgjengelege versjonen endra seg; køyr oppdateringa på nytt"
         )
-    with tempfile.TemporaryDirectory(prefix="meshpi-update-") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="meshpi-update-",
+        ignore_cleanup_errors=platform == "windows",
+    ) as temporary:
         root = Path(temporary)
         root.chmod(0o700)
         manifest_path = root / "version.json"
@@ -483,7 +488,19 @@ def apply_update(
                 cwd=root,
             )
         except subprocess.CalledProcessError as exc:
+            manual_install = ""
+            if plan.platform == "windows":
+                beta_option = ""
+                if plan.channel == "beta":
+                    beta_base_url = BETA_UPDATE_URL.removesuffix("/version.json")
+                    beta_option = f" -BaseUrl {beta_base_url}"
+                manual_install = (
+                    "\nPrøv den direkte Windows-installatøren i PowerShell:\n"
+                    f"Invoke-WebRequest {plan.installer.url} "
+                    "-OutFile install-windows.ps1; "
+                    f".\\install-windows.ps1{beta_option}"
+                )
             raise UpdateCheckError(
-                f"Installatøren stoppa med status {exc.returncode}"
+                f"Installatøren stoppa med status {exc.returncode}{manual_install}"
             ) from exc
     return plan.latest_version

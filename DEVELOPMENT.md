@@ -1,7 +1,8 @@
 # Utviklingsstatus og vidare plan
 
-Sist oppdatert: 30. juli 2026
-Gjeldande utgiving: MeshPi 0.8.6
+Sist oppdatert: 7. august 2026
+Gjeldande stabilutgiving: MeshPi 0.8.7
+Gjeldande betautgiving: MeshPi 0.8.8b1
 
 Denne fila er den varige overleveringa mellom utviklingstrådar. Ho skal
 oppdaterast når ei større funksjon blir ferdig, når eit viktig arkitekturval
@@ -41,8 +42,9 @@ Det viktigaste skiljet mot ein vanleg klient er derfor:
 - IPC skal berre bruke loopback eller ein privat Unix-socket.
 - MeshPi kan ha fleire lagra tilkoplingsprofilar, men berre éin aktiv gateway
   om gongen.
-- Meldingar og observasjonar blir knytte til kjeldenoden. Det blir i tillegg
-  lagra kva profil og lokal gateway som tok imot data.
+- All brukarhistorikk blir eigd av lokal node-ID. Kjeldenode, profil og
+  transport blir lagra som identitet og sporingsinformasjon innanfor dette
+  nodeområdet.
 - MeshPi skal aldri endre kanal-, radio- eller annan nodekonfigurasjon.
 - Posisjonsdeling og andre radiosendingar skal vere uttrykkelege
   brukarhandlingar.
@@ -67,10 +69,10 @@ Det viktigaste skiljet mot ein vanleg klient er derfor:
 ### Meldingar og traceroute
 
 - Public-chat på alle aktiverte kanalar og kanalruting for direkte meldingar.
-- Felles database med separate logiske kanalar, ulest-status, arkivering av DM
-  og duplikatkontroll på tvers av gatewayar.
-- Same public-melding kan ha fleire lagra gatewayobservasjonar utan å bli vist
-  fleire gonger.
+- Felles SQLite-fil med strengt skilde nodeområde for public, DM, ulest-status,
+  arkivering, nodeliste og observasjonar.
+- Same public-melding blir lagra separat når ho blir motteken av ulike lokale
+  nodar, men kan dedupliserast mellom profilar til same lokale node.
 - RF/MQTT/Ukjend, RSSI, SNR og hoppinformasjon når pakken inneheld dette.
 - Skilje mellom vanleg ACK, ende-til-ende-levering og NAK.
 - Traceroute kan startast frå nodehandlingar og nodeinfo.
@@ -108,6 +110,54 @@ Det viktigaste skiljet mot ein vanleg klient er derfor:
 - Statuslinja viser vertsnamnet på PC-en, slik at fleire SSH-økter er lettare å
   skilje.
 
+### Blåtann og samtalevising i 0.8.3–0.8.5
+
+- BLE er ein tredje profiltype bak daemonen, ved sida av TCP og seriell.
+- Profilformat v3 migrerer eksisterande profilar, bevarer aktiv profil og
+  hugsar siste kjende lokale node-ID.
+- BLE-identitet blir lagra ugjennomsiktig, og profil-ID-en blir avleidd frå
+  identifikatoren i staden for visingsnamnet.
+- Eksplisitt, serialisert BLE-oppdaging, nynorske adapterfeil og 30 sekunds
+  IPC-frist er implementert med mocka testar.
+- Tilkoplingsveljaren viser TCP og USB først, søkjer etter BLE i bakgrunnen,
+  støttar F5 for nytt søk og forkastar seine svar etter lukking.
+- Tilkoplingsveljaren og manuelle `ble://IDENTIFIKATOR`-mål er implementerte.
+- Grunnleggjande oppdaging, profilbyte, reconnect og kontrollert
+  tenesteomstart er live-testa på Windows.
+- På macOS bruker søk og tilkopling same CoreBluetooth-økt. Det gjer
+  tilkoplinga raskare og meir føreseieleg, og brukarrettleiinga forklarer
+  systemdialogen for PIN og avgrensinga med samtidige BLE-klientar.
+- Nye DM-ar har eksplisitt kanalval, DM-titlar viser kanalruta, og Meshtastic
+  si NAK-årsak blir lagra og vist ved mislukka sending.
+- Samtalelista slår saman eldre kanalruter til éi DM-oppføring per node,
+  gøymer gamle arkiverte public-ruter utan å slette historikken og held
+  DM-seksjonen rett plassert når samtalerekkjefølgja endrar seg.
+- Kanalar og DM-ar har eigne visuelle seksjonar. F8 skjuler DM-ar, medan F9
+  skjuler sekundærkanalar; primærkanalen er alltid synleg øvst.
+
+BLE er framleis merkt eksperimentell. BLE i systemtenester på Linux og macOS,
+og BLE i Docker, er ikkje ferdig plattformtesta.
+
+### Betakanal og databaseeksport i 0.8.6–0.8.7
+
+- Stabil- og betakanalen har kvar sitt signerte manifest og blir validerte
+  uavhengig av kvarandre.
+- `meshpi update --beta` vel uttrykkeleg den interne betakanalen. Vanleg
+  `meshpi update` held fram med å bruke berre stabilkanalen.
+- Releaseverktøyet støttar PEP 440-førehandsversjonar som `0.9.0b1` utan at
+  den stabile manifestpeikaren blir endra.
+- `meshpi export [FIL] [--force]` eksporterer heile databasen som UTF-8 JSON
+  Lines via daemonen.
+- Eksporten omfattar meldingar, nodar, kanalar, telemetri, posisjonar,
+  nodehandlingar og arkiveringsstatus, med format-, program- og
+  databaseskjemaversjon og kontrollerbare radtal.
+- Eksporten bruker eitt konsistent SQLite-øyeblikksbilete medan tenesta
+  køyrer, skriv atomisk og nektar å overskrive ei eksisterande fil utan
+  `--force`.
+- Ein avbroten eller ufullstendig eksport blir ikkje liggjande att som ei
+  ferdig fil. Eksportformatet er førebels for trygg oppbevaring og lesing,
+  ikkje eit lova importformat.
+
 ### Milepålar
 
 | Versjon | Viktigaste endring |
@@ -119,20 +169,21 @@ Det viktigaste skiljet mot ein vanleg klient er derfor:
 | 0.8.0 | Nodeinfo, telemetri-, posisjons- og traceroutehistorikk |
 | 0.8.2 | Fleirkanalsmeldingar, kanalbundne DM-ruter og gatewayobservasjonar |
 | 0.8.3 | Eksperimentell BLE, betre DM-ruter og delt samtale-/kanalvising |
-| 0.8.6 | Separat, uttrykkeleg betakanal for interne 0.9.x-testutgåver |
+| 0.8.4 | Rett plassering av DM-ar når samtalerekkjefølgja endrar seg |
+| 0.8.5 | Raskare og meir føreseieleg BLE-tilkopling på macOS |
+| 0.8.6 | Separat, uttrykkeleg betakanal for interne testutgåver |
+| 0.8.7 | Konsistent og atomisk databaseeksport via daemonen |
+| 0.8.8b1 | Strengt dataskilje per lokal node-ID og nodebundne samtaler |
 
 ## Avklaringar som alt er tekne
 
 ### Data frå fleire gatewayar
 
-Telemetri og posisjon gjeld kjeldenoden, ikkje profilen som tilfeldigvis var
-aktiv då data kom inn. Same data skal derfor visast samla for noden. Profil og
-lokal gateway blir likevel lagra som sporingsinformasjon.
-
-Public-meldingar blir dedupliserte på tvers av gatewayar når ein trygg logisk
-kanal-ID stadfestar at kanalen er den same. Gatewaymottaka blir likevel logga
-kvar for seg. DM-samtalar blir skilde per lokal node, fjernnode og logisk
-kanal, slik at profilbyte ikkje blandar avsendaridentitet eller kanalrute.
+Nodeliste, public, DM, ulest-status, telemetri, posisjon og nodehandlingar blir
+viste innanfor éin lokal node-ID. Dette gjeld òg standardkanalen LongFast.
+Profilen er berre transportspor og hugsar siste kjende lokale node-ID, slik at
+rett historikk kan visast under reconnect. Profilar med same lokale node-ID
+deler datasett; ulike lokale nodar blir aldri slått saman automatisk.
 
 ### Miljødata
 
@@ -140,22 +191,38 @@ kanal, slik at profilbyte ikkje blandar avsendaridentitet eller kanalrute.
 telemetritype og viste i Telemetri-fana. Ei eiga fane er berre aktuelt dersom
 reelle data viser at tabellen blir for tett eller vanskeleg å filtrere.
 
-## Vidare roadmap
+## Roadmapstatus
 
-Rekkjefølgja under er den tilrådde rekkjefølgja, ikkje ein lovnad om bestemte
-versjonsnummer.
+Denne delen bevarer dei tekniske detaljane i både gjennomførte og attståande
+roadmap-punkt. Nummera viser produktområda frå den opphavlege planen, ikkje
+prioriteringa framover. Den faktiske rekkjefølgja står under «Tilrådd neste
+arbeid».
 
 ### 1. Stabilisere 0.8-observasjonane
 
 Mål: sikre at langtidslogging fungerer med verkelege nodar og varierande
 fastvare før datamodellen blir bygd vidare.
 
+Dette er alt dekt automatisk:
+
+- duplikatkontroll for telemetri og posisjon;
+- oppbevaringsopprydding og samandrag per node;
+- avvising av posisjon utan gyldige koordinatar;
+- fallback til mottakstid for urimelege framtidige tidsstempel;
+- indekserte, avgrensa databasespørjingar med støtte for telemetritype og
+  sidepeikar.
+
+Dette står att:
+
 - La Windows-installasjonen logge over tid og kontrollere databasevekst,
   duplikatkontroll og sortering.
 - Test data frå fleire nodetypar og telemetritypar.
-- Kontrollere tomme, delvise, feilaktige og framtidige tidsstempel.
+- Utvide testane for tomme, delvise og andre feilaktige tidsstempel frå fleire
+  fastvarevariantar.
 - Måle spørjetid når ein node har mange tusen observasjonar.
-- Vurdere filtrering på tidsrom og telemetritype i nodeinfo.
+- Leggje tidsfilter, telemetritypefilter og synleg sideinndeling til nodeinfo.
+  Databasen og IPC-en har delar av grunnlaget, men TUI-en bruker enno faste
+  radgrenser utan «last fleire».
 - Køyre relevant installasjonstest på Linux og macOS før neste utgiving.
 
 Ferdigkriterium: ingen datatap eller feil kjeldenode, stabil minnebruk, raske
@@ -174,9 +241,9 @@ Gjennomført arkitektur:
   indeks og trygt namn.
 - TCP-, seriell- og framtidige BLE-profilar er berre transportspor. Lokal
   node-ID er gatewayidentiteten.
-- Public-samtalar blir knytte til logisk kanal. DM-samtalar blir knytte til
-  lokal node, fjernnode og kanal, slik at svar ikkje fell stille tilbake til
-  kanal 0.
+- Public-samtalar blir knytte til lokal node og logisk kanal. DM-samtalar blir
+  knytte til lokal node, fjernnode og kanal, slik at svar ikkje fell stille
+  tilbake til kanal 0.
 - `message_observations` lagrar kvart gatewaymottak separat frå den logiske
   meldinga.
 - Ei versjonert, transaksjonell SQLite-migrering bevarer eksisterande
@@ -196,58 +263,31 @@ Ferdigkriterium: alle gyldige kanalindeksar blir tekne imot, kanalane blir
 ikkje blanda utan trygg identitet, rett kanal blir brukt ved sending, eldre
 historikk blir bevart, og ingen kanalnøklar blir eksponerte.
 
-### 3. Blåtann/BLE
+### 3. Fullføre plattformstøtta for Blåtann/BLE
 
-Mål: BLE som ein tredje profiltype ved sida av TCP og seriell, framleis med
-berre eitt samband eigd av daemonen.
+Mål: gjere den eksperimentelle BLE-støtta føreseieleg i dei støtta
+tenestemodellane, framleis med berre eitt samband eigd av daemonen.
 
-Implementert i 0.8.3:
+Arkitekturen, profilformatet, oppdaginga, tilkoplingsveljaren, reconnect og
+mocka testar er implementerte. Windows er den første live-testa
+BLE-plattforma, og macOS har plattformspesifikk CoreBluetooth-handtering.
 
-- Transportopprettinga for TCP, seriell og BLE er skild frå daemonen.
-- Profilformat v2 migrerer eksisterande profilar og bevarer aktiv profil.
-- BLE-identitet blir lagra ugjennomsiktig, og profil-ID-en blir avleidd frå
-  identifikatoren i staden for visingsnamnet.
-- Eksplisitt, serialisert BLE-oppdaging, nynorske adapterfeil og 30 sekunds
-  IPC-frist er implementert med mocka testar. Veljaren opnar før BLE-søket,
-  viser USB/TCP-resultat først, viser søkestatus og støttar F5 for nytt søk.
-- Lukking av veljaren forkastar seine svar utan å starte parallelle søk.
-- Tilkoplingsveljaren og manuelle `ble://IDENTIFIKATOR`-mål er implementerte.
-- Grunnleggjande oppdaging, profilbyte og tilkopling er stadfesta på Windows.
-- Trygg migrering bind eldre DM-historikk til den observerte primærkanalen når
-  lokal node og motpart kan stadfestast. Tvitydig historikk er framleis låst.
-- Nye DM-ar i TUI-en har eksplisitt kanalval, DM-titlar viser kanalruta, og
-  Meshtastic si NAK-årsak blir lagra og vist ved mislukka sending.
-- Samtalelista slår saman eldre kanalruter til éi DM-oppføring per node og
-  gøymer gamle arkiverte public-ruter utan å slette historikken.
-- Kanalar og DM-ar har eigne visuelle seksjonar. F8 skjuler DM-ar, medan F9
-  skjuler sekundærkanalar; primærkanalen er alltid synleg øvst.
-- Reconnect og kontrollert tenesteomstart er live-testa med BLE på Windows og
-  TCP på Raspberry Pi. BLE i systemtenester på Linux og macOS står att å
-  plattformteste før støtta kan reknast som ferdig.
+Dette står att:
 
-Dette bør starte som ei teknisk undersøking, fordi oppdaging, paring,
-tilgangsrettar og stabil identitet er ulike på Linux, macOS og Windows.
-
-Tilrådde utviklingssteg:
-
-1. Stadfest støtta og avgrensingane i den aktuelle Meshtastic Python-versjonen
-   på kvar plattform.
-2. Skil transportoppretting frå resten av daemonen, slik at TCP, seriell og BLE
-   bruker same livssyklus og reconnect-logikk.
-3. Utvid profilformatet med ein stabil BLE-identitet utan
-   utviklingsspesifikke standardverdiar.
-4. Lag lesande BLE-oppdaging med tydelege feilmeldingar for manglande adapter,
-   paring og tilgang.
-5. Handter Linux/BlueZ og systemd-rettar utan å gi tenesta breiare tilgang enn
-   nødvendig.
-6. Avklar om paring skal skje utanfor MeshPi eller gjennom ei uttrykkeleg
-   brukarhandling.
-7. Test sambandsbrot, adapter av/på, node ute av rekkevidd, profilbyte og
-   automatisk ny tilkopling.
-8. Lag mocka automatiske testar og eigne live-testar per plattform.
+1. Test BLE frå den faktiske Linux-systemtenesta og avklar nødvendige
+   BlueZ-/systemd-rettar utan å gi tenesta breiare tilgang enn nødvendig.
+2. Test BLE frå den faktiske macOS LaunchAgent-jobben, inkludert
+   Bluetooth-løyve og systemdialog for paring.
+3. Test sambandsbrot, adapter av/på, node ute av rekkevidd, profilbyte og
+   automatisk ny tilkopling på Linux og macOS.
+4. Stadfest kva som skal støttast i Docker, eller dokumenter BLE i Docker som
+   uttrykkeleg ikkje støtta.
+5. Hald paring i operativsystemet; MeshPi skal ikkje lagre PIN eller endre
+   Bluetooth-konfigurasjonen.
 
 Ferdigkriterium: ein BLE-profil kan oppdagast, lagrast, koplast til på nytt og
-bytast frå/til utan parallelle radiosamband eller tap av eksisterande data.
+bytast frå/til i dei støtta tenestemodellane utan parallelle radiosamband eller
+tap av eksisterande data.
 
 ### 4. Fleire samtidige gatewayar
 
@@ -258,6 +298,7 @@ Lokal nodeidentitet og DM-semantikk er no avklart i datamodellen:
 - ei historisk rute er lesbar, men ikkje sendbar når kanalen ikkje finst på
   den aktive noden;
 - profil er transportspor, medan lokal node-ID er gatewayidentiteten.
+- all historikk og alle standardvisingar er avgrensa til lokal node-ID.
 
 MeshPi skal framleis ha berre eitt aktivt samband. Ikkje start samtidige
 gatewayar før reconnect, hendingar, ressursbruk og tenestelivssyklus for fleire
@@ -268,25 +309,31 @@ daemon-eigde samband er spesifiserte og testa.
 Aktuelle, men lågare prioriterte forbetringar:
 
 - filtrering og sideinndeling for lange telemetri- og posisjonsloggar;
-- eksport av nodehistorikk til CSV eller JSON;
+- nodeavgrensa eksport til CSV eller JSON. Heile databasen kan alt
+  eksporterast trygt som JSON Lines med `meshpi export`;
 - kartlenkje for eit valt tidsrom eller ei enkel ruteframstilling;
-- min/maks/siste verdi for utvalde målingar;
-- tydelegare vising av datakvalitet og manglande GPS-fix;
+- min/maks for utvalde målingar; siste verdi finst alt i nodeoversikta;
+- tydelegare vising av datakvalitet og manglande GPS-fix. Satellittal,
+  GPS-presisjon og PDOP blir alt viste, medan lagra fix-type og fix-kvalitet
+  ikkje er synlege i tabellen;
 - eventuelt eit leseorientert webgrensesnitt over den lokale IPC-en.
 
 ## Tilrådd neste arbeid
 
-1. La 0.8.3 samle reelle data ei stund og noter felt eller nodetypar som blir
-   viste feil.
-2. Stabiliser fleirkanalslogging med verkelege, ulike kanaloppsett utan å sende
-   public-testtrafikk.
-3. Stabiliser BLE på Windows og gjennomfør plattformtest på Linux og macOS.
-4. Vent med fleire samtidige gatewayar til tenestelivssyklusen er spesifisert
+1. La 0.8.7 samle reelle data over tid og noter databasevekst, felt eller
+   nodetypar som blir viste feil.
+2. Legg tidsfilter, telemetritypefilter og sideinndeling til nodeinfo, og mål
+   spørjetid med mange tusen observasjonar.
+3. Gjennomfør BLE-test frå systemtenesta på Linux og LaunchAgent på macOS.
+4. Bruk den signerte betakanalen til neste større datamodell- eller
+   grensesnittendring, og ta `meshpi export` før ei testutgåve som kan endre
+   databaseskjemaet.
+5. Vent med fleire samtidige gatewayar til tenestelivssyklusen er spesifisert
    og testa.
 
 ## Opne produktval
 
-- Kva plattform skal vere første fullverdige BLE-mål?
 - Treng Telemetri-fana tidsfilter før ho treng fleire faner?
 - Skal posisjonshistorikk berre gi lenkjer, eller seinare kunne eksporterast
   som ei rute?
+- Skal BLE i Docker støttast, eller dokumenterast som utanfor støtta omfang?

@@ -184,6 +184,9 @@ class MeshtasticService:
             "connected_since": None,
             "reconnect_attempt": 0,
             "local_node_id": None,
+            "history_local_node_id": (
+                self._profile.last_local_node_id if self._profile else None
+            ),
         }
 
     @staticmethod
@@ -197,7 +200,14 @@ class MeshtasticService:
             "port": profile.port,
             "device": profile.device,
             "ble_identifier": profile.ble_identifier,
+            "history_local_node_id": profile.last_local_node_id,
         }
+
+    def history_local_node_id(self) -> str | None:
+        with self._lock:
+            return self._local_node_id or (
+                self._profile.last_local_node_id if self._profile else None
+            )
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -316,7 +326,6 @@ class MeshtasticService:
             self._switch_requested.set()
             self._lost.set()
         self._fail_pending_node_actions("Meshtastic-sambandet blei bytt")
-        self.database.set_local_node(None)
         with self._state_lock:
             self._status.update(self._profile_status(profile))
             self._status["local_node_id"] = None
@@ -508,9 +517,19 @@ class MeshtasticService:
                 local_id = f"!{node_num & 0xFFFFFFFF:08x}"
         if local_id:
             self._local_node_id = local_id.lower()
-            self.database.set_local_node(self._local_node_id)
+            with self._lock:
+                profile = self._profile
+                if (
+                    profile is not None
+                    and profile.last_local_node_id != self._local_node_id
+                ):
+                    self._profile = self.connections.remember_local_node(
+                        profile.profile_id,
+                        self._local_node_id,
+                    )
             with self._state_lock:
                 self._status["local_node_id"] = self._local_node_id
+                self._status["history_local_node_id"] = self._local_node_id
 
     def _sync_nodes(self, interface: Interface) -> None:
         nodes = getattr(interface, "nodes", None)
@@ -521,7 +540,11 @@ class MeshtasticService:
                 continue
             try:
                 node = node_from_registry(node_id, data, self._local_node_id)
-                self.database.upsert_node(node)
+                if self._local_node_id:
+                    self.database.upsert_node(
+                        node,
+                        local_node_id=self._local_node_id,
+                    )
             except Exception:
                 LOG.debug("Klarte ikkje lagre node %s", node_id, exc_info=True)
         self.events.publish({"type": "nodes"})
@@ -672,7 +695,10 @@ class MeshtasticService:
             message.gateway_profile_id = profile.profile_id
             message.received_at = now_iso()
             message.conversation_id = (
-                public_conversation_id(binding.channel_key)
+                public_conversation_id(
+                    self._local_node_id or "",
+                    binding.channel_key,
+                )
                 if message.kind == ConversationKind.PUBLIC
                 else dm_conversation_id(
                     self._local_node_id or "",
@@ -872,6 +898,7 @@ class MeshtasticService:
             action_id = uuid.uuid4().hex
             action = {
                 "action_id": action_id,
+                "local_node_id": local_node_id,
                 "action": "traceroute",
                 "node_id": node_id,
                 "status": "started",
@@ -985,6 +1012,7 @@ class MeshtasticService:
             action_id = uuid.uuid4().hex
             action = {
                 "action_id": action_id,
+                "local_node_id": local_node_id,
                 "action": "position_exchange",
                 "node_id": node_id,
                 "status": "started",
@@ -1108,7 +1136,10 @@ class MeshtasticService:
         interface: Interface,
         local_node_id: str,
     ) -> dict[str, Any] | None:
-        saved = self.database.node_observation_summary(local_node_id).get(
+        saved = self.database.node_observation_summary(
+            local_node_id,
+            local_node_id=local_node_id,
+        ).get(
             "latest_position"
         )
         if isinstance(saved, dict):
@@ -1281,7 +1312,13 @@ class MeshtasticService:
             requested_key: str | None = None
             if conversation is not None:
                 if public:
-                    requested_key = parse_public_conversation_id(conversation)
+                    route_local, requested_key = parse_public_conversation_id(
+                        conversation
+                    )
+                    if route_local is not None and route_local != local_node_id:
+                        raise RuntimeError(
+                            "Den valde public-ruta høyrer til ein annan lokal node"
+                        )
                 else:
                     route_local, route_peer, requested_key = (
                         parse_dm_conversation_id(conversation)
@@ -1392,7 +1429,7 @@ class MeshtasticService:
             },
             is_read=True,
             conversation_id=(
-                public_conversation_id(binding.channel_key)
+                public_conversation_id(local_node_id, binding.channel_key)
                 if public
                 else dm_conversation_id(
                     local_node_id,

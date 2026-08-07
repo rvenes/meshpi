@@ -31,6 +31,20 @@
       skal ikkje installerast på maskiner der stabil drift er nødvendig.
     </p>
     <p>Installer siste signerte beta med <code>meshpi update --beta</code>.</p>
+    <section>
+      <h2>MeshPi 0.8.8b1</h2>
+      <p>
+        Ta gjerne ein databaseeksport med <code>meshpi export</code> før du
+        oppdaterer. Denne betaen migrerer databasen til eit nytt skjema.
+      </p>
+      <ul>
+        <li>Nodeliste, meldingar, ulest-status og arkiv er skilde per lokal node.</li>
+        <li>Telemetri, posisjon og nodehandlingar er skilde per lokal node.</li>
+        <li>Profilar som koplar til same lokale node, deler framleis historikk.</li>
+        <li>Public-kanalar, inkludert LongFast, har nodebundne samtale-ID-ar.</li>
+        <li>Windows-oppdateraren toler oppryddingsfeil betre og viser ei manuell reservekommando ved feil.</li>
+      </ul>
+    </section>
     <p>
       Utan <code>--beta</code> bruker MeshPi alltid den
       <a href="../version.json">stabile kanalen</a>.

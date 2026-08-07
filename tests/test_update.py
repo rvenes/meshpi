@@ -2,6 +2,8 @@ import hashlib
 import io
 import json
 import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -148,16 +150,17 @@ def test_update_manifest_rejects_wrong_channel():
         )
 
 
-def test_beta_seed_reports_no_update_for_current_stable_version():
-    assert (
-        parse_update_manifest(
-            beta_manifest(),
-            current_version="0.8.7",
-            platform_name="linux",
-            channel="beta",
-        )
-        is None
+def test_beta_manifest_reports_update_for_current_stable_version():
+    notice = parse_update_manifest(
+        beta_manifest(),
+        current_version="0.8.7",
+        platform_name="linux",
+        channel="beta",
     )
+
+    assert notice is not None
+    assert notice.latest_version == "0.8.8b1"
+    assert notice.command == "sudo meshpi update --beta"
 
 
 def test_beta_channel_fetches_separate_venes_manifest(monkeypatch):
@@ -186,11 +189,17 @@ class FakeResponse(io.BytesIO):
         return self.url
 
 
-def _artifact(label: str, filename: str, payload: bytes) -> UpdateArtifact:
+def _artifact(
+    label: str,
+    filename: str,
+    payload: bytes,
+    *,
+    url: str | None = None,
+) -> UpdateArtifact:
     return UpdateArtifact(
         label=label,
         filename=filename,
-        url=f"https://updates.example/{filename}",
+        url=url or f"https://updates.example/{filename}",
         sha256=hashlib.sha256(payload).hexdigest(),
         size=len(payload),
         maximum_size=1024,
@@ -307,4 +316,102 @@ def test_apply_update_rejects_changed_version(monkeypatch):
             current_version="0.6.4",
             platform_name="linux",
             expected_version="0.7.0",
+        )
+
+
+def test_failed_windows_installer_shows_direct_install_command(monkeypatch):
+    payloads = {
+        "install-windows.ps1": b"exit 1\n",
+        "meshpi.whl": b"wheel",
+        "windows.txt": b"lock",
+    }
+    plan = UpdatePlan(
+        current_version="0.8.5",
+        latest_version="0.8.7",
+        platform="windows",
+        manifest={"latest_version": "0.8.7"},
+        manifest_bytes=b'{"latest_version":"0.8.7"}',
+        installer=_artifact(
+            "Windows-installatøren",
+            "install-windows.ps1",
+            payloads["install-windows.ps1"],
+            url="https://venes.org/meshpi/install-windows.ps1",
+        ),
+        package=_artifact("MeshPi-pakken", "meshpi.whl", payloads["meshpi.whl"]),
+        lock=_artifact("Windows-låsefila", "windows.txt", payloads["windows.txt"]),
+    )
+    monkeypatch.setattr("meshpi.update.prepare_update", lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(
+        "meshpi.update.urlopen",
+        lambda request, timeout: FakeResponse(
+            payloads[Path(request.full_url).name],
+            request.full_url,
+        ),
+    )
+
+    def fail_installer(command, *, check, env, cwd):
+        del check, env, cwd
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr("meshpi.update.subprocess.run", fail_installer)
+
+    expected = (
+        "Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 "
+        "-OutFile install-windows.ps1; .\\install-windows.ps1"
+    )
+    with pytest.raises(UpdateCheckError, match=re.escape(expected)):
+        apply_update(
+            Settings(background_mode="always"),
+            current_version="0.8.5",
+            platform_name="windows",
+        )
+
+
+def test_failed_windows_beta_installer_keeps_manual_command_on_beta(monkeypatch):
+    payloads = {
+        "install-windows.ps1": b"exit 1\n",
+        "meshpi.whl": b"wheel",
+        "windows.txt": b"lock",
+    }
+    plan = UpdatePlan(
+        current_version="0.8.7",
+        latest_version="0.8.8b1",
+        platform="windows",
+        manifest={"latest_version": "0.8.8b1"},
+        manifest_bytes=b'{"latest_version":"0.8.8b1"}',
+        installer=_artifact(
+            "Windows-installatøren",
+            "install-windows.ps1",
+            payloads["install-windows.ps1"],
+            url="https://venes.org/meshpi/beta/install-windows.ps1",
+        ),
+        package=_artifact("MeshPi-pakken", "meshpi.whl", payloads["meshpi.whl"]),
+        lock=_artifact("Windows-låsefila", "windows.txt", payloads["windows.txt"]),
+        channel="beta",
+    )
+    monkeypatch.setattr("meshpi.update.prepare_update", lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(
+        "meshpi.update.urlopen",
+        lambda request, timeout: FakeResponse(
+            payloads[Path(request.full_url).name],
+            request.full_url,
+        ),
+    )
+
+    def fail_installer(command, *, check, env, cwd):
+        del check, env, cwd
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr("meshpi.update.subprocess.run", fail_installer)
+
+    expected = (
+        ".\\install-windows.ps1 "
+        "-BaseUrl https://venes.org/meshpi/beta"
+    )
+    with pytest.raises(UpdateCheckError, match=re.escape(expected)):
+        apply_update(
+            Settings(background_mode="always"),
+            current_version="0.8.7",
+            platform_name="windows",
+            channel="beta",
         )

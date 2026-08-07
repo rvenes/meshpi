@@ -19,6 +19,8 @@ from meshpi.models import (
     Transport,
 )
 
+LOCAL_NODE_ID = "!710365c8"
+
 
 def message(packet_id=42, kind=ConversationKind.PUBLIC, peer=None):
     return Message(
@@ -32,6 +34,8 @@ def message(packet_id=42, kind=ConversationKind.PUBLIC, peer=None):
         text="Test",
         direction=Direction.INCOMING,
         transport=Transport.RF,
+        channel_key=f"local:{LOCAL_NODE_ID}:0:",
+        local_node_id=LOCAL_NODE_ID,
     )
 
 
@@ -88,15 +92,18 @@ def test_database_export_contains_metadata_all_tables_and_rows(tmp_path):
     database = Database(tmp_path / "messages.db")
     database.initialize()
     database.insert_message(message())
-    database.upsert_node(Node(node_id="!11112222", long_name="Testnode"))
+    database.upsert_node(
+        Node(node_id="!11112222", long_name="Testnode"),
+        local_node_id=LOCAL_NODE_ID,
+    )
 
     records = list(database.export_records("9.8.7"))
 
     assert records[0]["record"] == "metadata"
     assert records[0]["format"] == "meshpi-database-export"
-    assert records[0]["format_version"] == 1
+    assert records[0]["format_version"] == 2
     assert records[0]["meshpi_version"] == "9.8.7"
-    assert records[0]["database_schema_version"] == 3
+    assert records[0]["database_schema_version"] == 4
     rows = [record for record in records if record["record"] == "row"]
     assert any(
         record["table"] == "messages" and record["data"]["text"] == "Test"
@@ -186,11 +193,15 @@ def test_public_conversations_are_separate_per_logical_channel(tmp_path):
     first = message(1)
     first.channel = 1
     first.channel_key = "global:ops:123"
-    first.conversation_id = public_conversation_id(first.channel_key)
+    first.conversation_id = public_conversation_id(
+        str(first.local_node_id), first.channel_key
+    )
     second = message(2)
     second.channel = 1
     second.channel_key = "local:!aaaaaaaa:1:ops"
-    second.conversation_id = public_conversation_id(second.channel_key)
+    second.conversation_id = public_conversation_id(
+        str(second.local_node_id), second.channel_key
+    )
 
     database.insert_message(first)
     database.insert_message(second)
@@ -208,12 +219,14 @@ def test_public_conversations_are_separate_per_logical_channel(tmp_path):
     ) == 1
 
 
-def test_same_public_packet_has_one_message_and_two_gateway_observations(tmp_path):
+def test_same_public_packet_is_separate_for_two_local_nodes(tmp_path):
     database = Database(tmp_path / "messages.db")
     database.initialize()
     first = message(7)
     first.channel_key = "global:ops:123"
-    first.conversation_id = public_conversation_id(first.channel_key)
+    first.conversation_id = public_conversation_id(
+        str(first.local_node_id), first.channel_key
+    )
     first.local_node_id = "!aaaaaaaa"
     first.gateway_profile_id = "tcp-a"
     second = message(7)
@@ -223,10 +236,10 @@ def test_same_public_packet_has_one_message_and_two_gateway_observations(tmp_pat
     second.gateway_profile_id = "serial-b"
 
     assert database.insert_message(first)[0] is True
-    assert database.insert_message(second)[0] is False
+    assert database.insert_message(second)[0] is True
 
     with sqlite3.connect(database.path) as connection:
-        assert connection.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 2
         assert (
             connection.execute(
                 "SELECT COUNT(*) FROM message_observations"
@@ -235,8 +248,32 @@ def test_same_public_packet_has_one_message_and_two_gateway_observations(tmp_pat
         )
     assert database.list_messages(
         "public",
-        conversation_id=first.conversation_id,
-    )[0]["observation_count"] == 2
+        local_node_id="!aaaaaaaa",
+    )[0]["observation_count"] == 1
+    assert database.list_messages(
+        "public",
+        local_node_id="!bbbbbbbb",
+    )[0]["observation_count"] == 1
+
+
+def test_same_public_packet_is_deduplicated_for_profiles_on_same_node(tmp_path):
+    database = Database(tmp_path / "messages.db")
+    database.initialize()
+    first = message(8)
+    first.local_node_id = "!aaaaaaaa"
+    first.channel_key = "global:ops:123"
+    first.gateway_profile_id = "tcp-a"
+    second = message(8)
+    second.local_node_id = "!aaaaaaaa"
+    second.channel_key = first.channel_key
+    second.gateway_profile_id = "serial-a"
+
+    assert database.insert_message(first)[0] is True
+    assert database.insert_message(second)[0] is False
+
+    rows = database.list_messages("public", local_node_id="!aaaaaaaa")
+    assert len(rows) == 1
+    assert rows[0]["observation_count"] == 2
 
 
 def test_packet_id_collision_on_two_channels_is_not_deduplicated(tmp_path):
@@ -244,10 +281,14 @@ def test_packet_id_collision_on_two_channels_is_not_deduplicated(tmp_path):
     database.initialize()
     first = message(9)
     first.channel_key = "global:first:1"
-    first.conversation_id = public_conversation_id(first.channel_key)
+    first.conversation_id = public_conversation_id(
+        str(first.local_node_id), first.channel_key
+    )
     second = message(9)
     second.channel_key = "global:second:2"
-    second.conversation_id = public_conversation_id(second.channel_key)
+    second.conversation_id = public_conversation_id(
+        str(second.local_node_id), second.channel_key
+    )
 
     assert database.insert_message(first)[0] is True
     assert database.insert_message(second)[0] is True
@@ -281,7 +322,9 @@ def test_channel_bindings_use_global_id_across_nodes_and_local_fallback(tmp_path
         ],
     )
     rows = database.list_channel_bindings("!aaaaaaaa", active_only=True)
-    assert rows[0]["conversation"] == public_conversation_id(shared_a)
+    assert rows[0]["conversation"] == public_conversation_id(
+        "!aaaaaaaa", shared_a
+    )
     assert rows[0]["display_name"] == "Ops"
 
     largest_id = (1 << 32) - 1
@@ -306,7 +349,7 @@ def test_channel_bindings_use_global_id_across_nodes_and_local_fallback(tmp_path
     ] == str(largest_id)
 
 
-def test_legacy_message_schema_is_migrated_without_data_loss(tmp_path):
+def test_legacy_unscoped_message_is_removed_during_migration(tmp_path):
     path = tmp_path / "legacy.db"
     with sqlite3.connect(path) as connection:
         connection.executescript(
@@ -350,13 +393,9 @@ def test_legacy_message_schema_is_migrated_without_data_loss(tmp_path):
     database = Database(path)
     database.initialize()
 
-    row = database.list_messages("public")[0]
-    assert row["text"] == "Historikk"
-    assert row["conversation_id"] == "channel:legacy:tcp-gammal:0"
-    assert row["channel_key"] == "legacy:tcp-gammal:0"
-    assert row["gateway_profile_id"] == "tcp-gammal"
+    assert database.list_messages("public") == []
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
         indexes = {
             row[1] for row in connection.execute("PRAGMA index_list(messages)")
         }
@@ -389,6 +428,64 @@ def test_migration_backfills_local_node_for_outgoing_ack_scope(tmp_path):
     assert database.outgoing_message(77, "!aaaaaaaa")["local_node_id"] == "!aaaaaaaa"
 
 
+def test_version_three_migration_scopes_public_and_discards_global_nodes(tmp_path):
+    path = tmp_path / "version-3.db"
+    database = Database(path)
+    database.initialize()
+    stored = message(77)
+    stored.local_node_id = "!aaaaaaaa"
+    stored.channel_key = "global:Ops:1234"
+    database.insert_message(stored)
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "UPDATE messages SET conversation_id='channel:global:Ops:1234'"
+        )
+        connection.execute("DROP TABLE nodes")
+        connection.execute(
+            "CREATE TABLE nodes (node_id TEXT PRIMARY KEY, long_name TEXT)"
+        )
+        connection.execute("INSERT INTO nodes VALUES ('!11112222', 'Ufordelt')")
+        connection.execute("PRAGMA user_version=3")
+
+    database.initialize()
+
+    rows = database.list_messages("public", local_node_id="!aaaaaaaa")
+    assert rows[0]["conversation_id"] == "channel:!aaaaaaaa:global:Ops:1234"
+    assert database.list_nodes(local_node_id="!aaaaaaaa") == []
+
+
+def test_scope_migration_rolls_back_on_failure(tmp_path, monkeypatch):
+    path = tmp_path / "rollback.db"
+    database = Database(path)
+    database.initialize()
+    with sqlite3.connect(path) as connection:
+        connection.execute("DROP TABLE nodes")
+        connection.execute(
+            "CREATE TABLE nodes (node_id TEXT PRIMARY KEY, long_name TEXT)"
+        )
+        connection.execute(
+            "INSERT INTO nodes VALUES ('!11112222', 'Skal overleve')"
+        )
+        connection.execute("PRAGMA user_version=3")
+
+    def fail_indexes(_connection):
+        raise RuntimeError("testfeil")
+
+    monkeypatch.setattr(
+        Database,
+        "_ensure_scope_indexes",
+        staticmethod(fail_indexes),
+    )
+    with pytest.raises(RuntimeError, match="testfeil"):
+        database.initialize()
+
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert connection.execute("SELECT long_name FROM nodes").fetchone()[0] == (
+            "Skal overleve"
+        )
+
+
 def test_provisional_rebind_merges_duplicate_observations(tmp_path):
     database = Database(tmp_path / "messages.db")
     database.initialize()
@@ -402,7 +499,9 @@ def test_provisional_rebind_merges_duplicate_observations(tmp_path):
     confirmed.channel = 2
     confirmed.gateway_profile_id = "tcp-b"
     confirmed.channel_key = "global:Ops:1234"
-    confirmed.conversation_id = "channel:global:Ops:1234"
+    confirmed.conversation_id = public_conversation_id(
+        "!aaaaaaaa", confirmed.channel_key
+    )
     assert database.insert_message(provisional)[0] is True
     assert database.insert_message(confirmed)[0] is True
 
@@ -514,6 +613,8 @@ def test_legacy_dm_rebind_deduplicates_same_packet_and_keeps_observations(tmp_pa
     legacy.from_node = peer_node
     legacy.to_node = local_node
     legacy.conversation_id = peer_node
+    legacy.channel_key = None
+    legacy.local_node_id = local_node
     legacy.gateway_profile_id = "serial-a"
     current = message(60, ConversationKind.DM, peer_node)
     current.from_node = peer_node
@@ -539,7 +640,7 @@ def test_version_three_recreates_missing_message_indexes(tmp_path):
     with sqlite3.connect(path) as connection:
         connection.execute("DROP INDEX messages_packet_context_identity")
         connection.execute("DROP INDEX messages_conversation_time")
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
 
     database.initialize()
 
@@ -558,23 +659,27 @@ def test_archived_dm_is_hidden_until_a_new_message_arrives(tmp_path):
     database.initialize()
     database.insert_message(message(1, ConversationKind.DM, "!11112222"))
 
-    database.archive_conversation("!11112222")
+    database.archive_conversation("!11112222", local_node_id=LOCAL_NODE_ID)
     assert database.conversations() == []
     assert len(database.list_messages("dm", "!11112222")) == 1
 
     database.insert_message(message(2, ConversationKind.DM, "!11112222"))
-    assert database.conversations()[0]["conversation"] == "!11112222"
+    assert database.conversations()[0]["conversation"] == dm_conversation_id(
+        LOCAL_NODE_ID, "!11112222", f"local:{LOCAL_NODE_ID}:0:"
+    )
 
 
 def test_conversation_can_be_unarchived_without_new_message(tmp_path):
     database = Database(tmp_path / "messages.db")
     database.initialize()
     database.insert_message(message(1, ConversationKind.DM, "!11112222"))
-    database.archive_conversation("!11112222")
+    database.archive_conversation("!11112222", local_node_id=LOCAL_NODE_ID)
 
-    database.unarchive_conversation("!11112222")
+    database.unarchive_conversation("!11112222", local_node_id=LOCAL_NODE_ID)
 
-    assert database.conversations()[0]["conversation"] == "!11112222"
+    assert database.conversations()[0]["conversation"] == dm_conversation_id(
+        LOCAL_NODE_ID, "!11112222", f"local:{LOCAL_NODE_ID}:0:"
+    )
 
 
 def test_archiving_one_dm_route_does_not_hide_another_route(tmp_path):
@@ -591,7 +696,11 @@ def test_archiving_one_dm_route_does_not_hide_another_route(tmp_path):
     database.insert_message(first)
     database.insert_message(second)
 
-    database.archive_conversation("!11112222", first.conversation_id)
+    database.archive_conversation(
+        "!11112222",
+        first.conversation_id,
+        local_node_id="!aaaaaaaa",
+    )
 
     assert [item["conversation"] for item in database.conversations()] == [
         second.conversation_id
@@ -607,17 +716,25 @@ def test_messages_can_be_deleted_by_scope(tmp_path):
     routed.channel_key = "global:Privat:2"
     routed.conversation_id = "dm:!aaaaaaaa:!11112222:global:Privat:2"
     database.insert_message(routed)
-    database.archive_conversation("!11112222")
-    database.archive_conversation("!11112222", routed.conversation_id)
+    database.archive_conversation("!11112222", local_node_id="!aaaaaaaa")
+    database.archive_conversation(
+        "!11112222",
+        routed.conversation_id,
+        local_node_id="!aaaaaaaa",
+    )
 
-    assert database.delete_messages("public") == 1
+    assert database.delete_messages("public", LOCAL_NODE_ID) == 1
     assert database.list_messages("public") == []
     assert len(database.list_messages("dm", "!11112222")) == 1
 
-    assert database.delete_messages("all") == 1
+    assert database.delete_messages("all", "!aaaaaaaa") == 1
     assert database.list_messages("dm", "!11112222") == []
-    database.unarchive_conversation("!11112222")
-    database.unarchive_conversation("!11112222", routed.conversation_id)
+    database.unarchive_conversation("!11112222", local_node_id="!aaaaaaaa")
+    database.unarchive_conversation(
+        "!11112222",
+        routed.conversation_id,
+        local_node_id="!aaaaaaaa",
+    )
     assert database.conversations() == []
 
 
@@ -626,6 +743,7 @@ def test_traceroute_history_is_upserted_and_returned_in_time_order(tmp_path):
     database.initialize()
     first = {
         "action_id": "trace-1",
+        "local_node_id": LOCAL_NODE_ID,
         "action": "traceroute",
         "node_id": "!11112222",
         "status": "started",
@@ -634,6 +752,7 @@ def test_traceroute_history_is_upserted_and_returned_in_time_order(tmp_path):
     }
     second = {
         "action_id": "trace-2",
+        "local_node_id": LOCAL_NODE_ID,
         "action": "traceroute",
         "node_id": "!11112222",
         "status": "failed",
@@ -666,6 +785,7 @@ def test_started_traceroute_can_be_marked_as_interrupted(tmp_path):
     database.upsert_node_action(
         {
             "action_id": "trace-started",
+            "local_node_id": LOCAL_NODE_ID,
             "action": "traceroute",
             "node_id": "!11112222",
             "status": "started",
@@ -723,10 +843,17 @@ def test_nodes_are_upserted_and_sorted(tmp_path):
             long_name="Zulu",
             last_heard=100,
             can_receive_dm=True,
-        )
+        ),
+        local_node_id=LOCAL_NODE_ID,
     )
     database.upsert_node(
-        Node(node_id="!33334444", long_name="Alfa", last_heard=200, is_local=True)
+        Node(
+            node_id="!33334444",
+            long_name="Alfa",
+            last_heard=200,
+            is_local=True,
+        ),
+        local_node_id=LOCAL_NODE_ID,
     )
     nodes = database.list_nodes(sort="name")
     assert [item["long_name"] for item in nodes] == ["Alfa", "Zulu"]
@@ -745,7 +872,8 @@ def test_older_gateway_registry_does_not_replace_newer_node_data(tmp_path):
             last_heard=200,
             battery_level=80,
             snr=9.0,
-        )
+        ),
+        local_node_id=LOCAL_NODE_ID,
     )
     database.upsert_node(
         Node(
@@ -754,7 +882,8 @@ def test_older_gateway_registry_does_not_replace_newer_node_data(tmp_path):
             last_heard=100,
             battery_level=20,
             snr=1.0,
-        )
+        ),
+        local_node_id=LOCAL_NODE_ID,
     )
 
     node = database.get_node("!11112222")
@@ -775,7 +904,8 @@ def test_gateway_registry_without_timestamp_only_fills_unknown_node_fields(
             long_name="Tidsfesta namn",
             last_heard=200,
             battery_level=80,
-        )
+        ),
+        local_node_id=LOCAL_NODE_ID,
     )
     database.upsert_node(
         Node(
@@ -784,7 +914,8 @@ def test_gateway_registry_without_timestamp_only_fills_unknown_node_fields(
             short_name="NY",
             last_heard=None,
             battery_level=20,
-        )
+        ),
+        local_node_id=LOCAL_NODE_ID,
     )
 
     node = database.get_node("!11112222")
@@ -796,9 +927,18 @@ def test_gateway_registry_without_timestamp_only_fills_unknown_node_fields(
 def test_node_search_treats_sql_wildcards_as_text(tmp_path):
     database = Database(tmp_path / "db.sqlite")
     database.initialize()
-    database.upsert_node(Node(node_id="!11112222", long_name="Prosent%node"))
-    database.upsert_node(Node(node_id="!33334444", long_name="Under_strek"))
-    database.upsert_node(Node(node_id="!55556666", long_name="Vanleg node"))
+    database.upsert_node(
+        Node(node_id="!11112222", long_name="Prosent%node"),
+        local_node_id=LOCAL_NODE_ID,
+    )
+    database.upsert_node(
+        Node(node_id="!33334444", long_name="Under_strek"),
+        local_node_id=LOCAL_NODE_ID,
+    )
+    database.upsert_node(
+        Node(node_id="!55556666", long_name="Vanleg node"),
+        local_node_id=LOCAL_NODE_ID,
+    )
 
     assert [item["node_id"] for item in database.list_nodes(search="%")] == [
         "!11112222"
@@ -806,6 +946,81 @@ def test_node_search_treats_sql_wildcards_as_text(tmp_path):
     assert [item["node_id"] for item in database.list_nodes(search="_")] == [
         "!33334444"
     ]
+
+
+def test_node_and_observation_history_is_isolated_per_local_node(tmp_path):
+    database = Database(tmp_path / "scopes.db")
+    database.initialize()
+    remote = "!11112222"
+    local_a = "!aaaaaaaa"
+    local_b = "!bbbbbbbb"
+    database.upsert_node(
+        Node(node_id=remote, long_name="Sett frå A", snr=1.0),
+        local_node_id=local_a,
+    )
+    database.upsert_node(
+        Node(node_id=remote, long_name="Sett frå B", snr=9.0),
+        local_node_id=local_b,
+    )
+    sample = {
+        "dedupe_key": "same-pakke",
+        "packet_id": 99,
+        "node_id": remote,
+        "kind": "device",
+        "sample_time": "2026-08-07T12:00:00+00:00",
+        "received_at": "2026-08-07T12:00:01+00:00",
+        "metrics": {"batteryLevel": 70},
+    }
+
+    assert database.insert_telemetry(sample | {"gateway_node_id": local_a})
+    assert database.insert_telemetry(sample | {"gateway_node_id": local_b})
+    position = {
+        "dedupe_key": "same-posisjon",
+        "packet_id": 100,
+        "node_id": remote,
+        "sample_time": "2026-08-07T12:00:00+00:00",
+        "received_at": "2026-08-07T12:00:01+00:00",
+        "latitude": 62.1,
+        "longitude": 6.1,
+    }
+    assert database.insert_position(position | {"gateway_node_id": local_a})
+    assert database.insert_position(position | {"gateway_node_id": local_b})
+    for local_node_id in (local_a, local_b):
+        database.upsert_node_action(
+            {
+                "action_id": f"trace-{local_node_id}",
+                "local_node_id": local_node_id,
+                "action": "traceroute",
+                "node_id": remote,
+                "status": "completed",
+                "started_at": "2026-08-07T12:00:00+00:00",
+            }
+        )
+
+    assert database.list_nodes(local_node_id=local_a)[0]["long_name"] == "Sett frå A"
+    assert database.list_nodes(local_node_id=local_b)[0]["long_name"] == "Sett frå B"
+    assert len(database.list_telemetry(remote, local_node_id=local_a)) == 1
+    assert len(database.list_telemetry(remote, local_node_id=local_b)) == 1
+    assert len(database.list_positions(remote, local_node_id=local_a)) == 1
+    assert len(database.list_positions(remote, local_node_id=local_b)) == 1
+    assert len(database.list_node_actions(remote, local_node_id=local_a)) == 1
+    assert len(database.list_node_actions(remote, local_node_id=local_b)) == 1
+
+
+def test_message_deletion_only_affects_selected_local_node(tmp_path):
+    database = Database(tmp_path / "scopes.db")
+    database.initialize()
+    first = message(91)
+    first.local_node_id = "!aaaaaaaa"
+    second = message(91)
+    second.local_node_id = "!bbbbbbbb"
+    assert database.insert_message(first)[0]
+    assert database.insert_message(second)[0]
+
+    assert database.delete_messages("public", "!aaaaaaaa") == 1
+
+    assert database.list_messages("public", local_node_id="!aaaaaaaa") == []
+    assert len(database.list_messages("public", local_node_id="!bbbbbbbb")) == 1
 
 
 def test_telemetry_and_positions_are_deduplicated_and_summarized(tmp_path):
@@ -907,6 +1122,7 @@ def test_observation_retention_prunes_expired_samples_on_initialize(tmp_path):
             "sample_time": "2000-01-01T00:00:00+00:00",
             "received_at": "2000-01-01T00:00:01+00:00",
             "metrics": {"batteryLevel": 50},
+            "gateway_node_id": LOCAL_NODE_ID,
         }
     )
     assert len(database.list_telemetry("!11112222")) == 1

@@ -38,7 +38,7 @@ from meshpi.models import (
 
 class FakeService:
     def status(self):
-        return {"state": "tilkopla"}
+        return {"state": "tilkopla", "local_node_id": "!aaaaaaaa"}
 
     def send_public(self, text):
         return {"text": text, "kind": "public"}
@@ -92,7 +92,7 @@ class MultiChannelService(FakeService):
                 "name": "Ops",
                 "display_name": "Ops",
                 "role": "SECONDARY",
-                "conversation": public_conversation_id(key),
+                "conversation": public_conversation_id("!aaaaaaaa", key),
                 "kind": "public",
             }
         ]
@@ -310,8 +310,9 @@ def test_ipc_dispatch_and_validation(tmp_path):
         {"command": "node_action_status", "action_id": "trace-1"}
     )["data"]["status"] == "completed"
     database.upsert_node_action(
-        {
-            "action_id": "trace-saved",
+            {
+                "action_id": "trace-saved",
+                "local_node_id": "!aaaaaaaa",
             "action": "traceroute",
             "node_id": "!11112222",
             "status": "completed",
@@ -333,7 +334,10 @@ def test_ipc_dispatch_and_validation(tmp_path):
             "node_id": "!11112222",
         }
     )["data"]["available"] is True
-    database.upsert_node(Node(node_id="!11112222", long_name="Test"))
+    database.upsert_node(
+        Node(node_id="!11112222", long_name="Test"),
+        local_node_id="!aaaaaaaa",
+    )
     common_observation = {
         "node_id": "!11112222",
         "sample_time": "2026-07-26T12:00:00+00:00",
@@ -438,7 +442,7 @@ def test_conversation_view_hides_public_archives_and_groups_dm_routes(tmp_path):
             "name": "Vakt",
             "display_name": "Vakt",
             "role": "SECONDARY",
-            "conversation": public_conversation_id(secondary_key),
+            "conversation": public_conversation_id("!aaaaaaaa", secondary_key),
             "kind": "public",
         }
     )
@@ -491,8 +495,9 @@ def test_conversation_view_hides_public_archives_and_groups_dm_routes(tmp_path):
             direction=Direction.INCOMING,
             transport=Transport.RF,
             status=MessageStatus.RECEIVED,
-            conversation_id="channel:legacy:serial-gammal:0",
-            channel_key="legacy:serial-gammal:0",
+                conversation_id="channel:legacy:serial-gammal:0",
+                channel_key="legacy:serial-gammal:0",
+                local_node_id="!aaaaaaaa",
         )
     )
 
@@ -557,7 +562,7 @@ def test_public_watch_matches_only_the_active_primary_channel(tmp_path):
             "channel_index": 0,
             "channel_key": primary_key,
             "name": "Primær",
-            "conversation": public_conversation_id(primary_key),
+            "conversation": public_conversation_id("!aaaaaaaa", primary_key),
         },
     )
     app = IPCApplication(
@@ -572,7 +577,9 @@ def test_public_watch_matches_only_the_active_primary_channel(tmp_path):
             "type": "message",
             "data": {
                 "kind": "public",
-                "conversation_id": public_conversation_id(primary_key),
+                "conversation_id": public_conversation_id(
+                    "!aaaaaaaa", primary_key
+                ),
             },
         },
         "public",
@@ -722,6 +729,7 @@ def test_public_history_is_empty_without_active_channel_and_stays_unread(tmp_pat
         status=MessageStatus.RECEIVED,
         conversation_id="channel:legacy:gammal:0",
         channel_key="legacy:gammal:0",
+        local_node_id="!aaaaaaaa",
     )
     database.insert_message(public)
     app = IPCApplication(
@@ -847,9 +855,11 @@ def test_ipc_streams_complete_database_export(tmp_path):
             kind=ConversationKind.PUBLIC,
             peer_node=None,
             text="Eksport frå Ørsta",
-            direction=Direction.INCOMING,
-            transport=Transport.RF,
-        )
+                direction=Direction.INCOMING,
+                transport=Transport.RF,
+                channel_key="local:!aaaaaaaa:0:",
+                local_node_id="!aaaaaaaa",
+            )
     )
     server_settings = Settings(
         database_path=database.path,

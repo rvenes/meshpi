@@ -6,7 +6,7 @@ import pytest
 
 from meshpi.channels import dm_conversation_id
 from meshpi.config import Settings
-from meshpi.connections import ConnectionProfile
+from meshpi.connections import ConnectionProfile, ConnectionStore
 from meshpi.database import Database
 from meshpi.events import EventHub
 from meshpi.models import (
@@ -92,6 +92,27 @@ def test_discover_connections_includes_ble_results(service, monkeypatch):
 
     assert result["ble"][0]["ble_identifier"] == "A1:B2:C3:D4:E5:F6"
     assert result["ble_error"] is None
+
+
+def test_disconnected_service_uses_profile_last_local_node_for_history(tmp_path):
+    profile = ConnectionProfile.from_dict(
+        ConnectionProfile.tcp("192.0.2.42").as_dict()
+        | {"last_local_node_id": "!aaaaaaaa"}
+    )
+    connections = ConnectionStore(tmp_path / "connections.json", profile)
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+
+    value = MeshtasticService(
+        Settings(database_path=database.path),
+        database,
+        EventHub(),
+        connections=connections,
+    )
+
+    assert value.history_local_node_id() == "!aaaaaaaa"
+    assert value.status()["history_local_node_id"] == "!aaaaaaaa"
+    assert value.status()["local_node_id"] is None
 
 
 def test_discover_connections_can_return_local_results_without_ble(
@@ -289,7 +310,9 @@ def test_unknown_received_channel_is_not_sendable_and_is_rebound(service):
     assert [item["channel_index"] for item in value.list_channels()] == [0]
     provisional = database.list_messages(
         "public",
-        conversation_id="channel:provisional:!710365c8:5",
+        conversation_id=(
+            "channel:!710365c8:provisional:!710365c8:5"
+        ),
     )
     assert provisional[0]["text"] == "Kom før kanaloversikta"
     with pytest.raises(RuntimeError, match="finst ikkje"):
@@ -314,7 +337,9 @@ def test_unknown_received_channel_is_not_sendable_and_is_rebound(service):
     assert rebound[0]["text"] == "Kom før kanaloversikta"
     assert database.list_messages(
         "public",
-        conversation_id="channel:provisional:!710365c8:5",
+        conversation_id=(
+            "channel:!710365c8:provisional:!710365c8:5"
+        ),
     ) == []
 
 

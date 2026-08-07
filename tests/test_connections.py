@@ -54,6 +54,17 @@ def test_connection_store_persists_profiles_and_active_choice(tmp_path):
     assert saved["active_profile_id"] == serial.profile_id
 
 
+def test_connection_store_remembers_last_local_node(tmp_path):
+    path = tmp_path / "connections.json"
+    profile = ConnectionProfile.tcp("192.0.2.42")
+    store = ConnectionStore(path, profile)
+
+    updated = store.remember_local_node(profile.profile_id, "!AABBCCDD")
+
+    assert updated.last_local_node_id == "!aabbccdd"
+    assert ConnectionStore(path).active_profile() == updated
+
+
 def test_connection_store_starts_empty_without_default_profile(tmp_path):
     path = tmp_path / "connections.json"
     store = ConnectionStore(path)
@@ -61,7 +72,7 @@ def test_connection_store_starts_empty_without_default_profile(tmp_path):
     assert store.active_profile() is None
     assert store.list_profiles() == []
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved == {"version": 2, "active_profile_id": None, "profiles": []}
+    assert saved == {"version": 3, "active_profile_id": None, "profiles": []}
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX-filrettar")
@@ -204,7 +215,7 @@ def test_connection_store_migrates_version_one_and_preserves_active_profile(tmp_
 
     assert store.active_profile() == serial
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved["version"] == 2
+    assert saved["version"] == 3
     assert saved["active_profile_id"] == serial.profile_id
     assert {item["transport"] for item in saved["profiles"]} == {"tcp", "serial"}
 

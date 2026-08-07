@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_MESHTASTIC_PORT = 4403
-CONNECTION_FILE_VERSION = 2
+CONNECTION_FILE_VERSION = 3
 SUPPORTED_TRANSPORTS = {"tcp", "serial", "ble"}
 WINDOWS_PORT = re.compile(r"^COM\d+$", re.IGNORECASE)
 LINUX_LEGACY_SERIAL = re.compile(r"^/dev/ttyS\d+$")
@@ -54,6 +54,7 @@ class ConnectionProfile:
     serial_number: str | None = None
     vid: int | None = None
     pid: int | None = None
+    last_local_node_id: str | None = None
 
     @property
     def endpoint(self) -> str:
@@ -162,10 +163,18 @@ class ConnectionProfile:
             )
         else:
             raise ValueError(f"Ustøtta transport: {transport or 'tom'}")
+        changes: dict[str, Any] = {}
         requested_id = str(data.get("profile_id", "")).strip()
         if requested_id and profile.transport != "ble":
-            return replace(profile, profile_id=requested_id)
-        return profile
+            changes["profile_id"] = requested_id
+        last_local_node_id = str(
+            data.get("last_local_node_id", "") or ""
+        ).strip()
+        if last_local_node_id:
+            if not re.fullmatch(r"![0-9A-Fa-f]{8}", last_local_node_id):
+                raise ValueError("Tilkoplingsprofilen har ugyldig lokal node-ID")
+            changes["last_local_node_id"] = last_local_node_id.lower()
+        return replace(profile, **changes) if changes else profile
 
 
 def _optional_int(value: Any) -> int | None:
@@ -269,7 +278,7 @@ class ConnectionStore:
         if not isinstance(data, dict) or not isinstance(data.get("profiles"), list):
             raise ValueError("Tilkoplingsfila har ugyldig format")
         version = data.get("version", 1)
-        if version not in {1, CONNECTION_FILE_VERSION}:
+        if version not in {1, 2, CONNECTION_FILE_VERSION}:
             raise ValueError(f"Ustøtta versjon av tilkoplingsfila: {version}")
         data["version"] = version
         return data
@@ -352,6 +361,38 @@ class ConnectionStore:
     def activate(self, profile_id: str) -> ConnectionProfile:
         profile = self.get(profile_id)
         return self.save_and_activate(profile)
+
+    def remember_local_node(
+        self,
+        profile_id: str,
+        local_node_id: str,
+    ) -> ConnectionProfile:
+        normalized = local_node_id.strip().lower()
+        if not re.fullmatch(r"![0-9a-f]{8}", normalized):
+            raise ValueError("Ugyldig lokal node-ID")
+        with self._lock:
+            data = self._read()
+            profiles = [
+                ConnectionProfile.from_dict(item)
+                for item in data["profiles"]
+                if isinstance(item, dict)
+            ]
+            updated: ConnectionProfile | None = None
+            for index, profile in enumerate(profiles):
+                if profile.profile_id == profile_id:
+                    updated = replace(profile, last_local_node_id=normalized)
+                    profiles[index] = updated
+                    break
+            if updated is None:
+                raise ValueError(f"Fann ikkje tilkoplingsprofilen {profile_id}")
+            self._write(
+                {
+                    "version": CONNECTION_FILE_VERSION,
+                    "active_profile_id": data.get("active_profile_id"),
+                    "profiles": [profile.as_dict() for profile in profiles],
+                }
+            )
+        return updated
 
 
 def _stable_serial_paths() -> dict[str, str]:

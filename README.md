@@ -311,9 +311,11 @@ meshpi connections
 Daemonen eig framleis berre eitt radiosamband om gongen. Profilbyte lukkar det
 gamle sambandet kontrollert og koplar til det nye utan systemd-omstart.
 Meldingshistorikken ligg i éin database. Kanalar blir berre samla når ein trygg
-Meshtastic-kanal-ID viser at dei er den same logiske kanalen. Kvar melding får
-dessutan lagra lokal node, gatewayprofil og kanalrute. Same melding motteken
-via fleire gatewayar blir vist éin gong, men alle mottaka blir logga.
+Meshtastic-kanal-ID viser at dei er den same logiske kanalen på same lokale
+node. Nodeliste, samtalar, ulest-status, telemetri, posisjon og nodehandlingar
+er skilde per lokal node, også for standardkanalen LongFast. Same radio via
+TCP, USB eller BLE bruker det same datasettet. Profilen hugsar siste kjende
+lokale node og viser denne historikken medan sambandet blir kopla til att.
 
 Eksporter heile databasen som UTF-8-tekst før til dømes testing av ei
 betautgåve som kan krevje ny database:
@@ -361,7 +363,8 @@ systemtenester på Linux/macOS og BLE i Docker er ikkje ferdig plattformtesta.
 ## Fullskjermsgrensesnitt
 
 `meshpi` eller `meshpi tui` opnar samtalelista, den aktive samtalen,
-nodedetaljar og ei rullbar nodeliste i same terminalvindauge. Nye meldingar kjem
+nodedetaljar og ei rullbar nodeliste for den valde lokale noden i same
+terminalvindauge. Nye meldingar kjem
 inn automatisk, og den aktive samtalen rullar ned til den nyaste meldinga. Ein
 DM som kjem til ei anna samtale, gir eit synleg varsel. Marker ein node i
 høgrepanelet for å vise detaljane, og trykk Enter for å opne DM. «Ny DM» viser
@@ -497,7 +500,9 @@ meshpi nodes --search fjell --sort name
 meshpi node deadbeef
 ```
 
-Ei stjerne i nodelista markerer den lokale Meshtastic-noden.
+Ei stjerne i nodelista markerer den lokale Meshtastic-noden. Ved profilbyte
+viser lista berre nodar som er observerte gjennom radioen den valde profilen
+høyrer til.
 
 ### Historikk
 
@@ -549,7 +554,7 @@ berre den aktive primærkanalen; bruk `all` for alle kanalar og DM-ar:
 
 ```bash
 meshpi watch public
-meshpi watch channel:global:Ops:1234
+meshpi watch channel:!01234567:global:Ops:1234
 meshpi watch deadbeef
 ```
 
@@ -636,9 +641,10 @@ minst 32 teikn og blir kontrollert før ein IPC-kommando blir utført.
 
 `OBSERVATION_RETENTION_DAYS` styrer kor lenge motteken telemetri og
 posisjonsdata blir tekne vare på, frå 1 til 3650 dagar. Standardverdien er 365.
-Data blir knytte til kjeldenoden, ikkje til den aktive tilkoplingsprofilen.
-MeshPi lagrar samstundes kva profil og lokal gateway som tok imot pakken, og
-fjernar duplikat dersom same pakke kjem inn via fleire gatewayar.
+Data blir knytte både til kjeldenoden og den lokale Meshtastic-noden som tok
+imot dei. MeshPi lagrar òg profil og transport som sporingsinformasjon.
+Duplikat blir fjerna mellom profilar som peikar på same lokale node, men ikkje
+mellom ulike lokale nodar.
 
 Når `DISCOVERY_SUBNET` er tom, finn MeshPi det lokale IPv4-nettet automatisk
 og søkjer der. Set til dømes `DISCOVERY_SUBNET=192.168.1.0/24` for å avgrense

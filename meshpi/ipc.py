@@ -152,6 +152,17 @@ class IPCApplication:
             return data.get("conversation_id") == conversation
         return data.get("kind") == "dm" and data.get("peer_node") == conversation
 
+    def history_local_node_id(self) -> str | None:
+        getter = getattr(self.service, "history_local_node_id", None)
+        if callable(getter):
+            return getter()
+        status = self.service.status()
+        return str(
+            status.get("local_node_id")
+            or status.get("history_local_node_id")
+            or ""
+        ) or None
+
     @staticmethod
     def _validated_archived_route(
         node_id: str,
@@ -221,37 +232,54 @@ class IPCApplication:
                 ),
             }
         if command == "nodes":
+            local_node_id = self.history_local_node_id()
             return {
                 "ok": True,
                 "data": self.database.list_nodes(
                     search=str(request.get("search", "")),
                     sort=str(request.get("sort", "seen")),
-                ),
+                    local_node_id=local_node_id,
+                ) if local_node_id else [],
             }
         if command == "node":
+            local_node_id = self.history_local_node_id()
             node_id = normalize_node_id(str(request.get("node_id", "")))
-            node = self.database.get_node(node_id)
+            node = (
+                self.database.get_node(node_id, local_node_id=local_node_id)
+                if local_node_id
+                else None
+            )
             if node is None:
                 raise ValueError(f"Fann ikkje noden {node_id}")
             return {"ok": True, "data": node}
         if command == "node_overview":
+            local_node_id = self.history_local_node_id()
             node_id = normalize_node_id(str(request.get("node_id", "")))
-            node = self.database.get_node(node_id)
+            node = (
+                self.database.get_node(node_id, local_node_id=local_node_id)
+                if local_node_id
+                else None
+            )
             if node is None:
                 raise ValueError(f"Fann ikkje noden {node_id}")
             return {
                 "ok": True,
                 "data": {
                     "node": node,
-                    **self.database.node_observation_summary(node_id),
+                    **self.database.node_observation_summary(
+                        node_id,
+                        local_node_id=local_node_id,
+                    ),
                 },
             }
         if command == "node_telemetry":
+            local_node_id = self.history_local_node_id()
             node_id = normalize_node_id(str(request.get("node_id", "")))
             return {
                 "ok": True,
                 "data": self.database.list_telemetry(
                     node_id,
+                    local_node_id=local_node_id,
                     kind=str(request.get("kind", "")).strip() or None,
                     limit=int(request.get("limit", 100)),
                     before_id=(
@@ -259,24 +287,31 @@ class IPCApplication:
                         if request.get("before_id") is not None
                         else None
                     ),
-                ),
+                ) if local_node_id else [],
             }
         if command == "node_positions":
+            local_node_id = self.history_local_node_id()
             node_id = normalize_node_id(str(request.get("node_id", "")))
             return {
                 "ok": True,
                 "data": self.database.list_positions(
                     node_id,
+                    local_node_id=local_node_id,
                     limit=int(request.get("limit", 100)),
                     before_id=(
                         int(request["before_id"])
                         if request.get("before_id") is not None
                         else None
                     ),
-                ),
+                ) if local_node_id else [],
             }
         if command == "conversations":
-            conversations = self.database.conversations()
+            local_node_id = self.history_local_node_id()
+            conversations = (
+                self.database.conversations(local_node_id)
+                if local_node_id
+                else []
+            )
             channels = self.active_channels()
             by_id = {
                 str(item["conversation"]): item for item in conversations
@@ -350,30 +385,62 @@ class IPCApplication:
             }
         if command == "delete_messages":
             scope = str(request.get("scope", ""))
+            local_node_id = self.history_local_node_id()
+            if not local_node_id:
+                raise RuntimeError("Ingen lokal node er vald")
             return {
                 "ok": True,
                 "data": {
                     "scope": scope,
-                    "deleted": self.database.delete_messages(scope),
+                    "deleted": self.database.delete_messages(scope, local_node_id),
                 },
             }
         if command == "archive_conversation":
+            local_node_id = self.history_local_node_id()
+            if not local_node_id:
+                raise RuntimeError("Ingen lokal node er vald")
             node_id = normalize_node_id(str(request.get("node_id", "")))
             conversation = self._validated_archived_route(
                 node_id,
                 request.get("conversation"),
             )
-            self.database.archive_conversation(node_id, conversation)
+            if conversation:
+                route_local, _, _ = parse_dm_conversation_id(conversation)
+                if route_local != local_node_id:
+                    raise ValueError(
+                        "Samtaleruta høyrer til ein annan lokal node"
+                    )
+            self.database.archive_conversation(
+                node_id,
+                conversation,
+                local_node_id=local_node_id,
+            )
             return {"ok": True, "data": {"node_id": node_id, "archived": True}}
         if command == "unarchive_conversation":
+            local_node_id = self.history_local_node_id()
+            if not local_node_id:
+                raise RuntimeError("Ingen lokal node er vald")
             node_id = normalize_node_id(str(request.get("node_id", "")))
             conversation = self._validated_archived_route(
                 node_id,
                 request.get("conversation"),
             )
-            self.database.unarchive_conversation(node_id, conversation)
+            if conversation:
+                route_local, _, _ = parse_dm_conversation_id(conversation)
+                if route_local != local_node_id:
+                    raise ValueError(
+                        "Samtaleruta høyrer til ein annan lokal node"
+                    )
+            self.database.unarchive_conversation(
+                node_id,
+                conversation,
+                local_node_id=local_node_id,
+            )
             return {"ok": True, "data": {"node_id": node_id, "archived": False}}
         if command == "messages":
+            local_node_id = self.history_local_node_id()
+            if not local_node_id:
+                return {"ok": True, "data": []}
             conversation = str(request.get("conversation", "public"))
             limit = int(request.get("limit", 100))
             mark_read = bool(request.get("mark_read", False))
@@ -390,6 +457,10 @@ class IPCApplication:
                     route_local, route_peer, route_key = parse_dm_conversation_id(
                         str(value)
                     )
+                    if route_local != local_node_id:
+                        raise ValueError(
+                            "Samanslåtte DM-ruter må høyre til den valde lokale noden"
+                        )
                     routes.append(
                         dm_conversation_id(route_local, route_peer, route_key)
                     )
@@ -401,6 +472,7 @@ class IPCApplication:
                     conversation_ids=list(dict.fromkeys(routes)),
                     limit=limit,
                     mark_read=mark_read,
+                    local_node_id=local_node_id,
                 )
             elif conversation == "public":
                 primary = self.active_channel(
@@ -416,22 +488,33 @@ class IPCApplication:
                         conversation_id=str(primary["conversation"]),
                         limit=limit,
                         mark_read=mark_read,
+                        local_node_id=local_node_id,
                     )
                     if primary
                     else []
                 )
             elif conversation.startswith("channel:"):
-                channel_key = parse_public_conversation_id(conversation)
+                route_local, channel_key = parse_public_conversation_id(conversation)
+                if route_local is not None and route_local != local_node_id:
+                    raise ValueError(
+                        "Public-ruta høyrer til ein annan lokal node"
+                    )
                 data = self.database.list_messages(
                     "public",
-                    conversation_id=public_conversation_id(channel_key),
+                    conversation_id=public_conversation_id(
+                        local_node_id,
+                        channel_key,
+                    ),
                     limit=limit,
                     mark_read=mark_read,
+                    local_node_id=local_node_id,
                 )
             elif conversation.startswith("dm:"):
                 route_local, route_peer, route_key = parse_dm_conversation_id(
                     conversation
                 )
+                if route_local != local_node_id:
+                    raise ValueError("DM-ruta høyrer til ein annan lokal node")
                 data = self.database.list_messages(
                     "dm",
                     conversation_id=dm_conversation_id(
@@ -441,6 +524,7 @@ class IPCApplication:
                     ),
                     limit=limit,
                     mark_read=mark_read,
+                    local_node_id=local_node_id,
                 )
             else:
                 node_id = normalize_node_id(conversation)
@@ -450,6 +534,7 @@ class IPCApplication:
                         peer_node=node_id,
                         limit=limit,
                         mark_read=mark_read,
+                        local_node_id=local_node_id,
                     )
                 else:
                     channel = self.active_channel(int(request["channel_index"]))
@@ -466,6 +551,7 @@ class IPCApplication:
                         ),
                         limit=limit,
                         mark_read=mark_read,
+                        local_node_id=local_node_id,
                     )
             return {"ok": True, "data": data}
         if command == "send_public":
@@ -511,6 +597,7 @@ class IPCApplication:
                 ),
             }
         if command == "node_actions":
+            local_node_id = self.history_local_node_id()
             node_id = normalize_node_id(str(request.get("node_id", "")))
             return {
                 "ok": True,
@@ -518,7 +605,8 @@ class IPCApplication:
                     node_id,
                     action=str(request.get("action", "traceroute")),
                     limit=int(request.get("limit", 100)),
-                ),
+                    local_node_id=local_node_id,
+                ) if local_node_id else [],
             }
         if command == "node_action_availability":
             return {

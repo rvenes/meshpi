@@ -31,8 +31,8 @@ def provisional_channel_key(local_node_id: str, channel_index: int) -> str:
     return f"provisional:{local_node_id.lower()}:{int(channel_index)}"
 
 
-def public_conversation_id(channel_key: str) -> str:
-    return f"channel:{channel_key}"
+def public_conversation_id(local_node_id: str, channel_key: str) -> str:
+    return f"channel:{local_node_id.lower()}:{channel_key}"
 
 
 def dm_conversation_id(
@@ -46,14 +46,19 @@ def dm_conversation_id(
     )
 
 
-def parse_public_conversation_id(value: str) -> str:
+def parse_public_conversation_id(value: str) -> tuple[str | None, str]:
     conversation = value.strip()
     if not conversation.startswith("channel:"):
         raise ValueError("Samtale-ID-en må starte med channel:")
-    channel_key = conversation.removeprefix("channel:")
+    payload = conversation.removeprefix("channel:")
+    local_node_id: str | None = None
+    channel_key = payload
+    if payload.startswith("!") and ":" in payload:
+        local_value, channel_key = payload.split(":", 1)
+        local_node_id = normalize_node_id(local_value)
     if not _valid_channel_key(channel_key):
         raise ValueError("Ugyldig samtale-ID for public-kanal")
-    return channel_key
+    return local_node_id, channel_key
 
 
 def parse_dm_conversation_id(value: str) -> tuple[str, str, str]:
@@ -100,7 +105,7 @@ class ChannelBinding:
 
     @property
     def conversation_id(self) -> str:
-        return public_conversation_id(self.channel_key)
+        return public_conversation_id(self.local_node_id, self.channel_key)
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self) | {

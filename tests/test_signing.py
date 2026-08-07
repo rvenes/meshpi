@@ -14,6 +14,7 @@ from meshpi.signing import (
     canonical_manifest_bytes,
     verify_manifest_signature,
 )
+from meshpi.versions import is_prerelease, version_key
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -35,15 +36,17 @@ def test_manifest_accepts_key_from_explicit_trust_registry():
     )
 
 
-def test_beta_seed_manifest_is_signed_and_keeps_stable_manifest_isolated():
+def test_beta_manifest_is_signed_and_keeps_stable_manifest_isolated():
     stable = manifest()
     beta = beta_manifest()
 
     verify_manifest_signature(beta)
     assert stable["channel"] == "stable"
     assert beta["channel"] == "beta"
-    assert beta["latest_version"] == stable["latest_version"]
-    assert beta["package"] == stable["package"]
+    assert is_prerelease(beta["latest_version"])
+    assert version_key(beta["latest_version"]) > version_key(stable["latest_version"])
+    assert "/beta/downloads/" in beta["package"]["url"]
+    assert "/beta/" not in stable["package"]["url"]
 
 
 def test_manifest_rejects_revoked_signing_key():
