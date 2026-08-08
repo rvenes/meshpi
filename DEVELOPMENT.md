@@ -1,8 +1,8 @@
 # Utviklingsstatus og vidare plan
 
-Sist oppdatert: 7. august 2026
+Sist oppdatert: 8. august 2026
 Gjeldande stabilutgiving: MeshPi 0.8.7
-Gjeldande betautgiving: MeshPi 0.8.8b1
+Gjeldande betautgiving: MeshPi 0.8.8b2
 
 Denne fila er den varige overleveringa mellom utviklingstrådar. Ho skal
 oppdaterast når ei større funksjon blir ferdig, når eit viktig arkitekturval
@@ -174,6 +174,7 @@ og BLE i Docker, er ikkje ferdig plattformtesta.
 | 0.8.6 | Separat, uttrykkeleg betakanal for interne testutgåver |
 | 0.8.7 | Konsistent og atomisk databaseeksport via daemonen |
 | 0.8.8b1 | Strengt dataskilje per lokal node-ID og nodebundne samtaler |
+| 0.8.8b2 | Windows-bootstrap frå 0.8.7 med sanert oppdateringsmiljø |
 
 ## Avklaringar som alt er tekne
 

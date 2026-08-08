@@ -8,6 +8,21 @@
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+if (($env:PATHEXT -split ";") -notcontains ".EXE") {
+    $env:PATHEXT = [Environment]::GetEnvironmentVariable("PATHEXT", "Machine")
+    if (($env:PATHEXT -split ";") -notcontains ".EXE") {
+        $env:PATHEXT = ".COM;.EXE;.BAT;.CMD"
+    }
+}
+if (-not $env:LOCALAPPDATA) {
+    $env:LOCALAPPDATA = [Environment]::GetFolderPath("LocalApplicationData")
+}
+if (-not $env:APPDATA) {
+    $env:APPDATA = [Environment]::GetFolderPath("ApplicationData")
+}
+if (-not $env:LOCALAPPDATA -or -not $env:APPDATA) {
+    throw "Klarte ikkje finne Windows-mappene for gjeldande brukar."
+}
 if ($SkipAutostart) {
     $Mode = "Session"
 }

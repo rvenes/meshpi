@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.8.8b1",
-  "published_at": "2026-08-07T04:17:54Z",
+  "latest_version": "0.8.8b2",
+  "published_at": "2026-08-08T01:33:27Z",
   "minimum_python": "3.11",
   "release_notes_url": "https://venes.org/meshpi/beta/",
   "package": {
-    "url": "https://venes.org/meshpi/beta/downloads/meshpi-0.8.8b1-py3-none-any.whl",
-    "filename": "meshpi-0.8.8b1-py3-none-any.whl",
-    "sha256": "9e69c3d4f480db10df5a79cb3c0a627bce3e8cf05c823862f27f7c22a6235e4b",
-    "size": 130747,
+    "url": "https://venes.org/meshpi/beta/downloads/meshpi-0.8.8b2-py3-none-any.whl",
+    "filename": "meshpi-0.8.8b2-py3-none-any.whl",
+    "sha256": "c713b4cf9719d55fc390d4fd7f8a933e7cf59fa5918220f6f4a8ec3a6488a79b",
+    "size": 130863,
     "format": "wheel"
   },
   "locks": {
@@ -49,22 +49,22 @@
     },
     "windows": {
       "url": "https://venes.org/meshpi/beta/install-windows.ps1",
-      "sha256": "f8d91420b51b22291f42efcbf684773842a0790bbf3a4170d4c77441016c1dd4",
-      "size": 20917,
+      "sha256": "d932c3642412cc9bc1a9a613ff3280ede4bcb2a036efd44e5ed3120938922b84",
+      "size": 21481,
       "update_command": "meshpi update --beta"
     }
   },
   "release_notes": [
-    "Strengt dataskilje per lokal Meshtastic-node for nodeliste, meldingar, ulest-status, telemetri, posisjon og nodehandlingar.",
+    "Rettar Windows-oppdatering frå 0.8.7 ved å gjenopprette PATHEXT, LocalAppData og AppData før Python blir kontrollert.",
+    "Den nye oppdateraren bevarer eit avgrensa sett nødvendige Windows-stiar og bruker ein fast, trygg PATHEXT.",
+    "Strengt dataskilje per lokal Meshtastic-node omfattar nodeliste, meldingar, ulest-status, telemetri, posisjon og nodehandlingar.",
     "Public-kanalar, inkludert LongFast, er nodebundne; profilar til same lokale node deler framleis data og deduplisering.",
-    "Tilkoplingsprofilar hugsar siste lokale node-ID og viser rett historikk under fråkopling og ny tilkopling.",
-    "Databaseskjema v4 bevarer sikkert tilordna data og fjernar eldre rader utan trygg lokal nodekopling.",
-    "Windows-oppdateraren toler oppryddingsfeil betre og held òg den manuelle reservevegen på vald kanal."
+    "Windows toler oppryddingsfeil betre og den manuelle reservevegen held seg på vald kanal."
   ],
   "channel": "beta",
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "iRSN8/7DHoAaQbALbtgtx8jb3YtPF1ZVr+FAB43Ad+ma95ccxcIm3m1XHRa/F4r7Tu4Z9b9hURIEJLdjbgZz6qlDdmyFbH1EMdsZcyLUic2/bEbzhinNAdNJ8dKdXvsnVaS61lk6soi/lB4PY8ibijRrBu1iAqfHRQuHu/H6edRm8glDknU7aam3gVqRsU9aFk1sdyVwwz9P2MsXdQYdxlhcI60IMpWeuCtvGs7MRmWjm5/Fa54krXDs2XUXuqJYim+m+OiyhJTxp6WMoMX4NC4kiaExxzTgDUgv19ellaDXNuGFCBqWnP0x9vqiiyfessC+yUzUDN+oolnsuB4f9kb41YmQNGU5BKvIAZjYp/y/RHmhQFPXUwzDMquF106rS5MzG0RJXHI1GGRDo0nEp5sY6v8wGj10nI3ZO++ZPx3x9P+BCp/h4x6+wV2FOkSQdP0U8YWJs46bIL9LGxoxh7T+8RlOlmi2/UszI2MjHse0lz7tt7/VD1IS9fm5Jtxy"
+    "value": "gnzcBiLfosmJzn24s75389e3hDqW24+7c7MK6BQnylm1O56CFVEMHv9S+j31XgxJKJtLJX8lNihKFxlHREJMg53BvWIEa/PePl3CN748uzutolMbXoSPHX1bH0OBkurUHurzvlTrSGnHqkB2SFakPUIO9kZegwsr7v3Vjv/+CyC6NR3coNvD9VV1LlrMPG6sMMQeDk+PXqm32idK9BwjqpPwGzGtCY29WrIJWv8so1gD+2aNxh/i8AiyIbHPn91avMa7z0ARvs034z2HT4QHbJzSt9JK/Iw/I6QvPtBde/0+/7qrYqcgvkCLqL6F23BluY9YPYGTD1VegLmg6im2yqTjk8TYZivCaiIa5mcCSpgQMGKS/yOH2AzCbXXxoYi4swF67Lj9wIW0pgougCcUZPV/lrZ29kfmhPwaAjq32F1qsr3qdsuf/eHR216W7kGX+BLqY7Q1qcPPxMNAyFWYyGS4iueHL0GP75f+ssV20OvtlxPC5KQpAS3LVHQK/NO2"
   }
 }

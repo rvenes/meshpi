@@ -3,12 +3,17 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+from meshpi import __version__
+from meshpi.versions import is_prerelease
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -54,8 +59,13 @@ def test_manifest_matches_all_dependency_locks() -> None:
         assert "--hash=sha256:" in lock.read_text(encoding="utf-8")
 
 
-def test_manifest_matches_all_installers() -> None:
-    manifest = json.loads((ROOT / "website" / "version.json").read_text(encoding="utf-8"))
+def test_current_release_manifest_matches_all_installers() -> None:
+    manifest_path = (
+        ROOT / "website" / "beta" / "version.json"
+        if is_prerelease(__version__)
+        else ROOT / "website" / "version.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     for platform_name, filename in (
         ("linux", "install-linux.sh"),
@@ -267,6 +277,52 @@ def test_updater_can_supply_python_and_local_files_without_curl() -> None:
     windows = _text("install-windows.ps1")
     assert "$env:MESHPI_PYTHON" in windows
     assert "Test-PythonCommand $env:MESHPI_PYTHON" in windows
+
+
+@pytest.mark.skipif(
+    shutil.which("powershell.exe") is None,
+    reason="krev Windows PowerShell",
+)
+def test_windows_installer_repairs_sanitized_updater_environment() -> None:
+    source = _text("install-windows.ps1").lstrip("\ufeff")
+    bootstrap = source.split('Write-InstallStep 1 "Kontrollerer', 1)[0]
+    script = (
+        bootstrap
+        + "\n$python = Find-MeshPiPython\n"
+        + 'Write-Output ($env:PATHEXT + "|" + $env:LOCALAPPDATA + "|" '
+        + '+ $env:APPDATA + "|" + [bool]$python)\n'
+    )
+    environment = {
+        name: os.environ[name]
+        for name in ("PATH", "SYSTEMROOT", "TEMP", "TMP", "USERNAME")
+        if name in os.environ
+    }
+    environment["MESHPI_PYTHON"] = sys.executable
+
+    result = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=environment,
+    )
+
+    path_ext, local_app_data, app_data, python_found = (
+        result.stdout.strip().split("|")
+    )
+    assert ".EXE" in path_ext.upper()
+    assert local_app_data
+    assert app_data
+    assert python_found == "True"
 
 
 def test_macos_installer_rejects_root_outside_test_mode() -> None:

@@ -16,6 +16,7 @@ from meshpi.update import (
     UpdateCheckError,
     UpdatePlan,
     _fetch_manifest,
+    _safe_installer_environment,
     apply_update,
     parse_update_manifest,
     platform_key,
@@ -44,6 +45,33 @@ def test_update_manifest_selects_platform_command():
     assert notice is not None
     assert notice.latest_version == "0.8.7"
     assert notice.command == "meshpi update"
+
+
+def test_windows_installer_environment_keeps_required_user_paths(
+    monkeypatch, tmp_path
+):
+    values = {
+        "APPDATA": r"C:\Users\test\AppData\Roaming",
+        "LOCALAPPDATA": r"C:\Users\test\AppData\Local",
+        "USERPROFILE": r"C:\Users\test",
+        "SYSTEMDRIVE": "C:",
+        "WINDIR": r"C:\Windows",
+    }
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("PATHEXT", ".EXE;.DANGER")
+
+    environment = _safe_installer_environment(
+        type("Plan", (), {"platform": "windows"})(),
+        Settings(),
+        manifest_path=tmp_path / "version.json",
+        package_path=tmp_path / "meshpi.whl",
+        lock_path=tmp_path / "windows.txt",
+    )
+
+    for name, value in values.items():
+        assert environment[name] == value
+    assert environment["PATHEXT"] == ".COM;.EXE;.BAT;.CMD"
 
 
 @pytest.mark.parametrize(
@@ -159,7 +187,7 @@ def test_beta_manifest_reports_update_for_current_stable_version():
     )
 
     assert notice is not None
-    assert notice.latest_version == "0.8.8b1"
+    assert notice.latest_version == "0.8.8b2"
     assert notice.command == "sudo meshpi update --beta"
 
 

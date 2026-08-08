@@ -368,19 +368,32 @@ def _safe_installer_environment(
 ) -> dict[str, str]:
     allowed = {
         "HOME",
+        "HOMEDRIVE",
+        "HOMEPATH",
         "LANG",
         "LC_ALL",
         "LC_CTYPE",
+        "LOCALAPPDATA",
         "LOGNAME",
+        "APPDATA",
+        "ALLUSERSPROFILE",
+        "COMSPEC",
+        "PROGRAMDATA",
+        "PROGRAMFILES",
+        "PROGRAMFILES(X86)",
+        "PROGRAMW6432",
         "SUDO_GID",
         "SUDO_UID",
         "SUDO_USER",
+        "SYSTEMDRIVE",
         "SYSTEMROOT",
         "TEMP",
         "TMP",
         "TMPDIR",
         "USER",
         "USERNAME",
+        "USERPROFILE",
+        "WINDIR",
     }
     environment = {
         key: value
@@ -393,6 +406,7 @@ def _safe_installer_environment(
         environment["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
     else:
         environment["PATH"] = os.environ.get("PATH", "")
+        environment["PATHEXT"] = ".COM;.EXE;.BAT;.CMD"
     environment.update(
         {
             "MESHPI_MANIFEST_FILE": str(manifest_path),
