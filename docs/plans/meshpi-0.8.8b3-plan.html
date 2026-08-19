@@ -1,0 +1,1091 @@
+<!doctype html>
+<html lang="nn">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="color-scheme" content="dark">
+    <title>MeshPi 0.8.8b3 – implementasjons- og testplan</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #071019;
+        --panel: #0d1925;
+        --panel-strong: #122233;
+        --line: #253d52;
+        --text: #ecf4fb;
+        --muted: #a9bbca;
+        --blue: #72b7ff;
+        --cyan: #52ded2;
+        --green: #7ce0a3;
+        --amber: #ffc968;
+        --red: #ff8d91;
+        --violet: #c3a8ff;
+        --radius: 1rem;
+        --shadow: 0 18px 50px rgb(0 0 0 / 24%);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      html { scroll-behavior: smooth; }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 15% 0%, rgb(40 112 151 / 24%), transparent 32rem),
+          radial-gradient(circle at 90% 10%, rgb(68 59 144 / 18%), transparent 28rem),
+          var(--bg);
+        color: var(--text);
+      }
+
+      a { color: var(--blue); }
+
+      a:hover { color: #a8d4ff; }
+
+      code {
+        padding: .08rem .32rem;
+        border: 1px solid rgb(114 183 255 / 20%);
+        border-radius: .35rem;
+        background: rgb(114 183 255 / 8%);
+        color: #c9e5ff;
+        font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+        font-size: .9em;
+      }
+
+      .page {
+        width: min(76rem, calc(100% - 2rem));
+        margin: 0 auto;
+        padding: 1.25rem 0 4rem;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 2.25rem;
+        color: var(--muted);
+        font-size: .92rem;
+      }
+
+      .topbar a {
+        text-decoration: none;
+      }
+
+      .eyebrow {
+        margin: 0 0 .75rem;
+        color: var(--cyan);
+        font-size: .78rem;
+        font-weight: 800;
+        letter-spacing: .14em;
+        text-transform: uppercase;
+      }
+
+      .hero {
+        position: relative;
+        overflow: hidden;
+        padding: clamp(1.5rem, 4vw, 3.5rem);
+        border: 1px solid var(--line);
+        border-radius: 1.4rem;
+        background:
+          linear-gradient(135deg, rgb(20 47 67 / 96%), rgb(16 26 47 / 96%));
+        box-shadow: var(--shadow);
+      }
+
+      .hero::after {
+        content: "b3";
+        position: absolute;
+        right: clamp(-1rem, 2vw, 1.5rem);
+        bottom: -3.5rem;
+        color: rgb(114 183 255 / 7%);
+        font-size: clamp(9rem, 24vw, 19rem);
+        font-weight: 900;
+        letter-spacing: -.12em;
+        line-height: .8;
+        pointer-events: none;
+      }
+
+      h1, h2, h3 {
+        margin-top: 0;
+        line-height: 1.15;
+      }
+
+      h1 {
+        position: relative;
+        z-index: 1;
+        max-width: 13ch;
+        margin-bottom: 1rem;
+        font-size: clamp(2.3rem, 7vw, 5rem);
+        letter-spacing: -.055em;
+      }
+
+      h2 {
+        margin-bottom: .9rem;
+        font-size: clamp(1.4rem, 3vw, 2rem);
+        letter-spacing: -.025em;
+      }
+
+      h3 {
+        margin-bottom: .45rem;
+        font-size: 1.06rem;
+      }
+
+      p, li, td, th {
+        line-height: 1.58;
+      }
+
+      p { color: var(--muted); }
+
+      .lede {
+        position: relative;
+        z-index: 1;
+        max-width: 48rem;
+        margin: 0;
+        color: #d7e5ef;
+        font-size: clamp(1rem, 2vw, 1.2rem);
+      }
+
+      .facts {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: .65rem;
+        margin-top: 1.5rem;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .45rem;
+        padding: .48rem .72rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgb(7 16 25 / 54%);
+        color: #d4e2ed;
+        font-size: .86rem;
+      }
+
+      .dot {
+        width: .55rem;
+        height: .55rem;
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow: 0 0 0 .2rem rgb(124 224 163 / 10%);
+      }
+
+      .dot.amber { background: var(--amber); }
+      .dot.blue { background: var(--blue); }
+
+      .decision {
+        display: grid;
+        grid-template-columns: 1.2fr .8fr;
+        gap: 1rem;
+        margin: 1rem 0;
+      }
+
+      .card, section {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: linear-gradient(180deg, rgb(16 31 45 / 96%), rgb(12 24 35 / 96%));
+        box-shadow: 0 10px 28px rgb(0 0 0 / 13%);
+      }
+
+      .card { padding: 1.25rem; }
+
+      .card p:last-child, .card ul:last-child { margin-bottom: 0; }
+
+      .callout {
+        border-color: rgb(255 201 104 / 42%);
+        background: linear-gradient(180deg, rgb(53 42 20 / 76%), rgb(29 27 24 / 92%));
+      }
+
+      .callout strong { color: #ffe2a8; }
+
+      nav {
+        margin: 1rem 0 2.25rem;
+        padding: 1rem 1.15rem;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgb(9 20 30 / 78%);
+      }
+
+      nav strong {
+        display: block;
+        margin-bottom: .55rem;
+        color: #d9e6f0;
+      }
+
+      nav ol {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .45rem .8rem;
+        margin: 0;
+        padding-left: 1.25rem;
+        color: var(--muted);
+      }
+
+      section {
+        margin: 1rem 0;
+        padding: clamp(1.25rem, 3vw, 2rem);
+        scroll-margin-top: 1rem;
+      }
+
+      .section-kicker {
+        margin-bottom: .35rem;
+        color: var(--violet);
+        font-size: .76rem;
+        font-weight: 800;
+        letter-spacing: .13em;
+        text-transform: uppercase;
+      }
+
+      .grid-2, .grid-3 {
+        display: grid;
+        gap: .85rem;
+      }
+
+      .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+      .mini {
+        padding: 1rem;
+        border: 1px solid rgb(37 61 82 / 82%);
+        border-radius: .8rem;
+        background: rgb(7 16 25 / 42%);
+      }
+
+      .mini p { margin: .35rem 0 0; }
+
+      .priority {
+        display: inline-flex;
+        margin-bottom: .65rem;
+        padding: .25rem .52rem;
+        border-radius: .35rem;
+        font-size: .72rem;
+        font-weight: 900;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+      }
+
+      .p0 { background: rgb(255 141 145 / 16%); color: var(--red); }
+      .p1 { background: rgb(255 201 104 / 15%); color: var(--amber); }
+      .later { background: rgb(114 183 255 / 14%); color: var(--blue); }
+
+      ul, ol { color: var(--muted); }
+
+      li + li { margin-top: .38rem; }
+
+      .checklist {
+        list-style: none;
+        padding-left: 0;
+      }
+
+      .checklist li {
+        position: relative;
+        padding-left: 1.7rem;
+      }
+
+      .checklist li::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: .42rem;
+        width: .75rem;
+        height: .75rem;
+        border: 2px solid #52708a;
+        border-radius: .2rem;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+        margin-top: .85rem;
+        border: 1px solid var(--line);
+        border-radius: .75rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 42rem;
+      }
+
+      th, td {
+        padding: .8rem .9rem;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: rgb(20 40 56 / 92%);
+        color: #e5f0f7;
+        font-size: .8rem;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+      }
+
+      td { color: var(--muted); }
+      tr:last-child td { border-bottom: 0; }
+
+      .loss { color: var(--red); font-weight: 800; }
+      .gain { color: var(--green); font-weight: 800; }
+
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: .55rem;
+        margin-top: 1rem;
+      }
+
+      .flow-step {
+        position: relative;
+        min-height: 8rem;
+        padding: .9rem;
+        border: 1px solid var(--line);
+        border-radius: .7rem;
+        background: rgb(7 16 25 / 50%);
+      }
+
+      .flow-step:not(:last-child)::after {
+        content: "→";
+        position: absolute;
+        top: 50%;
+        right: -.47rem;
+        z-index: 2;
+        padding: .05rem .16rem;
+        background: var(--panel);
+        color: var(--cyan);
+        transform: translateY(-50%);
+      }
+
+      .flow-step b {
+        display: block;
+        margin-bottom: .35rem;
+        color: #e9f3fa;
+      }
+
+      .flow-step span {
+        color: var(--muted);
+        font-size: .88rem;
+        line-height: 1.45;
+      }
+
+      .gate {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: .85rem;
+        align-items: start;
+        padding: .9rem 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .gate:last-child { border-bottom: 0; }
+
+      .gate-id {
+        min-width: 2.35rem;
+        padding: .32rem .45rem;
+        border-radius: .45rem;
+        background: rgb(82 222 210 / 12%);
+        color: var(--cyan);
+        font-weight: 900;
+        text-align: center;
+      }
+
+      .gate p { margin: .22rem 0 0; }
+
+      .timeline {
+        position: relative;
+        margin-top: 1rem;
+        padding-left: 1.8rem;
+      }
+
+      .timeline::before {
+        content: "";
+        position: absolute;
+        left: .42rem;
+        top: .45rem;
+        bottom: .45rem;
+        width: 2px;
+        background: linear-gradient(var(--cyan), var(--violet));
+      }
+
+      .phase {
+        position: relative;
+        margin-bottom: 1.2rem;
+        padding: 1rem 1.1rem;
+        border: 1px solid var(--line);
+        border-radius: .8rem;
+        background: rgb(7 16 25 / 44%);
+      }
+
+      .phase::before {
+        content: "";
+        position: absolute;
+        left: -1.77rem;
+        top: 1.25rem;
+        width: .72rem;
+        height: .72rem;
+        border: 3px solid var(--panel);
+        border-radius: 50%;
+        background: var(--cyan);
+      }
+
+      .phase p { margin: .3rem 0 0; }
+
+      .phase-meta {
+        color: var(--violet);
+        font-size: .78rem;
+        font-weight: 800;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+      }
+
+      .stop {
+        border-color: rgb(255 141 145 / 40%);
+        background: linear-gradient(180deg, rgb(54 24 29 / 72%), rgb(27 22 27 / 94%));
+      }
+
+      footer {
+        margin-top: 2rem;
+        padding: 1.25rem 0;
+        border-top: 1px solid var(--line);
+        color: #7f96a9;
+        font-size: .86rem;
+      }
+
+      @media (max-width: 58rem) {
+        .decision, .grid-3 { grid-template-columns: 1fr; }
+        .flow { grid-template-columns: 1fr; }
+        .flow-step { min-height: auto; }
+        .flow-step:not(:last-child)::after {
+          content: "↓";
+          top: auto;
+          right: 50%;
+          bottom: -.62rem;
+          transform: translateX(50%);
+        }
+      }
+
+      @media (max-width: 42rem) {
+        .grid-2 { grid-template-columns: 1fr; }
+        .topbar { align-items: flex-start; flex-direction: column; }
+        .page { width: min(100% - 1rem, 76rem); }
+        .hero, section { border-radius: .85rem; }
+      }
+
+      @media print {
+        :root { color-scheme: light; }
+        body { background: white; color: #10202c; }
+        .page { width: 100%; padding: 0; }
+        .hero, .card, section, nav, .mini, .phase, .flow-step {
+          break-inside: avoid;
+          border-color: #b9c5ce;
+          background: white;
+          box-shadow: none;
+        }
+        p, li, td, .flow-step span { color: #334b5b; }
+        h1, h2, h3, th, .flow-step b { color: #10202c; }
+        .hero::after { display: none; }
+        a { color: #164f84; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <div class="topbar">
+        <a href="./">← Til planoversikta</a>
+        <span>Oppretta 19. august 2026 · intern arbeidsplan</span>
+      </div>
+
+      <header class="hero">
+        <p class="eyebrow">MeshPi · signert betakanal</p>
+        <h1>Plan for 0.8.8b3</h1>
+        <p class="lede">
+          Ei avgrensa hardingsutgåve som gjer datamigreringa tapsfri, får
+          daemonen trygt tilbake etter suspend/resume og etablerer eit målbart
+          grunnlag for ein 7–14 dagars test før <code>0.9.0b1</code>.
+        </p>
+        <div class="facts" aria-label="Nøkkelfakta">
+          <span class="chip"><span class="dot amber"></span>Stabil: 0.8.7</span>
+          <span class="chip"><span class="dot blue"></span>No i test: 0.8.8b2</span>
+          <span class="chip"><span class="dot"></span>Neste port: 0.8.8b3</span>
+        </div>
+      </header>
+
+      <div class="decision">
+        <div class="card callout">
+          <span class="priority p0">Avgjerd</span>
+          <h2>Lag b3 før den formelle langtidstesten</h2>
+          <p>
+            <strong>0.8.8b2 kan halde fram med å samle data medan b3 blir laga,</strong>
+            men b2 skal ikkje vere utgåva som godkjenner 0.9.0. Den noverande
+            schema-4-migreringa kan fjerne historikk som ikkje kan knytast
+            eintydig til ein lokal gateway.
+          </p>
+        </div>
+        <div class="card">
+          <span class="priority p1">Suksessmål</span>
+          <h2>Ingen stille tap</h2>
+          <p>
+            Kvar rad frå før migrering skal anten bli ei gyldig, nodebunden rad
+            eller bli bevart som eksplisitt, leseorientert legacy-historikk.
+          </p>
+        </div>
+      </div>
+
+      <nav aria-label="Innhald">
+        <strong>Innhald</strong>
+        <ol>
+          <li><a href="#scope">Omfang</a></li>
+          <li><a href="#evidence">Funn frå b2</a></li>
+          <li><a href="#migration">Tapsfri migrering</a></li>
+          <li><a href="#recovery">Recovery frå b2</a></li>
+          <li><a href="#resume">Suspend og reconnect</a></li>
+          <li><a href="#tests">Testmatrise</a></li>
+          <li><a href="#rollout">Utrulling</a></li>
+          <li><a href="#gates">Godkjenningsportar</a></li>
+        </ol>
+      </nav>
+
+      <section id="scope">
+        <p class="section-kicker">01 · Omfang</p>
+        <h2>Kva som høyrer til i beta 3</h2>
+        <div class="grid-3">
+          <article class="mini">
+            <span class="priority p0">Må med</span>
+            <h3>Dataintegritet</h3>
+            <ul>
+              <li>Tapsfri migrering frå schema 3 til nytt schema.</li>
+              <li>Eksplisitt bevaring av uavklart legacy-historikk.</li>
+              <li>Radrekneskap og transaksjonell rollback.</li>
+              <li>Test mot realistiske, anonymiserte datasett.</li>
+            </ul>
+          </article>
+          <article class="mini">
+            <span class="priority p0">Må med</span>
+            <h3>Livssyklus</h3>
+            <ul>
+              <li>Oppdage at operativsystemet har vore suspendert.</li>
+              <li>Serialisert reconnect utan parallelt radiosamband.</li>
+              <li>Synleg reconnect-årsak i status og logg.</li>
+              <li>Automatiske og kontrollerte live-testar.</li>
+            </ul>
+          </article>
+          <article class="mini">
+            <span class="priority later">Kan vente</span>
+            <h3>Ikkje b3-kritisk</h3>
+            <ul>
+              <li>Tidsfilter og synleg sideinndeling i TUI.</li>
+              <li>Fleire samtidige gatewayar.</li>
+              <li>Generelt importformat for databaseeksport.</li>
+              <li>Full BLE-støtte i Docker.</li>
+            </ul>
+          </article>
+        </div>
+        <p>
+          Trygg opprydding av gamle release-miljø, lengre reconnect-backoff og
+          loggrotasjon er gode tillegg dersom dei kan gjerast utan å auke risikoen
+          for hovudmåla. Dei skal ikkje forseinke dataintegritetsrettinga.
+        </p>
+      </section>
+
+      <section id="evidence">
+        <p class="section-kicker">02 · Evidens</p>
+        <h2>Kva 0.8.8b2 avdekte</h2>
+        <p>
+          Før oppgradering blei det teke komplette, tilgangsverna eksportar.
+          Samanlikning av tabelltal før og etter schema-4-migrering viste at
+          telemetri og posisjonar heldt fram med å vekse, medan eldre uskopte
+          radtypar kunne bli fjerna frå den aktive databasen.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Testrolle</th>
+                <th>Nodeoppføringar</th>
+                <th>Meldingar</th>
+                <th>Nodehandlingar</th>
+                <th>Arkivmarkeringar</th>
+                <th>Observasjonar</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>macOS / seriell</td>
+                <td class="loss">−71</td>
+                <td class="loss">−3</td>
+                <td class="loss">−24</td>
+                <td>0</td>
+                <td class="gain">heldt fram å vekse</td>
+              </tr>
+              <tr>
+                <td>Linux / Pi 4 / seriell</td>
+                <td class="loss">−13</td>
+                <td class="loss">−51</td>
+                <td>0</td>
+                <td class="loss">−4</td>
+                <td class="gain">heldt fram å vekse</td>
+              </tr>
+              <tr>
+                <td>Linux / Pi 3 / TCP</td>
+                <td class="loss">−4</td>
+                <td class="loss">−27</td>
+                <td>0</td>
+                <td class="loss">−4</td>
+                <td class="gain">heldt fram å vekse</td>
+              </tr>
+              <tr>
+                <td>Ubuntu / seriell</td>
+                <td class="loss">−7</td>
+                <td>0 netto</td>
+                <td class="loss">−13</td>
+                <td>0</td>
+                <td class="gain">heldt fram å vekse</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Dette er ikkje teikn på SQLite-korrupsjon. Det er konsekvensen av ein
+          migreringsstrategi som prioriterer dataskilje ved å slette rader som
+          ikkje kan tilordnast sikkert. For ei stabil utgiving skal uvisse gi
+          <em>read-only legacy</em>, aldri stille sletting.
+        </p>
+      </section>
+
+      <section id="principles">
+        <p class="section-kicker">03 · Invariant</p>
+        <h2>Reglar løysinga ikkje får bryte</h2>
+        <div class="grid-2">
+          <article class="mini">
+            <h3>Data og eigarskap</h3>
+            <ul class="checklist">
+              <li>Berre daemonen eig SQLite-fila og radiosambandet.</li>
+              <li>Profiler er transportspor; lokal node-ID er dataeigar.</li>
+              <li>Uavklarte rader er lesbare, men aldri sendbare.</li>
+              <li>Eksisterande database, profilar og innstillingar blir bevarte.</li>
+            </ul>
+          </article>
+          <article class="mini">
+            <h3>Radio og tryggleik</h3>
+            <ul class="checklist">
+              <li>Ingen node-, kanal- eller radiokonfigurasjon blir endra.</li>
+              <li>Automatiske testar bruker mock og sender ingenting.</li>
+              <li>Live-testen er passiv; public og DM er utanfor planen.</li>
+              <li>IPC held seg på loopback eller privat Unix-socket.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section id="migration">
+        <p class="section-kicker">04 · Arbeidsstraum A</p>
+        <h2>Tapsfri schema-migrering</h2>
+        <p>
+          B3 bør innføre eit nytt, versjonert schema og migrere i éin eksplisitt
+          transaksjon. Uavklarte kjelder blir bevarte i ei eiga tabell, til dømes
+          <code>legacy_unscoped_records</code>, med kjeldetabell, kjeldenøkkel,
+          årsak, tidsstempel og original rad som strukturert JSON.
+        </p>
+        <div class="flow" aria-label="Migreringsflyt">
+          <div class="flow-step">
+            <b>1. Tel</b>
+            <span>Ta radtal og identitetsoversikt før noko blir endra.</span>
+          </div>
+          <div class="flow-step">
+            <b>2. Tilordne</b>
+            <span>Bruk meldingobservasjon, gateway-ID, profilspor og DM-retning.</span>
+          </div>
+          <div class="flow-step">
+            <b>3. Bevar</b>
+            <span>Flytt alt tvitydig til leseorientert legacy-lager.</span>
+          </div>
+          <div class="flow-step">
+            <b>4. Avstem</b>
+            <span>Kvar kjelderad må ha nøyaktig éin dokumentert destinasjon.</span>
+          </div>
+          <div class="flow-step">
+            <b>5. Commit</b>
+            <span>Byt schema berre når avstemming og integritet er grøn.</span>
+          </div>
+        </div>
+
+        <h3>Tilordningsrekkjefølgje</h3>
+        <ol>
+          <li>
+            Bruk ein eintydig lokal node-ID frå <code>message_observations</code>,
+            utgåande avsendar eller innkomande DM-mottakar.
+          </li>
+          <li>
+            For telemetri og posisjon: bruk gyldig gateway-node, og deretter
+            profilens sist kjende lokale node-ID.
+          </li>
+          <li>
+            For nodeoppføringar: opprett skopierte rader for kjende lokale
+            område som faktisk har observert noden; ikkje slett originalen før
+            avstemming.
+          </li>
+          <li>
+            For traceroute og andre nodehandlingar: bruk knytt utgåande pakke.
+            Dersom det ikkje finst ei eintydig kopling, bevar rada som legacy.
+          </li>
+          <li>
+            Arkiveringsstatus blir flytta berre når samtaleruta kan tolkast.
+            Resten blir bevart med årsak, ikkje forkasta.
+          </li>
+        </ol>
+
+        <div class="grid-2">
+          <article class="mini">
+            <h3>Avstemming</h3>
+            <p>
+              <code>skopierte + legacy = kjelderader</code> for kvar tabell.
+              Avvik skal avbryte transaksjonen og la den gamle databasen stå
+              urørt.
+            </p>
+          </article>
+          <article class="mini">
+            <h3>Idempotens</h3>
+            <p>
+              Andre oppstart etter vellukka migrering skal gjere null endringar.
+              Eit simulert avbrot midt i migrering skal rulle heilt tilbake.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section id="recovery">
+        <p class="section-kicker">05 · Arbeidsstraum B</p>
+        <h2>Plan for maskiner som alt har køyrt b2</h2>
+        <p>
+          Dei verna før-eksportane inneheld dei fjerna radene. B3 må skilje
+          mellom å rette migreringa for framtidige oppgraderingar og å hente
+          tilbake data på dei fire testmaskinene som alt er migrerte.
+        </p>
+        <div class="grid-2">
+          <article class="mini">
+            <span class="priority p0">Påkravd</span>
+            <h3>Isolert rekonstruksjonstest</h3>
+            <ul>
+              <li>Les berre skjema, radtypar og anonymiserte felt frå eksportane.</li>
+              <li>Bygg testdatabasar utan meldingstekst eller posisjonsverdiar.</li>
+              <li>Køyr ny migrering og samanlikn tabell-for-tabell.</li>
+              <li>Rå eksportar skal aldri inn i Git, bygg eller planarkiv.</li>
+            </ul>
+          </article>
+          <article class="mini">
+            <span class="priority p1">Separat godkjenning</span>
+            <h3>Faktisk recovery</h3>
+            <ul>
+              <li>Lag først ein tørrkøyring som berre rapporterer planlagde endringar.</li>
+              <li>Importer aldri over eksisterande rader eller sendbare ruter.</li>
+              <li>Uavklarte postar går til legacy-lageret.</li>
+              <li>Køyring mot live-data krev ny eksport og uttrykkeleg godkjenning.</li>
+            </ul>
+          </article>
+        </div>
+        <p>
+          Recovery-verktøyet skal gå gjennom daemon-/vedlikehaldsflyten og
+          respektere at berre éin prosess eig databasen. B3 kan publiserast når
+          den tapsfrie migreringa er bevist; sjølve innflettinga av dei private
+          før-eksportane er ei eiga, kontrollert driftsoppgåve.
+        </p>
+      </section>
+
+      <section id="resume">
+        <p class="section-kicker">06 · Arbeidsstraum C</p>
+        <h2>Reconnect etter suspend og stille sambandsbrot</h2>
+        <p>
+          Ubuntu-testen viste at operativsystemet kunne vere i djup suspend i
+          fleire dagar. Etter oppvakning fanst seriellporten framleis, medan
+          Meshtastic-lesaren ikkje leverte nye hendingar og status blei ståande
+          på «tilkopla». Ein kontrollert MeshPi-restart opna sambandet og gav
+          fersk telemetri straks.
+        </p>
+        <div class="grid-3">
+          <article class="mini">
+            <h3>Oppdaging</h3>
+            <p>
+              Sammenlikn veggklokke og monoton klokke for å oppdage eit
+              suspend/resume-gap. Kontroller òg om transportlesaren faktisk lever.
+            </p>
+          </article>
+          <article class="mini">
+            <h3>Handling</h3>
+            <p>
+              Be den eksisterande, serialiserte reconnect-flyten lukke gammalt
+              grensesnitt og opne same profil på nytt. Aldri to samband samtidig.
+            </p>
+          </article>
+          <article class="mini">
+            <h3>Synlegheit</h3>
+            <p>
+              Status og logg viser årsak, sist gyldige hending og tidspunkt for
+              siste reconnect utan å logge privat meldingstekst.
+            </p>
+          </article>
+        </div>
+        <ul class="checklist">
+          <li>Mocka test med falske klokker og suspend-gap.</li>
+          <li>Mocka test der transporttråden døyr utan vanleg disconnect-signal.</li>
+          <li>Test av backoff slik at feil ikkje gir tett reconnect- eller loggsløyfe.</li>
+          <li>Kontrollert live suspend-test berre når operatøren er til stades.</li>
+          <li>Automatisk dvale blir ståande avslått under den lange datatesten.</li>
+        </ul>
+      </section>
+
+      <section id="tests">
+        <p class="section-kicker">07 · Verifikasjon</p>
+        <h2>Automatisk testmatrise</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Område</th>
+                <th>Påkravd test</th>
+                <th>Bestått når</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Migrering</td>
+                <td>Schema 3 → nytt schema med scoped, tvitydig og ugyldig data.</td>
+                <td>Alle kjelderader er skopierte eller ligg i legacy; null stille sletting.</td>
+              </tr>
+              <tr>
+                <td>Rollback</td>
+                <td>Injiser feil etter kvar migreringsfase.</td>
+                <td>Original schema og radtal er byte-for-byte logisk urørte.</td>
+              </tr>
+              <tr>
+                <td>Idempotens</td>
+                <td>Køyr migrering og installatør to gonger.</td>
+                <td>Andre køyring gir null datamodellendringar og frisk teneste.</td>
+              </tr>
+              <tr>
+                <td>Dataskilje</td>
+                <td>To lokale nodar, delte og ulike profilar, public, DM og observasjonar.</td>
+                <td>Ingen kryssvising; same lokale node deler framleis data.</td>
+              </tr>
+              <tr>
+                <td>Resume</td>
+                <td>Falskt suspend-gap og stille transportlesar.</td>
+                <td>Nøyaktig eitt reconnect-forsøk, ingen parallell radioeigar.</td>
+              </tr>
+              <tr>
+                <td>Yting</td>
+                <td>Minst 35 000 telemetrirader og 4 000 posisjonar.</td>
+                <td>1 000-raders spørring under eitt sekund på svakaste Pi.</td>
+              </tr>
+              <tr>
+                <td>Tryggleik</td>
+                <td>Full pytest, Ruff og Bandit.</td>
+                <td>Alt grønt; ingen medium eller høge Bandit-funn.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Plattformtest før publisering</h3>
+        <div class="grid-2">
+          <article class="mini">
+            <h3>Windows og macOS</h3>
+            <ul>
+              <li>Oppdatering frå b2 via signert betakanal.</li>
+              <li>Aktiv/previous-peikar, autostart og offline doctor.</li>
+              <li>Mac: LaunchAgent-livssyklus og reconnect etter fråkopla USB.</li>
+            </ul>
+          </article>
+          <article class="mini">
+            <h3>Linux</h3>
+            <ul>
+              <li>Ubuntu x86_64, Raspberry Pi seriell og Raspberry Pi TCP.</li>
+              <li>Systemd-teneste, aktive profilar og private filrettar.</li>
+              <li>Ingen endring av andre produksjonstenester på Pi-ane.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section id="release">
+        <p class="section-kicker">08 · Bygg og release</p>
+        <h2>Signert beta utan å røre stabilkanalen</h2>
+        <ol>
+          <li>Oppdater versjon til <code>0.8.8b3</code> i kode og testar.</li>
+          <li>Oppdater <code>DEVELOPMENT.md</code> med funn, designval og teststatus.</li>
+          <li>Regenerer plattformlåser berre dersom ei avhengigheit faktisk er endra.</li>
+          <li>Køyr full test, Ruff, Bandit og relevant skriptsyntaks.</li>
+          <li>Bygg med betakanalen og tydelege utgåvenotat.</li>
+          <li>Signer manifestet etter siste artefaktendring.</li>
+          <li>Verifiser storleik og SHA-256 for wheel, tre låser og tre installatørar.</li>
+          <li>Publiser berre under betaområdet; stabil <code>0.8.7</code> skal stå urørt.</li>
+        </ol>
+      </section>
+
+      <section id="rollout">
+        <p class="section-kicker">09 · Utrulling</p>
+        <h2>Canary først, éi maskin om gongen</h2>
+        <p>
+          Oppdateringane blir sekvensielle for å unngå belastning på
+          nedlastingspunktet og for å stoppe tidleg dersom ein plattform finn ein
+          feil. Kvar maskin får ein ny konsistent eksport før oppdatering.
+        </p>
+        <div class="timeline">
+          <article class="phase">
+            <span class="phase-meta">Fase 1 · Lokal utvikling</span>
+            <h3>Implementer og bevis migreringa</h3>
+            <p>Mocka testar, anonymiserte fixtures, feilinjeksjon og full lokal test.</p>
+          </article>
+          <article class="phase">
+            <span class="phase-meta">Fase 2 · Canary 24 timar</span>
+            <h3>Windows, deretter Ubuntu-testmaskina</h3>
+            <p>Kontroller dataskilje, ferske tidsstempel, CPU, RAM og service-livssyklus.</p>
+          </article>
+          <article class="phase">
+            <span class="phase-meta">Fase 3 · Plattformbreidde</span>
+            <h3>Mac, Pi 3 og Pi 4</h3>
+            <p>Éi oppdatering om gongen; verifiser før neste maskin blir rørt.</p>
+          </article>
+          <article class="phase">
+            <span class="phase-meta">Fase 4 · Soak 7–14 dagar</span>
+            <h3>Passiv langtidslogging</h3>
+            <p>Ingen radiosending. Følg radtal, duplikat, tidsstempel, yting og reconnect.</p>
+          </article>
+          <article class="phase">
+            <span class="phase-meta">Fase 5 · Avgjerda</span>
+            <h3>Opne arbeidet med 0.9.0b1</h3>
+            <p>Berre når alle b3-portar er grøne og ingen migreringsavvik står att.</p>
+          </article>
+        </div>
+        <div class="card callout">
+          <strong>Avgrensing:</strong>
+          Den fysisk fjerne produksjons-Pi-en blir ståande på stabil utgåve og er
+          ikkje del av b3-utrullinga.
+        </div>
+      </section>
+
+      <section id="gates">
+        <p class="section-kicker">10 · Exit-kriterium</p>
+        <h2>Godkjenningsportar før langtidstesten tel</h2>
+        <div class="gate">
+          <div class="gate-id">G1</div>
+          <div>
+            <h3>Radbevaring</h3>
+            <p>Kvar kjelderad har ei skopiert eller legacy-destinasjon; avstemmingsrapporten har null avvik.</p>
+          </div>
+        </div>
+        <div class="gate">
+          <div class="gate-id">G2</div>
+          <div>
+            <h3>Dataskilje</h3>
+            <p>Nodeliste, meldingar, arkiv, telemetri, posisjon og handlingar er avgrensa til rett lokal node.</p>
+          </div>
+        </div>
+        <div class="gate">
+          <div class="gate-id">G3</div>
+          <div>
+            <h3>Resume</h3>
+            <p>Daemonen finn tilbake etter kontrollert suspend/resume utan omstart av maskina og utan parallelt samband.</p>
+          </div>
+        </div>
+        <div class="gate">
+          <div class="gate-id">G4</div>
+          <div>
+            <h3>Ressursar</h3>
+            <p>24-timars snitt under 3 % CPU på Pi, under 2 % på PC/Mac, RSS under 100 MB og ingen uavgrensa loggvekst.</p>
+          </div>
+        </div>
+        <div class="gate">
+          <div class="gate-id">G5</div>
+          <div>
+            <h3>Oppdatering og rollback</h3>
+            <p>Signert b2→b3-oppdatering er idempotent, bevarer profilar og database og held ein fungerande previous-peikar.</p>
+          </div>
+        </div>
+        <div class="gate">
+          <div class="gate-id">G6</div>
+          <div>
+            <h3>Soak</h3>
+            <p>7–14 dagar utan datatap, feil kjeldenode, fastlåst samband, vedvarande ressursauke eller nye tryggleiksfunn.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="monitoring">
+        <p class="section-kicker">11 · Langtidstest</p>
+        <h2>Kva som skal målast under b3-soaken</h2>
+        <div class="grid-3">
+          <article class="mini">
+            <h3>Dagleg</h3>
+            <ul>
+              <li>Versjon, tenestestatus og aktiv profil.</li>
+              <li>Siste telemetri- og posisjonstid.</li>
+              <li>Tal på nodar og observasjonar per lokal node.</li>
+              <li>Nye reconnect- eller databasefeil.</li>
+            </ul>
+          </article>
+          <article class="mini">
+            <h3>Kvar 2.–3. dag</h3>
+            <ul>
+              <li>CPU-tid, RSS og diskvekst.</li>
+              <li>Duplikatnøklar og sorteringsbrot.</li>
+              <li>Ugyldige eller urimeleg framtidige tidsstempel.</li>
+              <li>Spørjetid for 1 000 nyaste observasjonar.</li>
+            </ul>
+          </article>
+          <article class="mini">
+            <h3>Ved slutten</h3>
+            <ul>
+              <li>Ny komplett eksport med tabelltal.</li>
+              <li>Samanlikning mot startpunkt og forklaring på all vekst.</li>
+              <li>Plattformvis installasjons- og doctor-kontroll.</li>
+              <li>Avgjerd: 0.9.0b1 eller ny b3-retting.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="stop" id="stop">
+        <p class="section-kicker">12 · Stoppvilkår</p>
+        <h2>Stopp utrullinga dersom</h2>
+        <ul>
+          <li>ein migrert eller legacy-rad manglar i avstemmingsrapporten;</li>
+          <li>aktiv lokal node eller profil endrar seg uventa;</li>
+          <li>tenesta opnar meir enn eitt radiosamband;</li>
+          <li>CPU ligg over 5 % eller RSS over 150 MB over tid utan forklaring;</li>
+          <li>databasen gir integritetsfeil, eller eksporten ikkje blir komplett;</li>
+          <li>oppdateringa påverkar andre tenester på ei produksjonsmaskin.</li>
+        </ul>
+        <p>
+          Ved stopp: ikkje slett eller nullstill data. Bevar logg og eksport,
+          bruk previous-peikaren dersom det er trygt, og krev uttrykkeleg
+          godkjenning før eventuell gjenoppretting av database.
+        </p>
+      </section>
+
+      <section id="deliverables">
+        <p class="section-kicker">13 · Leveransar</p>
+        <h2>Det b3-arbeidet skal etterlate</h2>
+        <ul class="checklist">
+          <li>Versjonert, tapsfri migrering med dokumentert legacy-modell.</li>
+          <li>Automatiske migrerings-, rollback-, idempotens- og resume-testar.</li>
+          <li>Avgrensa recovery-dry-run for b2-eksportar.</li>
+          <li>Oppdatert utviklingsstatus og utgåvenotat på nynorsk.</li>
+          <li>Signert b3-manifest og verifiserte artefaktar berre i betakanalen.</li>
+          <li>Canary-rapport og 7–14 dagars soak-rapport utan privat innhald.</li>
+          <li>Ei eksplisitt avgjerd om kva som går vidare til 0.9.0b1.</li>
+        </ul>
+      </section>
+
+      <footer>
+        Denne planen er for det private MeshPi-testmiljøet. Han inneheld ingen
+        passord, token, nøklar, private meldingar, koordinatar eller eksportdata.
+      </footer>
+    </main>
+  </body>
+</html>

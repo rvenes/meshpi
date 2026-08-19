@@ -1,8 +1,8 @@
 # Utviklingsstatus og vidare plan
 
-Sist oppdatert: 8. august 2026
+Sist oppdatert: 19. august 2026
 Gjeldande stabilutgiving: MeshPi 0.8.7
-Gjeldande betautgiving: MeshPi 0.8.8b2
+Gjeldande betautgiving: MeshPi 0.8.8b3
 
 Denne fila er den varige overleveringa mellom utviklingstrådar. Ho skal
 oppdaterast når ei større funksjon blir ferdig, når eit viktig arkitekturval
@@ -158,6 +158,19 @@ og BLE i Docker, er ikkje ferdig plattformtesta.
   ferdig fil. Eksportformatet er førebels for trygg oppbevaring og lesing,
   ikkje eit lova importformat.
 
+### Datavern og suspend-reconnect i 0.8.8b3
+
+- Schema-migreringa avstemmer radtala før ho blir committa. Historikk som
+  ikkje trygt kan bindast til ein lokal node, blir bevart som leseorienterte
+  legacy-rader i staden for å bli sletta.
+- Legacy-radene er med i databaseeksporten, men blir ikkje gjorde sendbare
+  eller blanda inn i eit nodeområde utan ei eksplisitt seinare gjenoppretting.
+- Daemonen oppdagar både ein stoppa Meshtastic-lesetråd og eit lengre gap
+  mellom veggklokka og den monotone klokka etter suspend. Det gamle sambandet
+  blir lukka før eit serialisert reconnect-forsøk startar.
+- Statusdata held på årsaka til siste reconnect og tidspunktet for siste
+  gyldige sambandshending.
+
 ### Milepålar
 
 | Versjon | Viktigaste endring |
@@ -175,6 +188,7 @@ og BLE i Docker, er ikkje ferdig plattformtesta.
 | 0.8.7 | Konsistent og atomisk databaseeksport via daemonen |
 | 0.8.8b1 | Strengt dataskilje per lokal node-ID og nodebundne samtaler |
 | 0.8.8b2 | Windows-bootstrap frå 0.8.7 med sanert oppdateringsmiljø |
+| 0.8.8b3 | Tapsfri schema-migrering og reconnect etter suspend |
 
 ## Avklaringar som alt er tekne
 

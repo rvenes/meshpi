@@ -279,6 +279,8 @@ def _print_status(data: dict[str, Any]) -> None:
     print(f"Tilkopla frå: {_local_time(data.get('connected_since'))}")
     if data.get("reconnect_attempt"):
         print(f"Reconnect:    forsøk {data['reconnect_attempt']}")
+    if data.get("last_reconnect_reason"):
+        print(f"Siste brot:   {data['last_reconnect_reason']}")
     if data.get("error"):
         print(f"Feil:         {data['error']}")
 

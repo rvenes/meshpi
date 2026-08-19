@@ -16,7 +16,12 @@ from meshpi.models import (
     MessageStatus,
     Transport,
 )
-from meshpi.service import MeshtasticService, reconnect_delay
+from meshpi.service import (
+    MeshtasticService,
+    interface_reader_stopped,
+    reconnect_delay,
+    suspend_gap_seconds,
+)
 
 
 class SentPacket:
@@ -973,6 +978,61 @@ def test_service_persists_unique_serial_port_relocation(service, monkeypatch):
 
 def test_reconnect_backoff_is_bounded():
     assert [reconnect_delay(i) for i in range(7)] == [2, 5, 10, 30, 30, 30, 30]
+
+
+def test_suspend_gap_ignores_normal_runtime_and_detects_sleep():
+    assert suspend_gap_seconds(100, 50, 130, 80) == 0
+    assert suspend_gap_seconds(100, 50, 250, 80) == 120
+
+
+def test_reader_health_only_reports_a_known_stopped_thread():
+    assert interface_reader_stopped(FakeInterface()) is False
+    running = FakeInterface()
+    running._rxThread = SimpleNamespace(is_alive=lambda: True)
+    stopped = FakeInterface()
+    stopped._rxThread = SimpleNamespace(is_alive=lambda: False)
+
+    assert interface_reader_stopped(running) is False
+    assert interface_reader_stopped(stopped) is True
+
+
+def test_service_reconnects_serially_after_reader_thread_stops(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr("meshpi.service.HEALTH_CHECK_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr("meshpi.service.RECONNECT_DELAYS", (0, 0, 0, 0))
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    attempts = []
+    interfaces = []
+    holder = {}
+
+    def factory(profile):
+        attempts.append(profile)
+        if interfaces:
+            assert interfaces[0].closed is True
+            holder["service"]._stop.set()
+        interface = FakeInterface()
+        interface._rxThread = SimpleNamespace(is_alive=lambda: False)
+        interfaces.append(interface)
+        return interface
+
+    value = MeshtasticService(
+        Settings(meshtastic_host="192.0.2.42", database_path=database.path),
+        database,
+        EventHub(),
+        interface_factory=factory,
+    )
+    holder["service"] = value
+    value.start()
+    deadline = time.monotonic() + 2
+    while value._thread and value._thread.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    value.stop()
+
+    assert len(attempts) == 2
+    assert all(interface.closed for interface in interfaces)
+    assert value.status()["last_reconnect_reason"] == "Meshtastic-lesetråden stoppa"
 
 
 def test_service_retries_after_connection_failure(tmp_path, monkeypatch):

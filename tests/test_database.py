@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 
@@ -101,9 +102,9 @@ def test_database_export_contains_metadata_all_tables_and_rows(tmp_path):
 
     assert records[0]["record"] == "metadata"
     assert records[0]["format"] == "meshpi-database-export"
-    assert records[0]["format_version"] == 2
+    assert records[0]["format_version"] == 3
     assert records[0]["meshpi_version"] == "9.8.7"
-    assert records[0]["database_schema_version"] == 4
+    assert records[0]["database_schema_version"] == 5
     rows = [record for record in records if record["record"] == "row"]
     assert any(
         record["table"] == "messages" and record["data"]["text"] == "Test"
@@ -127,6 +128,7 @@ def test_database_export_contains_metadata_all_tables_and_rows(tmp_path):
         "node_actions",
         "archived_conversations",
         "archived_conversation_ids",
+        "legacy_unscoped_records",
     }
 
 
@@ -349,7 +351,7 @@ def test_channel_bindings_use_global_id_across_nodes_and_local_fallback(tmp_path
     ] == str(largest_id)
 
 
-def test_legacy_unscoped_message_is_removed_during_migration(tmp_path):
+def test_legacy_unscoped_message_is_preserved_during_migration(tmp_path):
     path = tmp_path / "legacy.db"
     with sqlite3.connect(path) as connection:
         connection.executescript(
@@ -395,11 +397,21 @@ def test_legacy_unscoped_message_is_removed_during_migration(tmp_path):
 
     assert database.list_messages("public") == []
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+        connection.row_factory = sqlite3.Row
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
         indexes = {
             row[1] for row in connection.execute("PRAGMA index_list(messages)")
         }
         assert "messages_conversation_time" in indexes
+        legacy = connection.execute(
+            """
+            SELECT source_table, reason, payload
+            FROM legacy_unscoped_records
+            """
+        ).fetchone()
+        assert legacy["source_table"] == "messages"
+        assert legacy["reason"] == "kan_ikkje_avgrensast_til_lokal_node"
+        assert json.loads(legacy["payload"])["text"] == "Historikk"
 
 
 def test_migration_backfills_local_node_for_outgoing_ack_scope(tmp_path):
@@ -428,7 +440,7 @@ def test_migration_backfills_local_node_for_outgoing_ack_scope(tmp_path):
     assert database.outgoing_message(77, "!aaaaaaaa")["local_node_id"] == "!aaaaaaaa"
 
 
-def test_version_three_migration_scopes_public_and_discards_global_nodes(tmp_path):
+def test_version_three_migration_scopes_public_and_preserves_global_nodes(tmp_path):
     path = tmp_path / "version-3.db"
     database = Database(path)
     database.initialize()
@@ -452,6 +464,145 @@ def test_version_three_migration_scopes_public_and_discards_global_nodes(tmp_pat
     rows = database.list_messages("public", local_node_id="!aaaaaaaa")
     assert rows[0]["conversation_id"] == "channel:!aaaaaaaa:global:Ops:1234"
     assert database.list_nodes(local_node_id="!aaaaaaaa") == []
+    with sqlite3.connect(path) as connection:
+        preserved = connection.execute(
+            """
+            SELECT payload FROM legacy_unscoped_records
+            WHERE source_table='nodes'
+            """
+        ).fetchone()
+    assert json.loads(preserved[0])["long_name"] == "Ufordelt"
+
+
+def test_scope_migration_reconciles_scoped_and_preserved_rows(tmp_path):
+    path = tmp_path / "all-legacy.db"
+    Database(path).initialize()
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            DROP TABLE nodes;
+            CREATE TABLE nodes (node_id TEXT PRIMARY KEY, long_name TEXT);
+            INSERT INTO nodes VALUES ('!11112222', 'Ufordelt node');
+
+            DROP TABLE node_actions;
+            CREATE TABLE node_actions (
+                action_id TEXT PRIMARY KEY, action TEXT NOT NULL,
+                node_id TEXT NOT NULL, status TEXT NOT NULL,
+                started_at TEXT NOT NULL, finished_at TEXT,
+                packet_id INTEGER, result TEXT, error TEXT
+            );
+            INSERT INTO node_actions VALUES (
+                'handling-1', 'traceroute', '!11112222', 'ferdig',
+                '2026-08-01T00:00:00+00:00', NULL, NULL, NULL, NULL
+            );
+
+            DROP TABLE archived_conversation_ids;
+            CREATE TABLE archived_conversation_ids (
+                conversation_id TEXT PRIMARY KEY, archived_at TEXT NOT NULL
+            );
+            INSERT INTO archived_conversation_ids VALUES (
+                'ukjend-samtale', '2026-08-01T00:00:00+00:00'
+            );
+
+            DROP TABLE archived_conversations;
+            CREATE TABLE archived_conversations (
+                peer_node TEXT PRIMARY KEY, archived_at TEXT NOT NULL
+            );
+            INSERT INTO archived_conversations VALUES (
+                '!22223333', '2026-08-01T00:00:00+00:00'
+            );
+
+            DROP TABLE telemetry_samples;
+            CREATE TABLE telemetry_samples (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, dedupe_key TEXT NOT NULL,
+                packet_id INTEGER, node_id TEXT NOT NULL, kind TEXT NOT NULL,
+                sample_time TEXT NOT NULL, received_at TEXT NOT NULL,
+                metrics TEXT NOT NULL, transport TEXT NOT NULL,
+                rssi INTEGER, snr REAL, hop_limit INTEGER, hop_start INTEGER,
+                gateway_profile_id TEXT, gateway_node_id TEXT,
+                gateway_transport TEXT
+            );
+            INSERT INTO telemetry_samples (
+                dedupe_key, node_id, kind, sample_time, received_at, metrics,
+                transport, gateway_node_id
+            ) VALUES
+                ('gyldig', '!11112222', 'device', '2026-08-01', '2026-08-01',
+                 '{}', 'RF', '!AAAAAAAA'),
+                ('ufordelt', '!33334444', 'device', '2026-08-01', '2026-08-01',
+                 '{}', 'RF', NULL);
+
+            DROP TABLE positions;
+            CREATE TABLE positions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, dedupe_key TEXT NOT NULL,
+                packet_id INTEGER, node_id TEXT NOT NULL,
+                sample_time TEXT NOT NULL, received_at TEXT NOT NULL,
+                latitude REAL NOT NULL, longitude REAL NOT NULL,
+                altitude_msl INTEGER, altitude_hae INTEGER,
+                geoidal_separation INTEGER, pdop REAL, hdop REAL, vdop REAL,
+                gps_accuracy_mm INTEGER, ground_speed REAL, ground_track REAL,
+                fix_quality INTEGER, fix_type INTEGER, sats_in_view INTEGER,
+                location_source TEXT, altitude_source TEXT,
+                precision_bits INTEGER, metadata TEXT, transport TEXT NOT NULL,
+                rssi INTEGER, snr REAL, hop_limit INTEGER, hop_start INTEGER,
+                gateway_profile_id TEXT, gateway_node_id TEXT,
+                gateway_transport TEXT
+            );
+            INSERT INTO positions (
+                dedupe_key, node_id, sample_time, received_at,
+                latitude, longitude, transport, gateway_node_id
+            ) VALUES (
+                'ufordelt-posisjon', '!33334444', '2026-08-01', '2026-08-01',
+                60.0, 5.0, 'RF', NULL
+            );
+            """
+        )
+        message_id = connection.execute(
+            """
+            INSERT INTO messages (
+                timestamp, kind, text, direction, transport, status
+            ) VALUES (
+                '2026-08-01T00:00:00+00:00', 'public', 'Ufordelt melding',
+                'inn', 'RF', 'motteken'
+            )
+            """
+        ).lastrowid
+        connection.execute(
+            """
+            INSERT INTO message_observations (
+                message_id, observed_at, transport
+            ) VALUES (?, '2026-08-01T00:00:00+00:00', 'RF')
+            """,
+            (message_id,),
+        )
+        connection.execute("PRAGMA user_version=3")
+
+    Database(path).initialize()
+
+    with sqlite3.connect(path) as connection:
+        connection.row_factory = sqlite3.Row
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert connection.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM telemetry_samples").fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT local_node_id FROM telemetry_samples"
+        ).fetchone()[0] == "!aaaaaaaa"
+        assert connection.execute("SELECT COUNT(*) FROM positions").fetchone()[0] == 0
+        preserved = {
+            row["source_table"]
+            for row in connection.execute(
+                "SELECT source_table FROM legacy_unscoped_records"
+            )
+        }
+    assert preserved == {
+        "nodes",
+        "messages",
+        "message_observations",
+        "telemetry_samples",
+        "positions",
+        "node_actions",
+        "archived_conversations",
+        "archived_conversation_ids",
+    }
 
 
 def test_scope_migration_rolls_back_on_failure(tmp_path, monkeypatch):
@@ -633,14 +784,14 @@ def test_legacy_dm_rebind_deduplicates_same_packet_and_keeps_observations(tmp_pa
     assert rows[0]["observation_count"] == 2
 
 
-def test_version_three_recreates_missing_message_indexes(tmp_path):
+def test_initialize_recreates_missing_message_indexes(tmp_path):
     path = tmp_path / "messages.db"
     database = Database(path)
     database.initialize()
     with sqlite3.connect(path) as connection:
         connection.execute("DROP INDEX messages_packet_context_identity")
         connection.execute("DROP INDEX messages_conversation_time")
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
 
     database.initialize()
 

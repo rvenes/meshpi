@@ -48,6 +48,8 @@ from meshpi.transports import Interface, InterfaceFactory, default_interface_fac
 
 LOG = logging.getLogger(__name__)
 RECONNECT_DELAYS = (2, 5, 10, 30)
+HEALTH_CHECK_INTERVAL_SECONDS = 30
+SUSPEND_GAP_THRESHOLD_SECONDS = 60
 TRACEROUTE_TIMEOUT_SECONDS = 120
 TRACEROUTE_COOLDOWN_SECONDS = 30
 POSITION_EXCHANGE_TIMEOUT_SECONDS = 120
@@ -57,6 +59,26 @@ MAX_NODE_ACTIONS = 50
 
 def reconnect_delay(attempt: int) -> int:
     return RECONNECT_DELAYS[min(max(attempt, 0), len(RECONNECT_DELAYS) - 1)]
+
+
+def suspend_gap_seconds(
+    previous_wall: float,
+    previous_monotonic: float,
+    wall_now: float,
+    monotonic_now: float,
+) -> float:
+    """Returner tid som gjekk under suspend, men ikkje i monoton klokke."""
+    return max(
+        0.0,
+        (wall_now - previous_wall) - (monotonic_now - previous_monotonic),
+    )
+
+
+def interface_reader_stopped(interface: Interface) -> bool:
+    """Oppdag ein avslutta Meshtastic-lesetråd utan å gjette for andre transportar."""
+    reader = getattr(interface, "_rxThread", None)
+    is_alive = getattr(reader, "is_alive", None)
+    return reader is not None and callable(is_alive) and not bool(is_alive())
 
 
 def _sent_packet_id(packet: Any) -> int | None:
@@ -187,6 +209,8 @@ class MeshtasticService:
             "history_local_node_id": (
                 self._profile.last_local_node_id if self._profile else None
             ),
+            "last_valid_event_at": None,
+            "last_reconnect_reason": None,
         }
 
     @staticmethod
@@ -380,7 +404,9 @@ class MeshtasticService:
             if attempt is not None:
                 self._status["reconnect_attempt"] = attempt
             if state == "tilkopla":
-                self._status["connected_since"] = now_iso()
+                valid_at = now_iso()
+                self._status["connected_since"] = valid_at
+                self._status["last_valid_event_at"] = valid_at
             elif state in {"fråkopla", "feil"}:
                 self._status["connected_since"] = None
             snapshot = dict(self._status)
@@ -440,7 +466,35 @@ class MeshtasticService:
                     self._set_status("tilkopla", attempt=0)
                     LOG.info("Tilkopla Meshtastic-noden")
                     attempt = 0
-                    while not self._stop.is_set() and not self._lost.wait(30):
+                    wall_checkpoint = time.time()
+                    monotonic_checkpoint = time.monotonic()
+                    while not self._stop.is_set() and not self._lost.wait(
+                        HEALTH_CHECK_INTERVAL_SECONDS
+                    ):
+                        wall_now = time.time()
+                        monotonic_now = time.monotonic()
+                        slept = suspend_gap_seconds(
+                            wall_checkpoint,
+                            monotonic_checkpoint,
+                            wall_now,
+                            monotonic_now,
+                        )
+                        wall_checkpoint = wall_now
+                        monotonic_checkpoint = monotonic_now
+                        reconnect_reason = None
+                        if interface_reader_stopped(interface):
+                            reconnect_reason = "Meshtastic-lesetråden stoppa"
+                        elif slept >= SUSPEND_GAP_THRESHOLD_SECONDS:
+                            reconnect_reason = (
+                                "Maskina vakna etter dvale eller djup søvn "
+                                f"({slept:.0f} sekund)"
+                            )
+                        if reconnect_reason:
+                            with self._state_lock:
+                                self._status["last_reconnect_reason"] = reconnect_reason
+                            LOG.warning("%s; koplar til på nytt", reconnect_reason)
+                            self._lost.set()
+                            break
                         self._sync_channels(interface)
                         self._sync_nodes(interface)
                     if self._stop.is_set():
@@ -496,6 +550,10 @@ class MeshtasticService:
         with self._lock:
             if interface is not self._interface:
                 return
+        with self._state_lock:
+            self._status["last_reconnect_reason"] = (
+                "Meshtastic-sambandet melde frå om brot"
+            )
         self._lost.set()
         self._fail_pending_node_actions("Meshtastic-sambandet fall ut")
 
@@ -670,6 +728,8 @@ class MeshtasticService:
                 with self._lock:
                     if interface is not self._interface:
                         return
+            with self._state_lock:
+                self._status["last_valid_event_at"] = now_iso()
             self._update_routing_ack(packet)
             self._store_observations(packet)
             message = parse_text_packet(packet, self._local_node_id)

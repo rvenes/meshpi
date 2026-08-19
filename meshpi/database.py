@@ -17,8 +17,8 @@ from meshpi.channels import (
 )
 from meshpi.models import Message, MessageStatus, Node, now_iso
 
-DATABASE_SCHEMA_VERSION = 4
-EXPORT_FORMAT_VERSION = 2
+DATABASE_SCHEMA_VERSION = 5
+EXPORT_FORMAT_VERSION = 3
 EXPORT_TABLE_QUERIES = (
     (
         "logical_channels",
@@ -47,6 +47,10 @@ EXPORT_TABLE_QUERIES = (
     (
         "archived_conversation_ids",
         'SELECT * FROM "archived_conversation_ids" ORDER BY rowid',
+    ),
+    (
+        "legacy_unscoped_records",
+        'SELECT * FROM "legacy_unscoped_records" ORDER BY id',
     ),
 )
 
@@ -246,6 +250,16 @@ CREATE TABLE IF NOT EXISTS nodes (
     PRIMARY KEY(local_node_id, node_id)
 );
 
+CREATE TABLE IF NOT EXISTS legacy_unscoped_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_table TEXT NOT NULL,
+    source_key TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    preserved_at TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    UNIQUE(source_table, source_key, reason)
+);
+
 """
 
 
@@ -405,6 +419,71 @@ class Database:
                 """
             )
 
+    @staticmethod
+    def _preserve_unscoped_payload(
+        connection: sqlite3.Connection,
+        *,
+        source_table: str,
+        source_key: str,
+        reason: str,
+        payload: dict[str, Any],
+    ) -> bool:
+        cursor = connection.execute(
+            """
+            INSERT OR IGNORE INTO legacy_unscoped_records (
+                source_table, source_key, reason, preserved_at, payload
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                source_table,
+                source_key,
+                reason,
+                now_iso(),
+                json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    default=str,
+                ),
+            ),
+        )
+        return cursor.rowcount == 1 or connection.execute(
+            """
+            SELECT 1 FROM legacy_unscoped_records
+            WHERE source_table=? AND source_key=? AND reason=?
+            """,
+            (source_table, source_key, reason),
+        ).fetchone() is not None
+
+    @staticmethod
+    def _legacy_row_payload(row: sqlite3.Row) -> dict[str, Any]:
+        payload = dict(row)
+        payload.pop("__legacy_rowid", None)
+        return payload
+
+    @staticmethod
+    def _preserve_unscoped_rows(
+        connection: sqlite3.Connection,
+        *,
+        table: str,
+        reason: str,
+        where: str | None = None,
+        source_table: str | None = None,
+    ) -> int:
+        condition = f" WHERE {where}" if where else ""
+        rows = connection.execute(
+            f"SELECT rowid AS __legacy_rowid, * FROM {table}{condition}"
+        ).fetchall()  # nosec B608 -- tabell og vilkår kjem berre frå lokale konstantar
+        for row in rows:
+            Database._preserve_unscoped_payload(
+                connection,
+                source_table=source_table or table,
+                source_key=str(row["__legacy_rowid"]),
+                reason=reason,
+                payload=Database._legacy_row_payload(row),
+            )
+        return len(rows)
+
 
     @staticmethod
     def _migrate_scope_schema(
@@ -414,11 +493,33 @@ class Database:
         if current_version >= 4:
             return
 
+        reconciled_tables = (
+            "nodes",
+            "messages",
+            "message_observations",
+            "telemetry_samples",
+            "positions",
+            "node_actions",
+            "archived_conversations",
+            "archived_conversation_ids",
+        )
+        source_counts = {
+            table: int(
+                connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            )
+            for table in reconciled_tables
+        }
+
         node_columns = {
             str(row["name"])
             for row in connection.execute("PRAGMA table_info(nodes)").fetchall()
         }
         if "local_node_id" not in node_columns:
+            Database._preserve_unscoped_rows(
+                connection,
+                table="nodes",
+                reason="manglar_lokal_node_id",
+            )
             connection.execute("DROP TABLE nodes")
             connection.execute(
                 """
@@ -458,6 +559,31 @@ class Database:
             WHERE local_node_id IS NULL
             """
         )
+        invalid_message_where = """
+            local_node_id IS NULL
+            OR LOWER(local_node_id) NOT GLOB
+               '![0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+               || '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+            OR (kind='public' AND channel_key IS NULL)
+        """
+        Database._preserve_unscoped_rows(
+            connection,
+            table="message_observations",
+            reason="tilhøyrer_ubehandla_melding",
+            where=f"""
+                EXISTS (
+                    SELECT 1 FROM messages
+                    WHERE messages.id=message_observations.message_id
+                      AND ({invalid_message_where})
+                )
+            """,
+        )
+        Database._preserve_unscoped_rows(
+            connection,
+            table="messages",
+            reason="kan_ikkje_avgrensast_til_lokal_node",
+            where=invalid_message_where,
+        )
         connection.execute(
             """
             DELETE FROM messages
@@ -488,6 +614,20 @@ class Database:
                 WHERE messages.id=message_observations.message_id
             )
             """
+        )
+        invalid_observation_where = """
+            local_node_id IS NULL
+            OR NOT EXISTS (
+                SELECT 1 FROM messages
+                WHERE messages.id=message_observations.message_id
+                  AND messages.local_node_id=message_observations.local_node_id
+            )
+        """
+        Database._preserve_unscoped_rows(
+            connection,
+            table="message_observations",
+            reason="kan_ikkje_avgrensast_til_lokal_node",
+            where=invalid_observation_where,
         )
         connection.execute(
             """
@@ -547,10 +687,19 @@ class Database:
             WHERE local_node_id IS NULL
             """
         )
+        Database._preserve_unscoped_rows(
+            connection,
+            table="node_actions",
+            reason="kan_ikkje_avgrensast_til_lokal_node",
+            where="local_node_id IS NULL",
+        )
         connection.execute("DELETE FROM node_actions WHERE local_node_id IS NULL")
 
         archived_rows = connection.execute(
-            "SELECT conversation_id, archived_at FROM archived_conversation_ids"
+            """
+            SELECT rowid AS __legacy_rowid, conversation_id, archived_at
+            FROM archived_conversation_ids
+            """
         ).fetchall()
         connection.execute("DROP TABLE archived_conversation_ids")
         connection.execute(
@@ -568,6 +717,13 @@ class Database:
             try:
                 local_node_id, _, _ = parse_dm_conversation_id(conversation)
             except ValueError:
+                Database._preserve_unscoped_payload(
+                    connection,
+                    source_table="archived_conversation_ids",
+                    source_key=str(row["__legacy_rowid"]),
+                    reason="kan_ikkje_avgrensast_til_lokal_node",
+                    payload=Database._legacy_row_payload(row),
+                )
                 continue
             connection.execute(
                 """
@@ -577,6 +733,11 @@ class Database:
                 """,
                 (local_node_id, conversation, row["archived_at"]),
             )
+        Database._preserve_unscoped_rows(
+            connection,
+            table="archived_conversations",
+            reason="manglar_lokal_node_id",
+        )
         connection.execute("DROP TABLE archived_conversations")
         connection.execute(
             """
@@ -588,6 +749,24 @@ class Database:
             )
             """
         )
+
+        for table, source_count in source_counts.items():
+            scoped_count = int(
+                connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            )
+            legacy_count = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) FROM legacy_unscoped_records
+                    WHERE source_table=?
+                    """,
+                    (table,),
+                ).fetchone()[0]
+            )
+            if source_count != scoped_count + legacy_count:
+                raise RuntimeError(
+                    f"Schema-migreringa kunne ikkje avstemme alle rader i {table}"
+                )
 
     @staticmethod
     def _rebuild_scoped_observation_table(
@@ -604,6 +783,9 @@ class Database:
             return
         old_table = f"{table}_unscoped_v3"
         connection.execute(f"ALTER TABLE {table} RENAME TO {old_table}")
+        source_count = int(
+            connection.execute(f"SELECT COUNT(*) FROM {old_table}").fetchone()[0]
+        )
         if table == "telemetry_samples":
             connection.execute(
                 """
@@ -649,16 +831,31 @@ class Database:
                 """
             )
         inserted = ", ".join((columns[0], "local_node_id", *columns[1:]))
+        valid_gateway_where = """
+            LOWER(gateway_node_id) GLOB
+            '![0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+            || '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+        """
         connection.execute(
             f"""
             INSERT OR IGNORE INTO {table} ({inserted})
             SELECT id, LOWER(gateway_node_id), {', '.join(columns[1:])}
             FROM {old_table}
-            WHERE LOWER(gateway_node_id) GLOB
-                  '![0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
-                  || '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+            WHERE {valid_gateway_where}
             """  # nosec B608 -- tabell- og kolonnenamna kjem frå lokale konstantar
         )
+        preserved = Database._preserve_unscoped_rows(
+            connection,
+            table=old_table,
+            source_table=table,
+            reason="manglar_gyldig_gateway_node_id",
+            where=f"NOT ({valid_gateway_where}) OR gateway_node_id IS NULL",
+        )
+        scoped = int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+        if source_count != scoped + preserved:
+            raise RuntimeError(
+                f"Migrering av {table} kunne ikkje avstemme alle kjelderadene"
+            )
         connection.execute(f"DROP TABLE {old_table}")
 
     @staticmethod
