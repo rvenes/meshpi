@@ -637,6 +637,23 @@ def test_scope_migration_rolls_back_on_failure(tmp_path, monkeypatch):
         )
 
 
+def test_scope_migration_rejects_identifiers_outside_allowlist():
+    with sqlite3.connect(":memory:") as connection:
+        with pytest.raises(ValueError, match="Ukjend migreringstabell"):
+            Database._scope_table_count(connection, "ikkje_ein_tabell")
+        with pytest.raises(ValueError, match="Ukjend migreringsspørjing"):
+            Database._preserve_unscoped_rows(
+                connection,
+                query_name="ikkje_ei_spørjing",
+                reason="test",
+            )
+        with pytest.raises(ValueError, match="Ukjend observasjonstabell"):
+            Database._rebuild_scoped_observation_table(
+                connection,
+                table="ikkje_ein_tabell",
+            )
+
+
 def test_provisional_rebind_merges_duplicate_observations(tmp_path):
     database = Database(tmp_path / "messages.db")
     database.initialize()

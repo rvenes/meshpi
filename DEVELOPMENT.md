@@ -1,8 +1,8 @@
 # Utviklingsstatus og vidare plan
 
-Sist oppdatert: 19. august 2026
+Sist oppdatert: 24. august 2026
 Gjeldande stabilutgiving: MeshPi 0.8.7
-Gjeldande betautgiving: MeshPi 0.8.8b3
+Gjeldande betautgiving: MeshPi 0.8.8b4
 
 Denne fila er den varige overleveringa mellom utviklingstrådar. Ho skal
 oppdaterast når ei større funksjon blir ferdig, når eit viktig arkitekturval
@@ -171,6 +171,20 @@ og BLE i Docker, er ikkje ferdig plattformtesta.
 - Statusdata held på årsaka til siste reconnect og tidspunktet for siste
   gyldige sambandshending.
 
+### Chat-historikk og kopiering i 0.8.8b4
+
+- Meldingsfeltet har `↑`/`↓`-historikk per public- og DM-samtale og tek berre
+  med eigne utgåande meldingar frå dei siste 300 innlasta radene.
+- Det opphavlege utkastet blir gjenoppretta når ein går ned forbi den nyaste
+  historikkmeldinga.
+- Ei validert innsending blir lagd i økthistorikken før sendearbeidaren startar,
+  slik at teksten òg kan hentast fram etter ein sendefeil.
+- Markering med musa kopierer automatisk på museslepp, medan `Ctrl+C` og
+  terminalen si eiga markering framleis er tilgjengelege.
+- Dei dynamiske SQL-identifikatorane i schema-migreringa er erstatta med
+  eksplisitte, tillatne spørjingsvariantar. Bandit har ingen middels eller høge
+  funn.
+
 ### Milepålar
 
 | Versjon | Viktigaste endring |
@@ -189,6 +203,7 @@ og BLE i Docker, er ikkje ferdig plattformtesta.
 | 0.8.8b1 | Strengt dataskilje per lokal node-ID og nodebundne samtaler |
 | 0.8.8b2 | Windows-bootstrap frå 0.8.7 med sanert oppdateringsmiljø |
 | 0.8.8b3 | Tapsfri schema-migrering og reconnect etter suspend |
+| 0.8.8b4 | Samtalespesifikk send-historikk, automatisk kopiering og SQL-herding |
 
 ## Avklaringar som alt er tekne
 

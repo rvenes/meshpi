@@ -32,18 +32,18 @@
     </p>
     <p>Installer siste signerte beta med <code>meshpi update --beta</code>.</p>
     <section>
-      <h2>MeshPi 0.8.8b3</h2>
+      <h2>MeshPi 0.8.8b4</h2>
       <p>
-        Ta gjerne ein databaseeksport med <code>meshpi export</code> før du
-        oppdaterer. Denne betaen migrerer databasen til eit nytt skjema.
+        Denne betaen gjer chatten raskare å arbeide i, utan endringar i
+        databaseformat, radioåtferd eller avhengigheiter.
       </p>
       <ul>
-        <li>Schema-migrering bevarer ufordelte legacy-rader i staden for å slette dei.</li>
-        <li>Radtal blir avstemte før migreringa kan fullførast.</li>
-        <li>Legacy-rader er med i databaseeksporten, men blir ikkje gjorde sendbare.</li>
-        <li>Daemonen koplar til på nytt etter suspend eller ein stoppa Meshtastic-lesetråd.</li>
-        <li>Det gamle sambandet blir alltid lukka før reconnect startar.</li>
-        <li>Dataskiljet per lokal node frå b2 er vidareført.</li>
+        <li><code>↑</code>/<code>↓</code> hentar eigne tidlegare meldingar per public- og DM-samtale.</li>
+        <li>Utkastet kjem tilbake når du går ned forbi den nyaste historikkmeldinga.</li>
+        <li>Ei validert melding blir hugsa sjølv om sendinga seinare feilar.</li>
+        <li>Markert tekst blir kopiert automatisk på museslepp; <code>Ctrl+C</code> verkar framleis.</li>
+        <li>Terminalar utan OSC52 kan framleis bruke si eiga markering, ofte med <code>Shift</code>.</li>
+        <li>Schema-migreringa bruker eksplisitt tillatne SQL-variantar og har ingen middels eller høge Bandit-funn.</li>
       </ul>
     </section>
     <p>

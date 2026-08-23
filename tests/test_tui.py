@@ -12,6 +12,7 @@ from meshpi.tui import (
     HelpScreen,
     LiveEvent,
     MeshPiTUI,
+    MessageInput,
     NewDMScreen,
     NodeActionScreen,
     NodeInfoScreen,
@@ -628,7 +629,7 @@ def test_status_bar_shows_current_meshpi_version_and_host(monkeypatch):
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.8.8b3" in text
+            assert "MeshPi 0.8.8b4" in text
             assert "Vert: testvert" in text
 
     run_scenario(scenario)
@@ -807,6 +808,96 @@ def test_refresh_updates_existing_list_items_without_rebuilding():
             assert list(app.query(NodeSidebarItem))[1] is node_item
             assert conversation_item.conversation["last_text"] == "Oppdatert"
             assert node_item.node["battery_level"] == 60
+
+    run_scenario(scenario)
+
+
+def test_message_history_is_per_conversation_and_restores_draft():
+    async def scenario():
+        backend = FakeBackend()
+        backend.messages[PUBLIC_CONVERSATION].extend(
+            [
+                {
+                    "timestamp": "2026-07-20T12:00:30+00:00",
+                    "kind": "public",
+                    "direction": "ut",
+                    "from_node": "!040840a0",
+                    "text": "Første public",
+                },
+                {
+                    "timestamp": "2026-07-20T12:00:40+00:00",
+                    "kind": "public",
+                    "direction": "ut",
+                    "from_node": "!040840a0",
+                    "text": "Andre public",
+                },
+            ]
+        )
+        backend.messages[RESERVE_DM_CONVERSATION].append(
+            {
+                "timestamp": "2026-07-20T12:01:30+00:00",
+                "kind": "dm",
+                "direction": "ut",
+                "from_node": "!040840a0",
+                "peer_node": "!710365c8",
+                "text": "Eiga DM",
+            }
+        )
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            message_input = app.query_one("#message-input", MessageInput)
+            message_input.focus()
+            await pilot.press(*"utkast")
+
+            await pilot.press("up")
+            assert message_input.value == "Andre public"
+            await pilot.press("up")
+            assert message_input.value == "Første public"
+            await pilot.press("down", "down")
+            assert message_input.value == "utkast"
+
+            app.select_conversation(RESERVE_DM_CONVERSATION)
+            await pilot.pause(0.2)
+            message_input.focus()
+            message_input.value = ""
+            await pilot.press("up")
+            assert message_input.value == "Eiga DM"
+
+            app.select_conversation(PUBLIC_CONVERSATION)
+            await pilot.pause(0.2)
+            message_input.focus()
+            message_input.value = ""
+            await pilot.press("up")
+            assert message_input.value == "Andre public"
+
+    run_scenario(scenario)
+
+
+def test_validated_message_stays_in_history_when_send_fails():
+    async def scenario():
+        backend = FakeBackend()
+
+        def failing_request(settings, payload):
+            if payload["command"] == "send_public":
+                raise RuntimeError("planlagd sendefeil")
+            return backend.request(settings, payload)
+
+        app = MeshPiTUI(
+            Settings(), requester=failing_request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            message_input = app.query_one("#message-input", MessageInput)
+            message_input.focus()
+            await pilot.press(*"blir hugsa", "enter")
+            await pilot.pause(0.2)
+
+            assert message_input.value == ""
+            await pilot.press("up")
+            assert message_input.value == "blir hugsa"
 
     run_scenario(scenario)
 
@@ -1951,7 +2042,7 @@ def test_message_stays_below_older_traceroute_after_ack_refresh():
     run_scenario(scenario)
 
 
-def test_message_text_can_still_be_selected_with_left_mouse_drag():
+def test_message_text_is_copied_on_selection_and_ctrl_c_still_works():
     async def scenario():
         backend = FakeBackend()
         app = MeshPiTUI(
@@ -1969,6 +2060,20 @@ def test_message_text_can_still_be_selected_with_left_mouse_drag():
             selected = app.screen.get_selected_text()
             assert selected is not None
             assert "Public test" in selected
+            assert app._clipboard is not None
+            assert "Public test" in app._clipboard
+
+            app._clipboard = "før Ctrl+C"
+            await pilot.press("ctrl+c")
+            await pilot.pause(0.1)
+            assert app._clipboard is not None
+            assert "Public test" in app._clipboard
+
+            app._clipboard = "skal stå"
+            await pilot.mouse_down(message_log, offset=(2, 1))
+            await pilot.mouse_up(message_log, offset=(2, 1))
+            await pilot.pause(0.1)
+            assert app._clipboard == "skal stå"
 
     run_scenario(scenario)
 

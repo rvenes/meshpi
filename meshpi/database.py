@@ -54,6 +54,103 @@ EXPORT_TABLE_QUERIES = (
     ),
 )
 
+SCOPE_TABLE_COUNT_QUERIES = {
+    "nodes": "SELECT COUNT(*) FROM nodes",
+    "messages": "SELECT COUNT(*) FROM messages",
+    "message_observations": "SELECT COUNT(*) FROM message_observations",
+    "telemetry_samples": "SELECT COUNT(*) FROM telemetry_samples",
+    "positions": "SELECT COUNT(*) FROM positions",
+    "node_actions": "SELECT COUNT(*) FROM node_actions",
+    "archived_conversations": "SELECT COUNT(*) FROM archived_conversations",
+    "archived_conversation_ids": "SELECT COUNT(*) FROM archived_conversation_ids",
+    "telemetry_samples_unscoped_v3": (
+        "SELECT COUNT(*) FROM telemetry_samples_unscoped_v3"
+    ),
+    "positions_unscoped_v3": "SELECT COUNT(*) FROM positions_unscoped_v3",
+}
+
+UNSCOPED_ROW_QUERIES = {
+    "all_nodes": (
+        "nodes",
+        "SELECT rowid AS __legacy_rowid, * FROM nodes",
+    ),
+    "observations_for_invalid_messages": (
+        "message_observations",
+        """
+        SELECT rowid AS __legacy_rowid, * FROM message_observations
+        WHERE EXISTS (
+            SELECT 1 FROM messages
+            WHERE messages.id=message_observations.message_id
+              AND (
+                local_node_id IS NULL
+                OR LOWER(local_node_id) NOT GLOB
+                   '![0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+                   || '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+                OR (kind='public' AND channel_key IS NULL)
+              )
+        )
+        """,
+    ),
+    "invalid_messages": (
+        "messages",
+        """
+        SELECT rowid AS __legacy_rowid, * FROM messages
+        WHERE local_node_id IS NULL
+           OR LOWER(local_node_id) NOT GLOB
+              '![0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+              || '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+           OR (kind='public' AND channel_key IS NULL)
+        """,
+    ),
+    "invalid_message_observations": (
+        "message_observations",
+        """
+        SELECT rowid AS __legacy_rowid, * FROM message_observations
+        WHERE local_node_id IS NULL
+           OR NOT EXISTS (
+                SELECT 1 FROM messages
+                WHERE messages.id=message_observations.message_id
+                  AND messages.local_node_id=message_observations.local_node_id
+           )
+        """,
+    ),
+    "invalid_node_actions": (
+        "node_actions",
+        """
+        SELECT rowid AS __legacy_rowid, * FROM node_actions
+        WHERE local_node_id IS NULL
+        """,
+    ),
+    "all_archived_conversations": (
+        "archived_conversations",
+        "SELECT rowid AS __legacy_rowid, * FROM archived_conversations",
+    ),
+    "invalid_telemetry_gateway": (
+        "telemetry_samples",
+        """
+        SELECT rowid AS __legacy_rowid, *
+        FROM telemetry_samples_unscoped_v3
+        WHERE NOT (
+            LOWER(gateway_node_id) GLOB
+            '![0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+            || '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+        ) OR gateway_node_id IS NULL
+        """,
+    ),
+    "invalid_position_gateway": (
+        "positions",
+        """
+        SELECT rowid AS __legacy_rowid, *
+        FROM positions_unscoped_v3
+        WHERE NOT (
+            LOWER(gateway_node_id) GLOB
+            '![0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+            || '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+        ) OR gateway_node_id IS NULL
+        """,
+    ),
+}
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -465,25 +562,31 @@ class Database:
     def _preserve_unscoped_rows(
         connection: sqlite3.Connection,
         *,
-        table: str,
+        query_name: str,
         reason: str,
-        where: str | None = None,
-        source_table: str | None = None,
     ) -> int:
-        condition = f" WHERE {where}" if where else ""
-        rows = connection.execute(
-            f"SELECT rowid AS __legacy_rowid, * FROM {table}{condition}"
-        ).fetchall()  # nosec B608 -- tabell og vilkår kjem berre frå lokale konstantar
+        try:
+            source_table, query = UNSCOPED_ROW_QUERIES[query_name]
+        except KeyError as exc:
+            raise ValueError("Ukjend migreringsspørjing") from exc
+        rows = connection.execute(query).fetchall()
         for row in rows:
             Database._preserve_unscoped_payload(
                 connection,
-                source_table=source_table or table,
+                source_table=source_table,
                 source_key=str(row["__legacy_rowid"]),
                 reason=reason,
                 payload=Database._legacy_row_payload(row),
             )
         return len(rows)
 
+    @staticmethod
+    def _scope_table_count(connection: sqlite3.Connection, table: str) -> int:
+        try:
+            query = SCOPE_TABLE_COUNT_QUERIES[table]
+        except KeyError as exc:
+            raise ValueError("Ukjend migreringstabell") from exc
+        return int(connection.execute(query).fetchone()[0])
 
     @staticmethod
     def _migrate_scope_schema(
@@ -504,9 +607,7 @@ class Database:
             "archived_conversation_ids",
         )
         source_counts = {
-            table: int(
-                connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-            )
+            table: Database._scope_table_count(connection, table)
             for table in reconciled_tables
         }
 
@@ -517,7 +618,7 @@ class Database:
         if "local_node_id" not in node_columns:
             Database._preserve_unscoped_rows(
                 connection,
-                table="nodes",
+                query_name="all_nodes",
                 reason="manglar_lokal_node_id",
             )
             connection.execute("DROP TABLE nodes")
@@ -559,30 +660,15 @@ class Database:
             WHERE local_node_id IS NULL
             """
         )
-        invalid_message_where = """
-            local_node_id IS NULL
-            OR LOWER(local_node_id) NOT GLOB
-               '![0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
-               || '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
-            OR (kind='public' AND channel_key IS NULL)
-        """
         Database._preserve_unscoped_rows(
             connection,
-            table="message_observations",
+            query_name="observations_for_invalid_messages",
             reason="tilhøyrer_ubehandla_melding",
-            where=f"""
-                EXISTS (
-                    SELECT 1 FROM messages
-                    WHERE messages.id=message_observations.message_id
-                      AND ({invalid_message_where})
-                )
-            """,
         )
         Database._preserve_unscoped_rows(
             connection,
-            table="messages",
+            query_name="invalid_messages",
             reason="kan_ikkje_avgrensast_til_lokal_node",
-            where=invalid_message_where,
         )
         connection.execute(
             """
@@ -615,19 +701,10 @@ class Database:
             )
             """
         )
-        invalid_observation_where = """
-            local_node_id IS NULL
-            OR NOT EXISTS (
-                SELECT 1 FROM messages
-                WHERE messages.id=message_observations.message_id
-                  AND messages.local_node_id=message_observations.local_node_id
-            )
-        """
         Database._preserve_unscoped_rows(
             connection,
-            table="message_observations",
+            query_name="invalid_message_observations",
             reason="kan_ikkje_avgrensast_til_lokal_node",
-            where=invalid_observation_where,
         )
         connection.execute(
             """
@@ -644,26 +721,10 @@ class Database:
         Database._rebuild_scoped_observation_table(
             connection,
             table="telemetry_samples",
-            columns=(
-                "id", "dedupe_key", "packet_id", "node_id", "kind",
-                "sample_time", "received_at", "metrics", "transport", "rssi",
-                "snr", "hop_limit", "hop_start", "gateway_profile_id",
-                "gateway_node_id", "gateway_transport",
-            ),
         )
         Database._rebuild_scoped_observation_table(
             connection,
             table="positions",
-            columns=(
-                "id", "dedupe_key", "packet_id", "node_id", "sample_time",
-                "received_at", "latitude", "longitude", "altitude_msl",
-                "altitude_hae", "geoidal_separation", "pdop", "hdop", "vdop",
-                "gps_accuracy_mm", "ground_speed", "ground_track", "fix_quality",
-                "fix_type", "sats_in_view", "location_source", "altitude_source",
-                "precision_bits", "metadata", "transport", "rssi", "snr",
-                "hop_limit", "hop_start", "gateway_profile_id", "gateway_node_id",
-                "gateway_transport",
-            ),
         )
 
         action_columns = {
@@ -689,9 +750,8 @@ class Database:
         )
         Database._preserve_unscoped_rows(
             connection,
-            table="node_actions",
+            query_name="invalid_node_actions",
             reason="kan_ikkje_avgrensast_til_lokal_node",
-            where="local_node_id IS NULL",
         )
         connection.execute("DELETE FROM node_actions WHERE local_node_id IS NULL")
 
@@ -735,7 +795,7 @@ class Database:
             )
         Database._preserve_unscoped_rows(
             connection,
-            table="archived_conversations",
+            query_name="all_archived_conversations",
             reason="manglar_lokal_node_id",
         )
         connection.execute("DROP TABLE archived_conversations")
@@ -751,9 +811,7 @@ class Database:
         )
 
         for table, source_count in source_counts.items():
-            scoped_count = int(
-                connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-            )
+            scoped_count = Database._scope_table_count(connection, table)
             legacy_count = int(
                 connection.execute(
                     """
@@ -773,20 +831,26 @@ class Database:
         connection: sqlite3.Connection,
         *,
         table: str,
-        columns: tuple[str, ...],
     ) -> None:
+        if table == "telemetry_samples":
+            table_info_query = "PRAGMA table_info(telemetry_samples)"
+        elif table == "positions":
+            table_info_query = "PRAGMA table_info(positions)"
+        else:
+            raise ValueError("Ukjend observasjonstabell")
         existing_columns = {
             str(row["name"])
-            for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+            for row in connection.execute(table_info_query).fetchall()
         }
         if "local_node_id" in existing_columns:
             return
-        old_table = f"{table}_unscoped_v3"
-        connection.execute(f"ALTER TABLE {table} RENAME TO {old_table}")
-        source_count = int(
-            connection.execute(f"SELECT COUNT(*) FROM {old_table}").fetchone()[0]
-        )
         if table == "telemetry_samples":
+            connection.execute(
+                "ALTER TABLE telemetry_samples RENAME TO telemetry_samples_unscoped_v3"
+            )
+            source_count = Database._scope_table_count(
+                connection, "telemetry_samples_unscoped_v3"
+            )
             connection.execute(
                 """
                 CREATE TABLE telemetry_samples (
@@ -806,7 +870,32 @@ class Database:
                 )
                 """
             )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO telemetry_samples (
+                    id, local_node_id, dedupe_key, packet_id, node_id, kind,
+                    sample_time, received_at, metrics, transport, rssi, snr,
+                    hop_limit, hop_start, gateway_profile_id, gateway_node_id,
+                    gateway_transport
+                )
+                SELECT id, LOWER(gateway_node_id), dedupe_key, packet_id, node_id,
+                    kind, sample_time, received_at, metrics, transport, rssi, snr,
+                    hop_limit, hop_start, gateway_profile_id, gateway_node_id,
+                    gateway_transport
+                FROM telemetry_samples_unscoped_v3
+                WHERE LOWER(gateway_node_id) GLOB
+                    '![0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+                    || '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+                """
+            )
+            preserve_query = "invalid_telemetry_gateway"
         else:
+            connection.execute(
+                "ALTER TABLE positions RENAME TO positions_unscoped_v3"
+            )
+            source_count = Database._scope_table_count(
+                connection, "positions_unscoped_v3"
+            )
             connection.execute(
                 """
                 CREATE TABLE positions (
@@ -830,33 +919,46 @@ class Database:
                 )
                 """
             )
-        inserted = ", ".join((columns[0], "local_node_id", *columns[1:]))
-        valid_gateway_where = """
-            LOWER(gateway_node_id) GLOB
-            '![0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
-            || '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
-        """
-        connection.execute(
-            f"""
-            INSERT OR IGNORE INTO {table} ({inserted})
-            SELECT id, LOWER(gateway_node_id), {', '.join(columns[1:])}
-            FROM {old_table}
-            WHERE {valid_gateway_where}
-            """  # nosec B608 -- tabell- og kolonnenamna kjem frå lokale konstantar
-        )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO positions (
+                    id, local_node_id, dedupe_key, packet_id, node_id, sample_time,
+                    received_at, latitude, longitude, altitude_msl, altitude_hae,
+                    geoidal_separation, pdop, hdop, vdop, gps_accuracy_mm,
+                    ground_speed, ground_track, fix_quality, fix_type, sats_in_view,
+                    location_source, altitude_source, precision_bits, metadata,
+                    transport, rssi, snr, hop_limit, hop_start, gateway_profile_id,
+                    gateway_node_id, gateway_transport
+                )
+                SELECT id, LOWER(gateway_node_id), dedupe_key, packet_id, node_id,
+                    sample_time, received_at, latitude, longitude, altitude_msl,
+                    altitude_hae, geoidal_separation, pdop, hdop, vdop,
+                    gps_accuracy_mm, ground_speed, ground_track, fix_quality,
+                    fix_type, sats_in_view, location_source, altitude_source,
+                    precision_bits, metadata, transport, rssi, snr, hop_limit,
+                    hop_start, gateway_profile_id, gateway_node_id,
+                    gateway_transport
+                FROM positions_unscoped_v3
+                WHERE LOWER(gateway_node_id) GLOB
+                    '![0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+                    || '[0-9a-f][0-9a-f][0-9a-f][0-9a-f]'
+                """
+            )
+            preserve_query = "invalid_position_gateway"
         preserved = Database._preserve_unscoped_rows(
             connection,
-            table=old_table,
-            source_table=table,
+            query_name=preserve_query,
             reason="manglar_gyldig_gateway_node_id",
-            where=f"NOT ({valid_gateway_where}) OR gateway_node_id IS NULL",
         )
-        scoped = int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+        scoped = Database._scope_table_count(connection, table)
         if source_count != scoped + preserved:
             raise RuntimeError(
                 f"Migrering av {table} kunne ikkje avstemme alle kjelderadene"
             )
-        connection.execute(f"DROP TABLE {old_table}")
+        if table == "telemetry_samples":
+            connection.execute("DROP TABLE telemetry_samples_unscoped_v3")
+        else:
+            connection.execute("DROP TABLE positions_unscoped_v3")
 
     @staticmethod
     def _ensure_message_indexes(connection: sqlite3.Connection) -> None:

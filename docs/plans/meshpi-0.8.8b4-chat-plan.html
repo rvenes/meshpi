@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="nn">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="color-scheme" content="dark">
+    <title>MeshPi 0.8.8b4 – chatkopiering og meldingshistorikk</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07111b;
+        --panel: #0d1b28;
+        --panel-strong: #122638;
+        --line: #29465f;
+        --text: #edf6fc;
+        --muted: #a9bdcb;
+        --blue: #78bdff;
+        --cyan: #54ded1;
+        --green: #83e6a9;
+        --amber: #ffd071;
+        --red: #ff999d;
+        --violet: #c7adff;
+        --shadow: 0 20px 54px rgb(0 0 0 / 28%);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system,
+          BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      html { scroll-behavior: smooth; }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 12% 0%, rgb(35 126 166 / 22%), transparent 34rem),
+          radial-gradient(circle at 92% 8%, rgb(92 66 164 / 18%), transparent 30rem),
+          var(--bg);
+        color: var(--text);
+        line-height: 1.58;
+      }
+
+      a { color: var(--blue); }
+
+      code {
+        padding: .08rem .34rem;
+        border: 1px solid rgb(120 189 255 / 20%);
+        border-radius: .38rem;
+        background: rgb(120 189 255 / 8%);
+        color: #cce8ff;
+        font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+        font-size: .9em;
+      }
+
+      .page {
+        width: min(78rem, calc(100% - 2rem));
+        margin: 0 auto;
+        padding: 1.25rem 0 4rem;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 2rem;
+        color: var(--muted);
+        font-size: .92rem;
+      }
+
+      .topbar a { text-decoration: none; }
+
+      .hero {
+        position: relative;
+        overflow: hidden;
+        padding: clamp(1.5rem, 4vw, 3.2rem);
+        border: 1px solid var(--line);
+        border-radius: 1.35rem;
+        background: linear-gradient(145deg, rgb(18 38 56 / 96%), rgb(10 26 39 / 96%));
+        box-shadow: var(--shadow);
+      }
+
+      .hero::after {
+        position: absolute;
+        inset: auto -7rem -9rem auto;
+        width: 22rem;
+        height: 22rem;
+        border-radius: 50%;
+        background: rgb(84 222 209 / 10%);
+        content: "";
+      }
+
+      .eyebrow {
+        margin: 0 0 .6rem;
+        color: var(--cyan);
+        font-size: .8rem;
+        font-weight: 800;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+      }
+
+      h1, h2, h3 { line-height: 1.18; }
+
+      h1 {
+        max-width: 18ch;
+        margin: 0;
+        font-size: clamp(2.1rem, 6vw, 4.4rem);
+        letter-spacing: -.045em;
+      }
+
+      .lead {
+        max-width: 70ch;
+        margin: 1.2rem 0 0;
+        color: #c8d9e5;
+        font-size: clamp(1rem, 2vw, 1.18rem);
+      }
+
+      .badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .65rem;
+        margin-top: 1.5rem;
+      }
+
+      .badge {
+        padding: .46rem .72rem;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgb(7 17 27 / 55%);
+        color: #d7e6ef;
+        font-size: .88rem;
+        font-weight: 700;
+      }
+
+      .badge.green { border-color: rgb(131 230 169 / 45%); color: var(--green); }
+      .badge.amber { border-color: rgb(255 208 113 / 45%); color: var(--amber); }
+
+      .summary-grid,
+      .card-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+
+      .summary-card,
+      .card,
+      section {
+        border: 1px solid var(--line);
+        background: rgb(13 27 40 / 92%);
+        box-shadow: 0 12px 32px rgb(0 0 0 / 14%);
+      }
+
+      .summary-card,
+      .card {
+        padding: 1.15rem;
+        border-radius: .9rem;
+      }
+
+      .summary-card strong {
+        display: block;
+        margin-bottom: .28rem;
+        color: var(--cyan);
+        font-size: 1.05rem;
+      }
+
+      .summary-card span,
+      .card p { color: var(--muted); }
+
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .55rem;
+        margin: 1.2rem 0 0;
+      }
+
+      nav a {
+        padding: .42rem .65rem;
+        border: 1px solid var(--line);
+        border-radius: .5rem;
+        background: rgb(9 23 35 / 85%);
+        text-decoration: none;
+        font-size: .87rem;
+      }
+
+      main > section {
+        margin-top: 1.25rem;
+        padding: clamp(1.2rem, 3vw, 2rem);
+        border-radius: 1rem;
+      }
+
+      section h2 {
+        margin: 0 0 1rem;
+        font-size: clamp(1.35rem, 3vw, 1.85rem);
+      }
+
+      h3 {
+        margin: 1.25rem 0 .5rem;
+        color: #dbeaf3;
+        font-size: 1.05rem;
+      }
+
+      p { margin: .7rem 0; }
+
+      ul, ol {
+        margin: .7rem 0 0;
+        padding-left: 1.3rem;
+      }
+
+      li + li { margin-top: .42rem; }
+
+      .decision {
+        margin: 1rem 0;
+        padding: 1rem 1.1rem;
+        border-left: .3rem solid var(--cyan);
+        border-radius: .5rem;
+        background: rgb(84 222 209 / 7%);
+      }
+
+      .warning {
+        border-left-color: var(--amber);
+        background: rgb(255 208 113 / 7%);
+      }
+
+      .stop {
+        border-left-color: var(--red);
+        background: rgb(255 153 157 / 7%);
+      }
+
+      .decision strong { color: var(--cyan); }
+      .warning strong { color: var(--amber); }
+      .stop strong { color: var(--red); }
+
+      .table-wrap {
+        overflow-x: auto;
+        margin-top: 1rem;
+        border: 1px solid var(--line);
+        border-radius: .8rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 44rem;
+        background: rgb(8 22 33 / 55%);
+      }
+
+      th, td {
+        padding: .78rem .85rem;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--cyan);
+        background: rgb(18 38 56 / 85%);
+        font-size: .84rem;
+        letter-spacing: .03em;
+        text-transform: uppercase;
+      }
+
+      tr:last-child td { border-bottom: 0; }
+
+      .yes { color: var(--green); font-weight: 800; }
+      .no { color: var(--amber); font-weight: 800; }
+
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: .75rem;
+        margin-top: 1rem;
+      }
+
+      .step {
+        position: relative;
+        padding: 1rem;
+        border: 1px solid var(--line);
+        border-radius: .8rem;
+        background: var(--panel-strong);
+      }
+
+      .step b {
+        display: inline-grid;
+        place-items: center;
+        width: 1.65rem;
+        height: 1.65rem;
+        margin-bottom: .55rem;
+        border-radius: 50%;
+        background: var(--cyan);
+        color: #06131d;
+      }
+
+      .step strong { display: block; }
+      .step span { color: var(--muted); font-size: .9rem; }
+
+      .checks {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .6rem 1rem;
+        padding: 0;
+        list-style: none;
+      }
+
+      .checks li {
+        position: relative;
+        margin: 0;
+        padding: .7rem .75rem .7rem 2.2rem;
+        border: 1px solid rgb(41 70 95 / 80%);
+        border-radius: .65rem;
+        background: rgb(7 17 27 / 45%);
+      }
+
+      .checks li::before {
+        position: absolute;
+        left: .75rem;
+        color: var(--green);
+        content: "✓";
+        font-weight: 900;
+      }
+
+      footer {
+        margin-top: 1.5rem;
+        padding: 1rem 0;
+        color: var(--muted);
+        text-align: center;
+        font-size: .88rem;
+      }
+
+      @media (max-width: 850px) {
+        .summary-grid, .card-grid, .flow { grid-template-columns: 1fr 1fr; }
+      }
+
+      @media (max-width: 560px) {
+        .page { width: min(100% - 1rem, 78rem); }
+        .topbar { align-items: flex-start; flex-direction: column; }
+        .summary-grid, .card-grid, .flow, .checks { grid-template-columns: 1fr; }
+        .hero { border-radius: .95rem; }
+        h1 { overflow-wrap: anywhere; }
+        main > section { padding: 1rem; }
+
+        .table-wrap { overflow: visible; border: 0; }
+
+        table,
+        tbody,
+        tr,
+        td {
+          display: block;
+          width: 100%;
+          min-width: 0;
+        }
+
+        table { background: transparent; }
+        thead { display: none; }
+
+        tr {
+          margin-bottom: .75rem;
+          padding: .6rem .7rem;
+          border: 1px solid var(--line);
+          border-radius: .7rem;
+          background: rgb(8 22 33 / 55%);
+        }
+
+        td {
+          padding: .4rem 0;
+          border-bottom: 1px solid rgb(41 70 95 / 65%);
+          overflow-wrap: anywhere;
+        }
+
+        td:last-child { border-bottom: 0; }
+
+        td::before {
+          display: block;
+          margin-bottom: .12rem;
+          color: var(--cyan);
+          content: attr(data-label);
+          font-size: .72rem;
+          font-weight: 800;
+          letter-spacing: .04em;
+          text-transform: uppercase;
+        }
+      }
+
+      @media print {
+        body { background: white; color: #14212b; }
+        .hero, section, .summary-card, .card, .step {
+          border-color: #b9c5cc;
+          background: white;
+          box-shadow: none;
+        }
+        .topbar, .lead, .summary-card span, .card p, .step span, footer { color: #465a67; }
+        a, h2, th, .eyebrow { color: #075d67; }
+        nav { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <div class="topbar">
+          <span>Privat implementerings-, release- og installasjonsplan</span>
+          <span>Avgjerdsgrunnlag kontrollert 23. august 2026</span>
+        </div>
+
+        <div class="hero">
+          <p class="eyebrow">MeshPi · intern beta</p>
+          <h1>Chatkopiering og meldingshistorikk i 0.8.8b4</h1>
+          <p class="lead">
+            Ei avgrensa TUI-forbetring som gjer chatloggen lett å kopiere frå og
+            gir skall-liknande historikk med pil opp og ned. Planen bevarer
+            radio-, database- og IPC-grensene frå 0.8.8b3 og legg b4 inn i den
+            pågåande betatesten etter full signatur- og kvalitetskontroll.
+          </p>
+          <div class="badges">
+            <span class="badge green">Målversjon 0.8.8b4</span>
+            <span class="badge">Ingen databaseskjemaendring</span>
+            <span class="badge">Ingen nye avhengigheiter</span>
+            <span class="badge amber">Ingen ekte radiosending i smoketest</span>
+          </div>
+        </div>
+
+        <div class="summary-grid" aria-label="Hovudavgjerder">
+          <div class="summary-card">
+            <strong>Historikk per samtale</strong>
+            <span>Public og kvar DM får si eiga lagra liste over berre eigne meldingar.</span>
+          </div>
+          <div class="summary-card">
+            <strong>Kopier ved museslepp</strong>
+            <span>Markert chattekst blir kopiert automatisk; Ctrl+C blir verande.</span>
+          </div>
+          <div class="summary-card">
+            <strong>Fem mål er vurderte</strong>
+            <span>Fire stadfesta beta-installasjonar skal oppgraderast; Mac og syncpi skal ikkje.</span>
+          </div>
+        </div>
+
+        <nav aria-label="Innhald">
+          <a href="#mal">Mål og grenser</a>
+          <a href="#atferd">TUI-åtferd</a>
+          <a href="#kvalitet">Kvalitet og Bandit</a>
+          <a href="#release">Release og Git</a>
+          <a href="#maskiner">Installasjonsmål</a>
+          <a href="#test">Test og akseptanse</a>
+        </nav>
+      </header>
+
+      <main>
+        <section id="mal">
+          <h2>1. Mål, omfang og ufråvikelege grenser</h2>
+          <div class="card-grid">
+            <div class="card">
+              <h3>Brukarmål</h3>
+              <p>Markere tekst i chatloggen og få han på utklippstavla utan å forlate TUI-en.</p>
+            </div>
+            <div class="card">
+              <h3>Skriveflyt</h3>
+              <p>Hente fram tidlegare eigne meldingar med <code>↑</code>/<code>↓</code>, som i eit skall.</p>
+            </div>
+            <div class="card">
+              <h3>Releaseform</h3>
+              <p>Ny intern PEP 440-beta <code>0.8.8b4</code>, ikkje endring av stabilkanalen.</p>
+            </div>
+          </div>
+
+          <div class="decision">
+            <strong>Offentlege grensesnitt:</strong> Ingen endring i IPC-protokoll,
+            databaseformat, CLI-kommandosyntaks eller radio-/kanalruting. Det nye
+            brukargrensesnittet er avgrensa til tastane <code>↑</code>/<code>↓</code>
+            når meldingsfeltet har fokus, og automatisk kopiering frå chatloggen.
+          </div>
+
+          <ul>
+            <li>Berre daemonen eig framleis SQLite-fila og Meshtastic-sambandet.</li>
+            <li>Ingen konfigurasjon på ein Meshtastic-node skal lesast for endring eller skrivast.</li>
+            <li>Ingen avhengigheiter skal leggjast til, og plattformlåsene skal derfor ikkje regenererast.</li>
+            <li>Database, profilar, historikk, aktiv gateway og driftsmodus skal bevarast gjennom oppdateringa.</li>
+            <li>Betaendringar skal aldri endre eller erstatte stabilmanifestet for <code>0.8.7</code>.</li>
+          </ul>
+        </section>
+
+        <section id="atferd">
+          <h2>2. Endeleg TUI-spesifikasjon</h2>
+
+          <h3>Meldingshistorikk per public-/DM-samtale</h3>
+          <ul>
+            <li>Når meldingsfeltet har fokus, går <code>↑</code> bakover gjennom eigne meldingar i den aktive samtalen.</li>
+            <li><code>↓</code> går mot nyare oppføringar. Etter den nyaste oppføringa blir utkastet som stod i feltet før første <code>↑</code>, gjenoppretta nøyaktig.</li>
+            <li>Historikken er separat for kvar public-kanal og kvar DM-samtale. Meldingar skal aldri blandast mellom samtalar eller lokale nodeområde.</li>
+            <li>Berre rader med utgåande retning skal takast med. Innkomande meldingar, traceroute-rammer, systemmeldingar og oppdateringsvarsel skal ikkje bli historikk.</li>
+            <li>Ved opning eller byte av samtale blir historia fylt frå dei siste 300 innlasta samtaleradene, i kronologisk rekkjefølgje.</li>
+            <li>Ei validert innsending blir lagd til i økthistoria straks. Ho skal dermed kunne hentast fram igjen også dersom den asynkrone sendinga feilar.</li>
+            <li>Etter omstart blir historia bygd opp att frå faktisk lagra utgåande meldingar. Ein sendefeil som aldri blei lagra, lever berre i den aktuelle TUI-økta.</li>
+            <li>Når historia er tom, skal <code>↑</code>/<code>↓</code> ikkje endre teksten. Etter henting står markøren ved slutten av teksten.</li>
+            <li>Piltastar i samtale-, node- og dialoglister skal fungere som før når meldingsfeltet ikkje har fokus.</li>
+          </ul>
+
+          <h3>Automatisk kopiering frå chatloggen</h3>
+          <ul>
+            <li>Venstre musedrag markerer framleis tekst i den valde chatloggen.</li>
+            <li>Når museknappen blir sleppt og markeringa er ikkje-tom, blir den markerte chatteksten kopiert automatisk.</li>
+            <li>TUI-en viser ei kort nynorsk stadfesting utan å leggje tekst i meldingsfeltet eller sende noko.</li>
+            <li><code>Ctrl+C</code> skal framleis kopiere gjeldande markering.</li>
+            <li>Eit vanleg klikk eller ei tom markering skal ikkje overskrive eksisterande utklippstavleinnhald.</li>
+            <li>Kopiering bruker Textual si OSC52-baserte terminalutklippstavle. Terminalen må godta OSC52; macOS Terminal er ei kjend avgrensing.</li>
+            <li>Terminalen si eiga native markering, vanlegvis <code>Shift</code> + musedrag og terminalen sin kopieringskommando, blir dokumentert som reserveveg.</li>
+          </ul>
+
+          <div class="warning decision">
+            <strong>Sikker sendeflyt:</strong> Å bla i eller kopiere historikk skal aldri
+            utløyse Enter, fylle inn ein mottakar, byte kanal eller sende ei melding automatisk.
+          </div>
+        </section>
+
+        <section id="kvalitet">
+          <h2>3. Implementasjonsavgrensing og kvalitetsportar</h2>
+
+          <h3>Minste samanhengande kodeendring</h3>
+          <ul>
+            <li>Lag eit internt meldingsfelt som utvidar Textual <code>Input</code> med samtalespesifikk historikk, indeks og lagra utkast.</li>
+            <li>Aktiver rett historikk straks ved samtalebyte, og oppdater henne frå den ferdig innlasta samtalen utan å endre gjeldande utkast.</li>
+            <li>Handter Textual-hendinga for avslutta tekstmarkering berre når chatloggen har ei ikkje-tom markering.</li>
+            <li>Oppdater nynorsk TUI-hjelp, tastelinje, README og utviklingshistorikk.</li>
+          </ul>
+
+          <h3>Bandit-opprydding som releaseport</h3>
+          <p>
+            Baselinekontrollen fann seks medium <code>B608</code>-funn i den
+            eksisterande b3-migreringskoden. Oppdatert prosjektinstruks krev at ingen
+            medium eller høge funn blir ignorerte før release.
+          </p>
+          <ul>
+            <li>Erstatt dynamisk komponerte tabell- og spørjingsidentifikatorar med eksplisitte, tillatne SQL-variantar.</li>
+            <li>Ikkje demp funna globalt og ikkje svekk validering eller migreringsavstemming.</li>
+            <li>Bevar same rader, tabellar, transaksjonsgrenser og tapsfrie b3-migreringsåtferd.</li>
+            <li>Utvid migreringstestane slik at både trygt avgrensa og bevart legacy-innhald framleis blir avstemt.</li>
+            <li>To kjende låge subprocess-funn i releaseverktøyet kan stå att etter konkret vurdering; medium og høg skal vere null.</li>
+          </ul>
+
+          <ul class="checks" aria-label="Lokale kvalitetsportar">
+            <li>Alle målretta TUI- og migreringstestar grøne</li>
+            <li><code>python -m pytest -q</code> grønt</li>
+            <li><code>python -m ruff check .</code> grønt</li>
+            <li>Bandit utan medium/høge funn</li>
+            <li><code>git diff --check</code> utan whitespacefeil</li>
+            <li>Ingen utilsikta avhengigheits- eller låseendring</li>
+          </ul>
+        </section>
+
+        <section id="release">
+          <h2>4. Versjon, signering, Git og publiseringsgrenser</h2>
+
+          <div class="flow" aria-label="Releaseflyt">
+            <div class="step"><b>1</b><strong>Implementer og test</strong><span>Avgrensa b4-kode, dokumentasjon og Bandit-opprydding.</span></div>
+            <div class="step"><b>2</b><strong>Bygg og signer</strong><span>Reint worktree, eksisterande låser og godkjend ekstern nøkkel.</span></div>
+            <div class="step"><b>3</b><strong>Commit og push</strong><span>Éin avgrensa b4-commit på main, utan tagg eller GitHub Release.</span></div>
+            <div class="step"><b>4</b><strong>Stage og publiser beta</strong><span>Berre beta-treet etter rein global førehandsvising.</span></div>
+          </div>
+
+          <h3>Versjonering og kjeldeintegritet</h3>
+          <ul>
+            <li>Auk <code>pyproject.toml</code> og <code>meshpi/__init__.py</code> frå <code>0.8.8b3</code> til <code>0.8.8b4</code>, og oppdater eksplisitte testforventningar.</li>
+            <li>Oppdater betasida og utgåvenotata med chatkopiering, historikk og vidareført b3-dataversjon.</li>
+            <li>Bevar alle eksisterande brukarendringar. Stage berre b4-relaterte hunks og filer.</li>
+            <li>Bygg og signer frå eit reint mellombels Git-worktree basert på b4-committen, slik at urelaterte lokale endringar ikkje kjem inn i wheel-en.</li>
+            <li>Ta det genererte betamanifestet tilbake i same b4-commit før push.</li>
+            <li>Bruk commitmeldinga <code>Release MeshPi 0.8.8b4 beta</code> og push <code>main</code>. Ikkje lag tagg eller GitHub Release.</li>
+          </ul>
+
+          <h3>Signering og betapublisering</h3>
+          <ul>
+            <li>Kontroller den godkjende nøkkelpeikaren og ACL utan å lese eller skrive ut privat nøkkel eller sti.</li>
+            <li>Køyr releaseverktøyet med <code>--channel beta</code> og b4-utgåvenotat; ikkje handrediger hashar, storleikar, tid eller signatur.</li>
+            <li>Verifiser RSA-signaturen og faktisk SHA-256/storleik for wheel, tre låsefiler og tre installatørar.</li>
+            <li>Ta bytehash av stabilmanifestet før bygging og stadfest at det er uendra etter bygging, staging og publisering.</li>
+            <li>Bevar historiske beta-wheels og alle andre eksisterande stagingfiler.</li>
+            <li>Køyr den obligatoriske globale venes.org-førehandsvisinga. Stopp ved alle uventa endringar eller slettingar.</li>
+            <li>Publiser berre når førehandsvisinga er rein; verifiser offentleg betamanifest, betaside, wheel og alle sju manifestbundne artefaktar før installasjon.</li>
+          </ul>
+
+          <div class="stop decision">
+            <strong>Stoppregel:</strong> Feil signatur, hash, storleik, kanal, stabilbyte,
+            Bandit-port eller uventa publiseringssletting blokkerer staging, publisering
+            og installasjon. Det skal ikkje arbeidast rundt kontrollen.
+          </div>
+        </section>
+
+        <section id="maskiner">
+          <h2>5. Verifisert installasjonsomfang og rekkjefølgje</h2>
+          <p>
+            Målutvalet er basert på lesande kontrollar. Berre maskiner som faktisk
+            køyrer <code>0.8.8b3</code>, skal førast vidare til b4.
+          </p>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Maskin</th>
+                  <th>Verifisert tilstand</th>
+                  <th>B4-mål</th>
+                  <th>Planlagt rolle</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td data-label="Maskin"><code>rvelite</code></td>
+                  <td data-label="Verifisert tilstand">MeshPi <code>0.8.8b3</code>, Linux x86_64, always</td>
+                  <td data-label="B4-mål" class="yes">Ja · nr. 1</td>
+                  <td data-label="Planlagt rolle">Første Linux-/SSH-installasjon og passiv TUI-smoketest</td>
+                </tr>
+                <tr>
+                  <td data-label="Maskin"><code>rvi9</code></td>
+                  <td data-label="Verifisert tilstand">MeshPi <code>0.8.8b3</code>, Windows, always</td>
+                  <td data-label="B4-mål" class="yes">Ja · nr. 2</td>
+                  <td data-label="Planlagt rolle">Windows-installasjon og lokal terminal-/utklippstavletest</td>
+                </tr>
+                <tr>
+                  <td data-label="Maskin"><code>rustdesk</code></td>
+                  <td data-label="Verifisert tilstand">MeshPi <code>0.8.8b3</code>, Linux arm64, always</td>
+                  <td data-label="B4-mål" class="yes">Ja · nr. 3</td>
+                  <td data-label="Planlagt rolle">Produksjonsnær Raspberry Pi; berre MeshPi skal rørast</td>
+                </tr>
+                <tr>
+                  <td data-label="Maskin"><code>pi3</code></td>
+                  <td data-label="Verifisert tilstand">MeshPi <code>0.8.8b3</code>, Linux arm64, always</td>
+                  <td data-label="B4-mål" class="yes">Ja · nr. 4</td>
+                  <td data-label="Planlagt rolle">Produksjonsnær Raspberry Pi; HOOBS skal ikkje rørast</td>
+                </tr>
+                <tr>
+                  <td data-label="Maskin"><code>syncpi</code></td>
+                  <td data-label="Verifisert tilstand">MeshPi <code>0.8.7</code>, stabil kanal</td>
+                  <td data-label="B4-mål" class="no">Nei</td>
+                  <td data-label="Planlagt rolle">Skal bli på stabil 0.8.7; Syncthing og andre tenester urørte</td>
+                </tr>
+                <tr>
+                  <td data-label="Maskin"><code>mac-rvmba</code></td>
+                  <td data-label="Verifisert tilstand">Svarar, rett identitet og arm64; MeshPi er ikkje installert</td>
+                  <td data-label="B4-mål" class="no">Nei</td>
+                  <td data-label="Planlagt rolle">Skal ikkje installerast, oppdaterast eller brukast som b4-mål</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>Kontrollert installasjonssekvens</h3>
+          <ol>
+            <li>Før kvar maskin: stadfest identitet, versjon, driftsmodus, tenestestatus, aktiv versjonspeikar og <code>doctor --offline</code>.</li>
+            <li>Installer først på <code>rvelite</code> med den offentleg verifiserte, signerte betakanalen.</li>
+            <li>Når Linux-kontrollane er grøne, installer på lokale <code>rvi9</code> og gjennomfør Windows-smoketest.</li>
+            <li>Varsle før kvar MeshPi-tenesteomstart på <code>rustdesk</code> og <code>pi3</code>; installer sekvensielt, aldri parallelt.</li>
+            <li>Etter kvar installasjon: stadfest <code>0.8.8b4</code>, <code>current</code>/<code>previous</code>, same modus og profil, éin daemon, lokal IPC og rein offline doctor.</li>
+            <li>Kontroller passivt at samtalehistorikk og eksisterande konfigurasjon framleis er tilgjengeleg. Ikkje opne eller logg privat meldingsinnhald.</li>
+          </ol>
+
+          <div class="warning decision">
+            <strong>Andre tenester:</strong> RustDesk, Docker, HOOBS, Syncthing,
+            LaunchAgent-jobbar og andre systemtenester skal ikkje stoppast, restartast,
+            oppdaterast eller brukast som testområde. Mac-en og syncpi er eksplisitt ute.
+          </div>
+        </section>
+
+        <section id="test">
+          <h2>6. Testplan, rollback og akseptansekriterium</h2>
+
+          <h3>Automatiske TUI-regresjonstestar</h3>
+          <ul>
+            <li>Musedrag i chatloggen etterfølgt av museslepp legg den eksakte markeringa i utklippstavla og viser stadfesting.</li>
+            <li>Tom markering endrar ikkje utklippstavla; <code>Ctrl+C</code> kopierer framleis ei aktiv markering.</li>
+            <li>Historikken inneheld berre utgåande meldingstekstar frå aktiv samtale og bevarer kronologisk rekkjefølgje.</li>
+            <li><code>↑</code> går eldre, <code>↓</code> går nyare, og siste <code>↓</code> gjenopprettar nøyaktig utkast.</li>
+            <li>Public-kanalar og DM-ar held separate historikkar, også når ein DM viser samanslåtte eldre ruter.</li>
+            <li>Ei validert innsending kjem straks i økthistoria; ugyldig eller tom innsending gjer det ikkje.</li>
+            <li>Samtale- og nodepiltastar, sending, meldingsvalidering, update-varsel og arkivering fungerer som før.</li>
+          </ul>
+
+          <h3>Rollback før produksjonsnære oppdateringar</h3>
+          <ul>
+            <li>Bruk eit isolert, tenestefritt oppdateringsoppsett med b3 som gjeldande og b4 som kandidat.</li>
+            <li>Framkall kontrollert feil i helsesjekken etter versjonsbyte.</li>
+            <li>Stadfest at oppdateraren automatisk set <code>current</code> tilbake til b3, bevarer data/config og rapporterer feilen.</li>
+            <li>Køyr deretter vellukka b4-oppdatering i same isolerte oppsett og stadfest rett <code>previous</code>-peikar.</li>
+            <li>Produksjonsnære mål skal ikkje oppdaterast før begge scenarioa er grøne.</li>
+          </ul>
+
+          <h3>Passiv smoketest etter installasjon</h3>
+          <ul>
+            <li>På Windows: marker ein ufarlig, synleg tekstbit, stadfest automatisk kopiering ved innliming, og kontroller <code>Ctrl+C</code>.</li>
+            <li>Over SSH på <code>rvelite</code>: gjenta kopieringskontrollen i den aktuelle terminalen og stadfest OSC52-åtferda.</li>
+            <li>I ein public-samtale og ein eksisterande DM: bruk <code>↑</code>/<code>↓</code> til å kontrollere historikk og utkast, men trykk aldri Enter.</li>
+            <li>Tøm meldingsfeltet og avslutt TUI-en med tenesta vidare i same modus.</li>
+            <li>På <code>rustdesk</code> og <code>pi3</code>: avgrens kontrollen til versjon, teneste, IPC, doctor og passiv historikkvising.</li>
+          </ul>
+
+          <div class="stop decision">
+            <strong>Radiosikker akseptanse:</strong> Smoketesten skal ikkje sende ei
+            ekte melding – korkje public eller DM. Ingen automatisk test skal opne eit
+            Meshtastic-samband. Ekte DM krev ei ny, separat bestilling og stadfesta full
+            mottakar-ID og er ikkje del av denne planen.
+          </div>
+
+          <h3>Ferdigkriterium for b4</h3>
+          <ul class="checks">
+            <li>Historikk og utkast fungerer per samtale</li>
+            <li>Markering blir automatisk kopiert</li>
+            <li>Ctrl+C og terminalreserveveg er dokumenterte</li>
+            <li>Full testsuite, Ruff og Bandit er grøne</li>
+            <li>Rollback er bevist isolert</li>
+            <li>Stabilmanifestet er byteuendra</li>
+            <li>Sju beta-artefaktar er offentleg verifiserte</li>
+            <li>Fire stadfesta beta-maskiner køyrer b4 reint</li>
+            <li>syncpi står framleis på stabil 0.8.7</li>
+            <li>Mac-en er urørt og utan MeshPi-installasjon</li>
+            <li>Ingen radio- eller nodekonfigurasjon er endra</li>
+            <li>Ingen public- eller DM-testmelding er send</li>
+          </ul>
+        </section>
+      </main>
+
+      <footer>
+        MeshPi 0.8.8b4 · avgjerdsferdig plan · ingen implementasjon eller installasjon er del av sjølve planpubliseringa
+      </footer>
+    </div>
+  </body>
+</html>

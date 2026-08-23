@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.8.8b3",
-  "published_at": "2026-08-19T06:34:33Z",
+  "latest_version": "0.8.8b4",
+  "published_at": "2026-08-23T22:31:49Z",
   "minimum_python": "3.11",
   "release_notes_url": "https://venes.org/meshpi/beta/",
   "package": {
-    "url": "https://venes.org/meshpi/beta/downloads/meshpi-0.8.8b3-py3-none-any.whl",
-    "filename": "meshpi-0.8.8b3-py3-none-any.whl",
-    "sha256": "26015c9752002fe78066d38464f8473de9f6ee76e0db4765774c4138a3628c28",
-    "size": 132614,
+    "url": "https://venes.org/meshpi/beta/downloads/meshpi-0.8.8b4-py3-none-any.whl",
+    "filename": "meshpi-0.8.8b4-py3-none-any.whl",
+    "sha256": "08204296ed7abf18359cb06ee5f94e9a5aeeaebc915ec9d9a0ff16964a1f2e4f",
+    "size": 134478,
     "format": "wheel"
   },
   "locks": {
@@ -55,14 +55,14 @@
     }
   },
   "release_notes": [
-    "Bevarer ufordelte legacy-rader i eit eige leseorientert lager og avstemmer alle kjelderader før schema-migreringa blir committa.",
-    "Tek legacy-radene med i den konsistente databaseeksporten utan å gjere dei sendbare eller blande dei inn i eit nodeområde.",
-    "Koplar serialisert til på nytt etter suspend eller ein stoppa Meshtastic-lesetråd, og lukkar alltid det gamle sambandet først."
+    "Samtalespesifikk send-historikk med pil opp/ned og gjenoppretting av utkast.",
+    "Automatisk kopiering av markert chattekst, med Ctrl+C og terminalmarkering framleis tilgjengeleg.",
+    "Schema-migreringa bruker eksplisitt tillatne SQL-variantar utan middels eller høge Bandit-funn."
   ],
   "channel": "beta",
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "ihAZUkfwbUNciYLv2ekZ1ca1+/Pb6kPBkz16jzVpCOUb24I2o/JMqV7uPiiTYIbpaBASTgak13mSK5/ZTDtSDZQJZYYejEkN12hBYi2RVMm2ltdhLRwof/3x2kybH8kWCIQoDAwyCBn8qgS4tKygXx/YIWKiG8l9O2dQlHMcoRpOqDf64rIZbI1RRlGCaEmI0zfLM39Ck/RXMaBf/9ph2mddQLoTbA/mNXgHwNIK01cfMPMHuU+HvVNOu1aGc2gfeUufOiaLTbisy4OzwEMm/1OEnukj0cnp1uhEkxwlSdXGbCZS2nhf/783M+VttYr7hH+H9EiFL8u/0sTiOM+57ahq3zdNIwh9XV2C+xyZkP3CTDET9/T/8Fzqd91VCOyXVVa/E+98UdGAox0h0D92D/Jx4inMCskqP8UoxfpeGkjsnXV7CaEDHZjQfL0H/gnTXdlJCWMvI0oGqTlSFCRHpsAdX26pd/GaYwQWiu9vG2yeGZvq+80jnUybeKhDoH4R"
+    "value": "pgPbtISvTxW1lZny3P08+v/k68i4r+LkQh5KiPpGri1RQAwjico+C6H1fZPJ0lGFE5SCn82KgnVfKsR/MB7Z1QzPcTzkT7e5PahKHCbAlIFvQNES0yPbH3uNajGMt++MT8E7zMHOQ8b00dncj7T4ytJQd46E+KDS/DYrHtX0is8HcBgfh+sPXFnOSbrbFhGPjujV3aDzBbgSe5O1tXrPWvww+aJS8As15NuA2m1MYLFYr+HAzRQH5BxtmXg2/m+PCdm4lnY1az2DIzLtWus1g2jSj48VvJDAY0La+TDMSgmwZ/BgTuZGhgm0TPlYKukEBdh7LN+8bnoAiGGWBe7JrBQR6wgT9HBHnKNRWf1RN5SEhxVJ7g6RFESs/jyO7TOMGIO2DVW6jUwZSj8Gr3ytrQBizMUc1jr1Wqhu5xQD15hlYIhnYs1i6Rbg7JZn3FaIyEG2c1DbPRYDIDqeuGm5NSGytzoHSeRuELpnCwOTCvWgJUXgsjknnbDO2NPrSlal"
   }
 }

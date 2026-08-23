@@ -187,7 +187,7 @@ def test_beta_manifest_reports_update_for_current_stable_version():
     )
 
     assert notice is not None
-    assert notice.latest_version == "0.8.8b3"
+    assert notice.latest_version == "0.8.8b4"
     assert notice.command == "sudo meshpi update --beta"
 
 

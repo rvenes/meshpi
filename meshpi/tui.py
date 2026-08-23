@@ -88,6 +88,53 @@ class SelectableRichLog(RichLog):
         return selection.extract(text), "\n"
 
 
+class MessageInput(Input):
+    """Message input with shell-style history for the active conversation."""
+
+    BINDINGS = [
+        Binding("up", "history_previous", show=False),
+        Binding("down", "history_next", show=False),
+    ]
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._message_history: list[str] = []
+        self._history_index: int | None = None
+        self._history_draft = ""
+
+    def set_history(self, messages: list[str]) -> None:
+        self._message_history = list(messages)
+        self._history_index = None
+        self._history_draft = self.value
+
+    def action_history_previous(self) -> None:
+        if not self._message_history:
+            return
+        if self._history_index is None:
+            self._history_draft = self.value
+            self._history_index = len(self._message_history) - 1
+        elif self._history_index > 0:
+            self._history_index -= 1
+        self._show_history_entry()
+
+    def action_history_next(self) -> None:
+        if self._history_index is None:
+            return
+        if self._history_index < len(self._message_history) - 1:
+            self._history_index += 1
+            self._show_history_entry()
+            return
+        self._history_index = None
+        self.value = self._history_draft
+        self.cursor_position = len(self.value)
+
+    def _show_history_entry(self) -> None:
+        if self._history_index is None:
+            return
+        self.value = self._message_history[self._history_index]
+        self.cursor_position = len(self.value)
+
+
 def _time(value: str | int | None, seconds: bool = False) -> str:
     if value is None:
         return "–"
@@ -1387,7 +1434,8 @@ class HelpScreen(ModalScreen[None]):
         ("F1", "Vis eller lukk denne oversikta"),
         ("Tab / Shift+Tab", "Flytt mellom samtalar, melding og nodar"),
         ("Enter", "Opne vald samtale/node eller send melding"),
-        ("↑ / ↓", "Naviger i den aktive lista"),
+        ("↑ / ↓", "Naviger i lista; i meldingsfeltet: eigne meldingar/utkast"),
+        ("Mus / Ctrl+C", "Marker og kopier tekst frå samtalevindauget"),
         ("Ctrl+L", "Flytt markøren til meldingsfeltet"),
         ("Ctrl+D", "Finn ein node og start ein ny DM"),
         ("F2", "Flytt markøren til samtalelista"),
@@ -1870,6 +1918,9 @@ class MeshPiTUI(App[str | None]):
         self._right_click_node_id: str | None = None
         self.node_action_entries: dict[str, dict[str, Any]] = {}
         self.update_notice: UpdateNotice | None = None
+        self._message_history: dict[str, list[str]] = {}
+        self._message_history_loaded: set[str] = set()
+        self._pending_message_history: dict[str, list[str]] = {}
 
     def compose(self) -> ComposeResult:
         yield Static("", id="status-bar")
@@ -1886,12 +1937,12 @@ class MeshPiTUI(App[str | None]):
                     markup=False,
                     auto_scroll=True,
                 )
-                yield Input(
+                yield MessageInput(
                     placeholder="Skriv melding og trykk Enter",
                     id="message-input",
                 )
                 yield Static(
-                    "Enter: send   Tab/Shift+Tab: neste/førre felt   Ctrl+D: ny DM",
+                    "Enter: send   ↑/↓: historikk   Marker: kopier   Ctrl+C: kopier",
                     id="input-help",
                 )
             with Vertical(id="node-panel"):
@@ -2433,9 +2484,15 @@ class MeshPiTUI(App[str | None]):
             f"DM {conversation}",
         )
         self.query_one("#conversation-title", Static).update(Text(title))
-        message_input = self.query_one("#message-input", Input)
+        message_input = self.query_one("#message-input", MessageInput)
         message_input.disabled = not bool(
             selected_data and selected_data.get("sendable") is True
+        )
+        message_input.set_history(
+            self._message_history.get(
+                conversation,
+                self._pending_message_history.get(conversation, []),
+            )
         )
         self.run_worker(
             lambda: self._conversation_worker(conversation),
@@ -2508,6 +2565,22 @@ class MeshPiTUI(App[str | None]):
     ) -> None:
         if conversation != self.current_conversation:
             return
+        if conversation not in self._message_history_loaded:
+            persisted_history = [
+                str(message["text"])
+                for message in messages
+                if message.get("direction") == "ut"
+                and isinstance(message.get("text"), str)
+                and message["text"]
+            ]
+            persisted_history.extend(
+                self._pending_message_history.pop(conversation, [])
+            )
+            self._message_history[conversation] = persisted_history
+            self._message_history_loaded.add(conversation)
+            self.query_one("#message-input", MessageInput).set_history(
+                persisted_history
+            )
         rank = {"started": 0, "completed": 1, "failed": 1}
         for action in node_actions:
             action_id = str(action.get("action_id") or "")
@@ -2813,6 +2886,12 @@ class MeshPiTUI(App[str | None]):
             self.notify(str(exc), severity="error")
             return
         conversation = self.current_conversation
+        if conversation in self._message_history_loaded:
+            history = self._message_history.setdefault(conversation, [])
+        else:
+            history = self._pending_message_history.setdefault(conversation, [])
+        history.append(text)
+        self.query_one("#message-input", MessageInput).set_history(history)
         event.input.value = ""
         self.run_worker(
             lambda: self._send_worker(conversation, text),
@@ -2822,6 +2901,20 @@ class MeshPiTUI(App[str | None]):
             exclusive=False,
             exit_on_error=False,
         )
+
+    @on(events.TextSelected)
+    def copy_selected_message_text(self, event: events.TextSelected) -> None:
+        del event
+        message_log = self.query_one("#message-log", SelectableRichLog)
+        selection = self.screen.selections.get(message_log)
+        if selection is None:
+            return
+        extracted = message_log.get_selection(selection)
+        selected_text = extracted[0].rstrip("\n") if extracted is not None else ""
+        if not selected_text:
+            return
+        self.copy_to_clipboard(selected_text)
+        self.notify("Markert tekst er kopiert.", timeout=2)
 
     def _send_worker(self, conversation: str, text: str) -> None:
         selected_data = self._conversation_data(conversation)

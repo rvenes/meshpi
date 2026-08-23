@@ -400,6 +400,17 @@ nodehandlinga er sperra og viser ei nedteljing til neste forsøk kan sendast.
 Meldingar frå tidlegare datoar viser dato som `21.07.26` i svak grå tekst før
 klokkeslettet; meldingar frå i dag viser berre klokkeslett.
 
+Når meldingsfeltet har fokus, hentar `↑` og `↓` fram tidlegare meldingar som
+du sjølv har sendt i akkurat den aktive public- eller DM-samtalen. Utkastet
+som stod i feltet før du opna historikken, kjem tilbake når du går forbi den
+nyaste meldinga med `↓`. Ei validert innsending blir hugsa med ein gong, også
+dersom sjølve sendinga seinare feilar.
+
+Tekst i samtalevindauget kan markerast med venstre museknapp. På museslepp
+kopierer MeshPi den markerte teksten automatisk; `Ctrl+C` verkar framleis når
+du vil kopiere markeringa på nytt. I terminalar som ikkje støttar OSC52, må
+du bruke terminalen si eiga markering, ofte `Shift` saman med musedrag.
+
 Piltastane flyttar den blå markeringa i ei liste. Trykk Enter for å gjere den
 markerte samtalen eller noden aktiv i chatten. Tastane i grensesnittet er:
 
@@ -407,7 +418,8 @@ markerte samtalen eller noden aktiv i chatten. Tastane i grensesnittet er:
 F1                 vis eller lukk denne oversikta
 Tab / Shift+Tab    flytt mellom samtalar, melding og nodar
 Enter              opne vald samtale/node eller send melding
-↑ / ↓              naviger i den aktive lista
+↑ / ↓              naviger i lista; i meldingsfeltet: eigne meldingar/utkast
+Mus / Ctrl+C        marker og kopier tekst frå samtalevindauget
 Ctrl+L             flytt markøren til meldingsfeltet
 Ctrl+D             finn ein node og start ein ny DM
 F2                 flytt markøren til samtalelista
