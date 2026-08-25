@@ -142,5 +142,5 @@ def test_beta_page_is_bilingual_and_uses_the_shared_language_choice() -> None:
     assert language_buttons == {"nn", "en"}
     assert 'data-title-nn="MeshPi betakanal"' in html
     assert 'data-title-en="MeshPi beta channel"' in html
-    assert '<script src="../script.js" defer></script>' in html
+    assert '<script src="../script.js?v=0.9.0" defer></script>' in html
     assert "MeshPi 0.9.0" in html
