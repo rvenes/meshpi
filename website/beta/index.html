@@ -4,77 +4,45 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="index, follow">
-  <title>MeshPi beta</title>
+  <meta name="description" content="MeshPi-betakanalen gir ein signert veg til den stabile 0.9.0-utgivinga.">
+  <title>MeshPi betakanal</title>
   <style>
-    body {
-      max-width: 48rem;
-      margin: 4rem auto;
-      padding: 0 1.5rem;
-      color: #e8edf2;
-      background: #0d141b;
-      font: 1rem/1.6 system-ui, sans-serif;
-    }
-    code {
-      padding: .15rem .35rem;
-      color: #9fe7c4;
-      background: #17232d;
-      border-radius: .25rem;
-    }
-    pre {
-      overflow-x: auto;
-      padding: 1rem;
-      background: #17232d;
-      border: 1px solid #2c4658;
-      border-radius: .4rem;
-    }
+    body { max-width: 48rem; margin: 4rem auto; padding: 0 1.5rem; color: #e8edf2; background: #0d141b; font: 1rem/1.6 system-ui, sans-serif; }
+    code { padding: .15rem .35rem; color: #9fe7c4; background: #17232d; border-radius: .25rem; }
+    pre { overflow-x: auto; padding: 1rem; background: #17232d; border: 1px solid #2c4658; border-radius: .4rem; }
     pre code { padding: 0; }
-    section {
-      margin: 2.5rem 0;
-      padding-top: .5rem;
-      border-top: 1px solid #2c4658;
-    }
-    .warning {
-      padding: 1rem;
-      background: #2a2116;
-      border-left: .3rem solid #e8a84c;
-    }
+    section { margin: 2.5rem 0; padding-top: .5rem; border-top: 1px solid #2c4658; }
+    .warning { padding: 1rem; background: #2a2116; border-left: .3rem solid #e8a84c; }
+    .language-switcher { display: flex; justify-content: flex-end; gap: .35rem; }
+    .language-switcher button { padding: .35rem .65rem; color: #e8edf2; background: #17232d; border: 1px solid #2c4658; border-radius: .35rem; cursor: pointer; }
+    .language-switcher button[aria-pressed="true"] { color: #0d141b; background: #9fe7c4; }
     a { color: #8bc7ff; }
   </style>
+  <script src="../script.js" defer></script>
 </head>
-<body>
+<body data-page="beta" data-title-nn="MeshPi betakanal" data-title-en="MeshPi beta channel" data-description-nn="MeshPi-betakanalen gir ein signert veg til den stabile 0.9.0-utgivinga." data-description-en="The MeshPi beta channel provides a signed path to the stable 0.9.0 release.">
+  <div class="language-switcher" role="group" aria-label="Språk" data-aria-en="Language">
+    <button type="button" data-language="nn" aria-pressed="true">Nynorsk</button>
+    <button type="button" data-language="en" aria-pressed="false">English</button>
+  </div>
   <main>
-    <h1>MeshPi betakanal</h1>
-    <p>
-      Betakanalen peikar no på den same signerte MeshPi 0.8.9-utgivinga som
-      stabilkanalen. Du kan trygt gå frå 0.8.8-beta til den stabile utgivinga.
+    <h1 data-en="MeshPi beta channel">MeshPi betakanal</h1>
+    <p data-en="The beta channel now points to the same signed MeshPi 0.9.0 release as the stable channel. Existing beta users can safely continue to the stable release.">
+      Betakanalen peikar no på den same signerte MeshPi 0.9.0-utgivinga som stabilkanalen. Eksisterande betabrukarar kan trygt gå vidare til den stabile utgivinga.
     </p>
-    <p class="warning">
-      Vanleg <code>meshpi update</code> bruker stabilkanalen. Betakanalen blir
-      ståande som ein kompatibel veg vidare for eksisterande betabrukarar.
-      Installasjon og oppdatering bevarer konfigurasjon, profilar,
-      SQLite-database og meldingshistorikk.
+    <p class="warning" data-en-html="Normal &lt;code&gt;meshpi update&lt;/code&gt; uses the stable channel. The beta channel remains a compatible path for existing beta users. Installation and updates preserve configuration, profiles, the SQLite database, and message history.">
+      Vanleg <code>meshpi update</code> bruker stabilkanalen. Betakanalen blir ståande som ein kompatibel veg vidare for eksisterande betabrukarar. Installasjon og oppdatering bevarer konfigurasjon, profilar, SQLite-database og meldingshistorikk.
     </p>
     <section>
-      <h2>Oppdater frå MeshPi 0.8.6 eller nyare</h2>
-      <p>
-        Har du MeshPi 0.8.6, 0.8.7 eller ei 0.8.8-beta, installerer du den
-        signerte stabile 0.8.9-utgivinga gjennom betakanalen med:
-      </p>
+      <h2 data-en="Update from MeshPi 0.8.6 or newer">Oppdater frå MeshPi 0.8.6 eller nyare</h2>
+      <p data-en="MeshPi 0.8.6 and newer can install the signed stable 0.9.0 release through the beta channel with:">MeshPi 0.8.6 og nyare kan installere den signerte stabile 0.9.0-utgivinga gjennom betakanalen med:</p>
       <pre><code>meshpi update --beta</code></pre>
-      <p>
-        På Linux i <code>always</code>-modus bruker du
-        <code>sudo meshpi update --beta</code>. <code>--beta</code> gjeld berre
-        denne oppdateringa; vanleg <code>meshpi update</code> held fram med å
-        bruke stabilkanalen.
-      </p>
+      <p data-en-html="On Linux in &lt;code&gt;always&lt;/code&gt; mode, use &lt;code&gt;sudo meshpi update --beta&lt;/code&gt;. &lt;code&gt;--beta&lt;/code&gt; only applies to this update; normal &lt;code&gt;meshpi update&lt;/code&gt; continues to use the stable channel.">På Linux i <code>always</code>-modus bruker du <code>sudo meshpi update --beta</code>. <code>--beta</code> gjeld berre denne oppdateringa; vanleg <code>meshpi update</code> held fram med å bruke stabilkanalen.</p>
     </section>
     <section>
-      <h2>Full betainstallasjon</h2>
-      <p>
-        MeshPi 0.8.5 og eldre kjenner ikkje <code>--beta</code>. Last då ned og
-        sjå gjennom installatøren før du køyrer han mot betakanalen.
-      </p>
-      <h3>Linux og Raspberry Pi OS</h3>
+      <h2 data-en="Full beta installation">Full betainstallasjon</h2>
+      <p data-en-html="MeshPi 0.8.5 and older do not support &lt;code&gt;--beta&lt;/code&gt;. Download and review the installer before running it against the beta channel.">MeshPi 0.8.5 og eldre kjenner ikkje <code>--beta</code>. Last ned og sjå gjennom installatøren før du køyrer han mot betakanalen.</p>
+      <h3 data-en="Linux and Raspberry Pi OS">Linux og Raspberry Pi OS</h3>
       <pre><code>curl -fLO https://venes.org/meshpi/beta/install-linux.sh
 less install-linux.sh
 sudo env MESHPI_BASE_URL=https://venes.org/meshpi/beta sh install-linux.sh</code></pre>
@@ -89,25 +57,18 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\install-windows.ps1 -BaseUrl https://venes.org/meshpi/beta</code></pre>
     </section>
     <section>
-      <h2>MeshPi 0.8.9</h2>
-      <p>
-        0.8.9 samlar og stabiliserer endringane som blei prøvde i
-        0.8.8-betaane.
-      </p>
+      <h2>MeshPi 0.9.0</h2>
+      <p data-en="MeshPi 0.9.0 keeps the complete Nynorsk interface and adds English throughout the app and release website.">MeshPi 0.9.0 beheld heile det nynorske grensesnittet og legg til engelsk i appen og på utgjevingssida.</p>
       <ul>
-        <li>Telemetri-, posisjons- og traceroutehistorikk viser både dato og tid.</li>
-        <li>Traceroute-knappen viser kor mange sekund som står att av cooldown-perioden.</li>
-        <li>Posisjonsutveksling viser same tydelege nedtelling.</li>
-        <li>Uleste samtalar har heildekkjande lyseblå markering.</li>
-        <li>Direkte samtalar er kompakte og grupperte per kanal.</li>
-        <li><code>↑</code>/<code>↓</code> hentar sendhistorikk, og markert chattekst kan kopierast.</li>
-        <li>Windows-oppdateraren kan byte versjon sjølv om den gamle launcher-fila er låst.</li>
+        <li data-en="Switch language immediately from F10 or the command line.">Byt språk straks frå F10 eller kommandolinja.</li>
+        <li data-en="The per-user language choice is saved atomically.">Språkvalet per brukar blir lagra atomisk.</li>
+        <li data-en="The TUI, CLI, connection picker, errors, installers, uninstallers, and website are bilingual.">TUI, CLI, tilkoplingsveljar, feil, installatørar, avinstallatørar og nettside er tospråklege.</li>
+        <li data-en="Existing users without a saved choice continue in Nynorsk.">Eksisterande brukarar utan eit lagra val held fram på nynorsk.</li>
+        <li data-en="Database and release-manifest formats are unchanged.">Database- og release-manifestformata er uendra.</li>
       </ul>
     </section>
-    <p>
-      Utan <code>--beta</code> bruker MeshPi alltid den
-      <a href="../version.json">stabile kanalen</a>.
-    </p>
+    <p data-en-html="Without &lt;code&gt;--beta&lt;/code&gt;, MeshPi always uses the &lt;a href=&quot;../version.json&quot;&gt;stable channel&lt;/a&gt;.">Utan <code>--beta</code> bruker MeshPi alltid den <a href="../version.json">stabile kanalen</a>.</p>
   </main>
+  <small id="manifest-status" data-en="Checking the latest version …">Kontrollerer siste versjon …</small>
 </body>
 </html>

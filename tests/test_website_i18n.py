@@ -52,9 +52,9 @@ class _WebsiteParser(HTMLParser):
             self.untranslated_nynorsk.append((self.getpos()[0], text))
 
 
-def _parse_website() -> _WebsiteParser:
+def _parse_website(relative_path: str = "index.html") -> _WebsiteParser:
     parser = _WebsiteParser()
-    parser.feed((WEBSITE / "index.html").read_text(encoding="utf-8"))
+    parser.feed((WEBSITE / relative_path).read_text(encoding="utf-8"))
     return parser
 
 
@@ -106,7 +106,7 @@ def test_language_runtime_detects_persists_and_applies_language() -> None:
     assert "applyLanguage(savedLanguage() || browserLanguage())" in script
 
     assert "document.documentElement.lang = activeLanguage" in script
-    assert "document.title = metadata.title" in script
+    assert "document.title = title || metadata.title" in script
     assert "meta[name=\"description\"]" in script
     assert 'element.setAttribute("aria-label"' in script
     assert 'button.setAttribute(\n      "aria-pressed"' in script
@@ -123,7 +123,24 @@ def test_language_picker_is_responsive_and_stable_release_copy_is_unchanged() ->
     assert "@media (max-width: 900px)" in styles
     assert "@media (max-width: 720px)" in styles
 
-    assert "Versjon 0.8.9" in html
-    assert "Version 0.8.9" in html
-    assert "downloads/meshpi-0.8.9-py3-none-any.whl" in html
-    assert "0.9.0" not in html
+    assert "Versjon 0.9.0" in html
+    assert "Version 0.9.0" in html
+    assert "downloads/meshpi-0.9.0-py3-none-any.whl" in html
+    assert "0.8.9" not in html
+
+
+def test_beta_page_is_bilingual_and_uses_the_shared_language_choice() -> None:
+    parser = _parse_website("beta/index.html")
+    html = (WEBSITE / "beta" / "index.html").read_text(encoding="utf-8")
+
+    assert parser.untranslated_nynorsk == []
+    language_buttons = {
+        attrs.get("data-language")
+        for tag, attrs, _line in parser.elements
+        if tag == "button"
+    }
+    assert language_buttons == {"nn", "en"}
+    assert 'data-title-nn="MeshPi betakanal"' in html
+    assert 'data-title-en="MeshPi beta channel"' in html
+    assert '<script src="../script.js" defer></script>' in html
+    assert "MeshPi 0.9.0" in html

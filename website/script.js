@@ -82,8 +82,12 @@ function applyLanguage(language, { persist = false } = {}) {
   const metadata = PAGE_METADATA[activeLanguage];
 
   document.documentElement.lang = activeLanguage;
-  document.title = metadata.title;
-  document.querySelector('meta[name="description"]').content = metadata.description;
+  const languageSuffix = activeLanguage === "nn" ? "Nn" : "En";
+  const title = document.body.dataset[`title${languageSuffix}`];
+  const description = document.body.dataset[`description${languageSuffix}`];
+  document.title = title || metadata.title;
+  document.querySelector('meta[name="description"]').content =
+    description || metadata.description;
 
   document.querySelectorAll("[data-en]").forEach((element) => {
     element.textContent = element.dataset[activeLanguage];
