@@ -128,9 +128,10 @@ python scripts/prepare_release.py --channel beta \
 ```
 
 `--release-note` kan gjentakast og er påkravd for beta. Ei stabil utgiving kan
-bruke `--seed-beta` når betakanalen enno ikkje har eit manifest. Då blir det
-laga eit signert betamanifest som peikar på den stabile utgivinga, slik at
-`meshpi update --beta` ikkje møter HTTP 404.
+bruke `--seed-beta` når betakanalen enno ikkje har eit manifest, eller når ein
+ferdig stabil versjon skal erstatte den avslutta betaserien. Då blir det laga
+eit signert betamanifest som peikar på den stabile utgivinga, slik at
+`meshpi update --beta` får ein trygg veg til den ferdige versjonen.
 
 Releaseverktøyet:
 

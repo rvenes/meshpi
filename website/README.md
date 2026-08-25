@@ -37,9 +37,10 @@ installatørane i rota, tre plattformlåser under `locks/` og wheel under
 `beta/index.html` forklarer risikoen, oppdateringskravet og full installasjonsveg
 for alle som ønskjer å prøve den opne betakanalen.
 
-Før første beta kan den stabile releasebygginga bruke `--seed-beta`. Det lagar
-eit signert betamanifest som peikar på den stabile utgåva, slik at
-`meshpi update --beta` svarar at ingen nyare utgåve finst i staden for HTTP 404.
+Før første beta, eller når ein ferdig stabil versjon avsluttar ein betaserie,
+kan den stabile releasebygginga bruke `--seed-beta`. Det lagar eit signert
+betamanifest som peikar på den stabile utgåva, slik at `meshpi update --beta`
+får ein trygg veg til den ferdige versjonen.
 
 Før publisering skal det stagea kanalmanifestet vere gyldig signert, og
 storleik og SHA-256 skal stemme for wheel, tre låsefiler og tre installatørar.

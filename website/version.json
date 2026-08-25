@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.8.7",
-  "published_at": "2026-07-30T21:16:20Z",
+  "latest_version": "0.8.9",
+  "published_at": "2026-08-25T02:10:47Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.8.7",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.8.9",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.8.7-py3-none-any.whl",
-    "filename": "meshpi-0.8.7-py3-none-any.whl",
-    "sha256": "403fa6787539e0fd3262330cf48239c9995152c9f679765dd7cde00187a1664c",
-    "size": 127572,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.8.9-py3-none-any.whl",
+    "filename": "meshpi-0.8.9-py3-none-any.whl",
+    "sha256": "42fc19a72e5fd5a804d575fa30df8028812d04c8c15c2f8dd34887b61305e132",
+    "size": 134809,
     "format": "wheel"
   },
   "locks": {
@@ -49,19 +49,22 @@
     },
     "windows": {
       "url": "https://venes.org/meshpi/install-windows.ps1",
-      "sha256": "f8d91420b51b22291f42efcbf684773842a0790bbf3a4170d4c77441016c1dd4",
-      "size": 20917,
+      "sha256": "446ed7c9e089bdd1061825daa1f7f28f4d6e605fddd84942d948f2d3198102d0",
+      "size": 25092,
       "update_command": "Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; .\\install-windows.ps1"
     }
   },
   "release_notes": [
-    "Eksporter heile databasen som UTF-8-tekst med meshpi export.",
-    "Tek eit konsistent øyeblikksbilete medan tenesta køyrer og lagrar eksporten atomisk."
+    "Strengt dataskilje per lokal gateway og kanalbundne samtaler.",
+    "Tapsfri databasemigrering og automatisk reconnect etter dvale.",
+    "Kompakte samtaler, tydeleg ulestmarkering, sendhistorikk og kopiering av chattekst.",
+    "Dato og tid i Nodeinfo-loggar og synleg nedtelling for nodehandlingar.",
+    "Tryggare Windows-oppdatering med versjonsspesifikke launcherar."
   ],
   "channel": "stable",
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "DqDGO/E+oIV3t7hJq9HCCqCL49Q0FMJTvLeWoPt1b3GV/lt0sO3fy+4wMjg37XD//H6ecp1znoZuHXresnQrYPvpsPoChQxy3/CawOBezRssJu5LgdJeusPevQl9qldx9O45ya5z8ojLjFlRPqqs3H8IKvRkx0YeujCOVuWB+1ctO3YFzDyA1mzeNmJKfZcZLcYFwPSnDhB0QLiwcCiHLU+dOU1MSjKRMbRwTvWNmCgcxAxFq4Km2MYThjvXtdb12hIYhj3xCnxFha2pDpoqtV+u3eQNqXhqRu0t31qHg9NK0RVjv4CIliTtTs36qsAuTRgjrLXoXm4XMQxZNqspJFIjD2qTun4RsQFCor00Wp23VHLof+RoNSRtioo5ox7XPJmRVd4Dper1fIsXW46UZW6KVSssDcLGkn2/LclwIx6kaXdP77YZdQ5jUP3mNUuT7qJ0oydDyDrj66PuThyFXhBcV91M0AcI+ZnEzN0bFLd2K1RqXSdzlKkVW8KIVumg"
+    "value": "Mfi46SPn193RJgzf1U+pQlOp5MCmriIMq0Jndz6Zk/Z59PHaJQQALV6KBf4i1AhGWgPHjgrSHlQE+oGIdDgcl66n7T3gQf4ymwXi1Bxu26iPec18/+QYKd2j9hD7sMeSQBKgL10aetsJCRNQjgqoY4dWkKXU9ADOOFgpy08RdKKB1e4k92ThMb2D5/ntn9hdxKBw/erCZpSrYj9DRwF/RB1Rb5TUWpDmQohkNKHvt1wF7VR/wP+hfKf+2lWUiL6srlA0+9FexFLPDhGQLBMxCCwXjxq85nPj6e8iRAtTLYj2lLW0sA8Wn55LuZ2pFHo2CCdkLPsvSyJk+wa9GjEydZQHIUbfwys6oiRhcGAl7CjRq6C1OvQKqFz2wUAt90/9nLIV5amDw7mx3jW/0VXg3Q7rJHBK/oH3u9ENrsJY9Zoboe+A//Gfu6FFPW1mI0ovO9GVx2i9P00d8HF3EEclGWGkBhRm91SkFjd8hsleX7vpiID9chakAwWJZ3oX7IVl"
   }
 }

@@ -43,21 +43,22 @@
 </head>
 <body>
   <main>
-    <h1>MeshPi beta</h1>
+    <h1>MeshPi betakanal</h1>
     <p>
-      Betakanalen er open for alle som ønskjer å prøve dei nyaste
-      forbetringane før neste stabile utgiving.
+      Betakanalen peikar no på den same signerte MeshPi 0.8.9-utgivinga som
+      stabilkanalen. Du kan trygt gå frå 0.8.8-beta til den stabile utgivinga.
     </p>
     <p class="warning">
-      Beta kan innehalde feil. Bruk den stabile kanalen på maskiner der stabil
-      drift er viktig. Installasjon og oppdatering bevarer konfigurasjon,
-      profilar, SQLite-database og meldingshistorikk.
+      Vanleg <code>meshpi update</code> bruker stabilkanalen. Betakanalen blir
+      ståande som ein kompatibel veg vidare for eksisterande betabrukarar.
+      Installasjon og oppdatering bevarer konfigurasjon, profilar,
+      SQLite-database og meldingshistorikk.
     </p>
     <section>
       <h2>Oppdater frå MeshPi 0.8.6 eller nyare</h2>
       <p>
-        Har du MeshPi 0.8.6, 0.8.7 eller ei nyare beta, installerer du siste
-        signerte beta med:
+        Har du MeshPi 0.8.6, 0.8.7 eller ei 0.8.8-beta, installerer du den
+        signerte stabile 0.8.9-utgivinga gjennom betakanalen med:
       </p>
       <pre><code>meshpi update --beta</code></pre>
       <p>
@@ -88,11 +89,10 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\install-windows.ps1 -BaseUrl https://venes.org/meshpi/beta</code></pre>
     </section>
     <section>
-      <h2>MeshPi 0.8.8b8</h2>
+      <h2>MeshPi 0.8.9</h2>
       <p>
-        Denne betaen ryddar opp i Nodeinfo og samlar dei store
-        chatforbetringane frå 0.8.8-betaane. Databaseformat, radioåtferd og
-        avhengigheiter er uendra frå b7.
+        0.8.9 samlar og stabiliserer endringane som blei prøvde i
+        0.8.8-betaane.
       </p>
       <ul>
         <li>Telemetri-, posisjons- og traceroutehistorikk viser både dato og tid.</li>

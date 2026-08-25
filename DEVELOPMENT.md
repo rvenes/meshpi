@@ -1,8 +1,8 @@
 # Utviklingsstatus og vidare plan
 
-Sist oppdatert: 24. august 2026
-Gjeldande stabilutgiving: MeshPi 0.8.7
-Gjeldande betautgiving: MeshPi 0.8.8b8
+Sist oppdatert: 25. august 2026
+Gjeldande stabilutgiving: MeshPi 0.8.9
+Gjeldande betakanal: MeshPi 0.8.9 (same signerte utgiving som stabilkanalen)
 
 Denne fila er den varige overleveringa mellom utviklingstrådar. Ho skal
 oppdaterast når ei større funksjon blir ferdig, når eit viktig arkitekturval
@@ -221,6 +221,7 @@ og BLE i Docker, er ikkje ferdig plattformtesta.
 | 0.8.8b6 | Heildekkjande ulestfarge utan konkurrerande samtalefokus |
 | 0.8.8b7 | Kompakte, kanalgrupperte direkte samtalar |
 | 0.8.8b8 | Dato i Nodeinfo-loggar og synleg cooldown-nedtelling |
+| 0.8.9 | Stabil samling av dataskilje-, chat-, Nodeinfo- og Windows-rettingane frå 0.8.8-betaane |
 
 ## Avklaringar som alt er tekne
 
@@ -367,7 +368,7 @@ Aktuelle, men lågare prioriterte forbetringar:
 
 ## Tilrådd neste arbeid
 
-1. La 0.8.7 samle reelle data over tid og noter databasevekst, felt eller
+1. La 0.8.9 samle reelle data over tid og noter databasevekst, felt eller
    nodetypar som blir viste feil.
 2. Legg tidsfilter, telemetritypefilter og sideinndeling til nodeinfo, og mål
    spørjetid med mange tusen observasjonar.

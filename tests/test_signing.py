@@ -43,9 +43,20 @@ def test_beta_manifest_is_signed_and_keeps_stable_manifest_isolated():
     verify_manifest_signature(beta)
     assert stable["channel"] == "stable"
     assert beta["channel"] == "beta"
-    assert is_prerelease(beta["latest_version"])
-    assert version_key(beta["latest_version"]) > version_key(stable["latest_version"])
-    assert "/beta/downloads/" in beta["package"]["url"]
+    if is_prerelease(beta["latest_version"]):
+        assert version_key(beta["latest_version"]) > version_key(stable["latest_version"])
+        assert "/beta/downloads/" in beta["package"]["url"]
+    else:
+        assert beta["latest_version"] == stable["latest_version"]
+        assert beta["package"] == stable["package"]
+        assert beta["locks"] == stable["locks"]
+        for platform_name in stable["installers"]:
+            stable_installer = stable["installers"][platform_name]
+            beta_installer = beta["installers"][platform_name]
+            assert beta_installer["url"] == stable_installer["url"]
+            assert beta_installer["sha256"] == stable_installer["sha256"]
+            assert beta_installer["size"] == stable_installer["size"]
+            assert beta_installer["update_command"].endswith(" --beta")
     assert "/beta/" not in stable["package"]["url"]
 
 

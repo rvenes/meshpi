@@ -44,7 +44,7 @@ def test_update_manifest_selects_platform_command():
         platform_name="win32",
     )
     assert notice is not None
-    assert notice.latest_version == "0.8.7"
+    assert notice.latest_version == "0.8.9"
     assert notice.command == "meshpi update"
 
 
@@ -101,7 +101,7 @@ def test_update_manifest_returns_none_for_current_or_newer_version():
     assert (
         parse_update_manifest(
             manifest(),
-            current_version="0.8.7",
+            current_version="0.8.9",
             platform_name="linux",
         )
         is None
@@ -109,7 +109,7 @@ def test_update_manifest_returns_none_for_current_or_newer_version():
     assert (
         parse_update_manifest(
             manifest(),
-            current_version="0.8.8",
+            current_version="0.9.0",
             platform_name="linux",
         )
         is None
@@ -179,16 +179,16 @@ def test_update_manifest_rejects_wrong_channel():
         )
 
 
-def test_beta_manifest_reports_update_for_current_stable_version():
+def test_seeded_beta_manifest_reports_stable_update_for_beta_version():
     notice = parse_update_manifest(
         beta_manifest(),
-        current_version="0.8.7",
+        current_version="0.8.8b8",
         platform_name="linux",
         channel="beta",
     )
 
     assert notice is not None
-    assert notice.latest_version == "0.8.8b8"
+    assert notice.latest_version == "0.8.9"
     assert notice.command == "sudo meshpi update --beta"
 
 

@@ -1,30 +1,30 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.8.8b8",
-  "published_at": "2026-08-24T03:50:30Z",
+  "latest_version": "0.8.9",
+  "published_at": "2026-08-25T02:10:47Z",
   "minimum_python": "3.11",
   "release_notes_url": "https://venes.org/meshpi/beta/",
   "package": {
-    "url": "https://venes.org/meshpi/beta/downloads/meshpi-0.8.8b8-py3-none-any.whl",
-    "filename": "meshpi-0.8.8b8-py3-none-any.whl",
-    "sha256": "f780c009a50c406dad886f440eb601fd08d074d67f7e0311c0f0edbc5fcb173d",
-    "size": 134835,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.8.9-py3-none-any.whl",
+    "filename": "meshpi-0.8.9-py3-none-any.whl",
+    "sha256": "42fc19a72e5fd5a804d575fa30df8028812d04c8c15c2f8dd34887b61305e132",
+    "size": 134809,
     "format": "wheel"
   },
   "locks": {
     "linux": {
-      "url": "https://venes.org/meshpi/beta/locks/linux.txt",
+      "url": "https://venes.org/meshpi/locks/linux.txt",
       "sha256": "b136e5aed7655002e01ae5ac2d9ce5e5e51557c67a3f90bf10a99d7242f7e556",
       "size": 26285
     },
     "macos": {
-      "url": "https://venes.org/meshpi/beta/locks/macos.txt",
+      "url": "https://venes.org/meshpi/locks/macos.txt",
       "sha256": "7ab50eef5fdcb278903f9e0a9895c5cda638a8e3b1b30252eead3ab1fb62b2e7",
       "size": 24142
     },
     "windows": {
-      "url": "https://venes.org/meshpi/beta/locks/windows.txt",
+      "url": "https://venes.org/meshpi/locks/windows.txt",
       "sha256": "d691038a915b7d113936c547149a7159d3cdde854dc567bf49b8b639eae1b693",
       "size": 35776
     }
@@ -36,33 +36,35 @@
   },
   "installers": {
     "linux": {
-      "url": "https://venes.org/meshpi/beta/install-linux.sh",
+      "url": "https://venes.org/meshpi/install-linux.sh",
       "sha256": "7471460c319ec5fea241a1030ffa263cf422ba9c4e2a3fcbaf6086987aa49e9c",
       "size": 16868,
       "update_command": "sudo meshpi update --beta"
     },
     "macos": {
-      "url": "https://venes.org/meshpi/beta/install-macos.sh",
+      "url": "https://venes.org/meshpi/install-macos.sh",
       "sha256": "623987164c3bb1abe445b7b546bd886d40cc611417168e83b6bd39d6d854e1f8",
       "size": 14136,
       "update_command": "meshpi update --beta"
     },
     "windows": {
-      "url": "https://venes.org/meshpi/beta/install-windows.ps1",
+      "url": "https://venes.org/meshpi/install-windows.ps1",
       "sha256": "446ed7c9e089bdd1061825daa1f7f28f4d6e605fddd84942d948f2d3198102d0",
       "size": 25092,
       "update_command": "meshpi update --beta"
     }
   },
   "release_notes": [
-    "Nodeinfo-loggane viser dato og tid utan å gøyme eksisterande kolonnar.",
-    "Traceroute og posisjonsutveksling viser synleg nedtelling gjennom cooldown-perioden.",
-    "Chatforbetringane, den kompakte samtalelista og Windows-launcherrettinga frå tidlegare 0.8.8-betaer er samla i den offentlege betaen."
+    "Strengt dataskilje per lokal gateway og kanalbundne samtaler.",
+    "Tapsfri databasemigrering og automatisk reconnect etter dvale.",
+    "Kompakte samtaler, tydeleg ulestmarkering, sendhistorikk og kopiering av chattekst.",
+    "Dato og tid i Nodeinfo-loggar og synleg nedtelling for nodehandlingar.",
+    "Tryggare Windows-oppdatering med versjonsspesifikke launcherar."
   ],
   "channel": "beta",
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "ADTj8IlP3mftES20JA0DGJ3J6wS6jkERWltl5C+Ue1SeSvOgLoU/0k7h3rGCo8lxolAL0MPNvvh6gBg7rWBY++rTCz70zOAAo9Ph/5KPX45/0ze7qGf3ys+IgZFwqL+QtsMHLy+KXpLdRgpu9Bv9+cfSd95yKKuxx0NQL3Q2qp0lqd7qaW+nAzcjBpUcBd1LLF3/NCJ4GWbXhbLCDoR0lsCo+iPIjgGidQ4cfDxTG1qIAtnwW0I0rt3VMKE7onPP4a/JttqIbi46u8bj15Cx04fMaEz8WZgMpQrcpTrJ3lN2xJMTGfrULdONDW8+5g5zW8gv+31/kYuV+iD60WkVLCZZuYb8ZKRSHwwjbLP1mZldH4ro/gNtZUBMPuhz1lSeMjNtsCEaxoPR3YIA8TOQ/zlrbFba8XFzH/w7S8ZyxxK9NguE0K4nAOpncLyX/oA2LH5MPzDWXargS6hCUk4tN67WQhznnJeYaJjB6RqyXowlZ1yvMiQnY31DiysGF5r4"
+    "value": "EyN3FbNADV+gVxeL2fgxf09UHx6Yz5eDb+QY+L0c3YSbZU0xjLlTC+jDn3drzCPcFG3Z2lima3j8d3N06gMeS8OGMZkxOXgPfx55SJvy9gDdlSKWLzUXCheiYq5+uKmdNC+s/A+zgAXsgRTyel5YtSyQLnZ7HzWt+5xp2VDIzO+UZ5Slty1vsECz/vKhXwS44n1+OJQU3P+GMQMUMTppfMugxwkXD7//QmwsnIQ+I0aSMk5lgnwnk+zOcmOyopMyn9TaLbEwWstHEvLV5gRREHbAEFTL3tswFC1hnf+mIPnaHyQG8/KuY6kmXe7v8snPt3VM2yK402tpuzgj0U+/w2LLM+8FW1tBzG+mXQd7pOqaZszyKP+klZ8Xedzv0TxgXwQ84jTOWKBXFlu885J7qS+dTm7ynxndwk613exkZPf/jstMlJ5YTr0GT0D10qxv/34sZq4NXxmq+sclHjpAdW1aAfIt3V1BZRGSTEphwjPmxgdO5H/JD8oRKySU/uma"
   }
 }
