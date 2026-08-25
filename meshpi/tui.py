@@ -148,6 +148,25 @@ def _time(value: str | int | None, seconds: bool = False) -> str:
         return str(value)
 
 
+def _date_time(
+    value: str | int | None,
+    seconds: bool = False,
+    multiline: bool = False,
+) -> str:
+    if value is None:
+        return "–"
+    try:
+        if isinstance(value, int):
+            parsed = datetime.fromtimestamp(value).astimezone()
+        else:
+            parsed = datetime.fromisoformat(value).astimezone()
+        time_format = "%H:%M:%S" if seconds else "%H:%M"
+        separator = "\n" if multiline else " "
+        return parsed.strftime(f"%d.%m.%y{separator}{time_format}")
+    except (ValueError, TypeError, OSError):
+        return str(value)
+
+
 def _message_time_parts(
     value: str | int | None,
     now: datetime | None = None,
@@ -377,28 +396,42 @@ def _conversation_title(item: dict[str, Any]) -> str:
     return f"DM {name} [{node_id[-4:]}]{route_label}"
 
 
+def _conversation_sidebar_title(item: dict[str, Any]) -> str:
+    if item.get("kind") == "public":
+        return _conversation_title(item)
+    node_id = str(item.get("peer_node") or item.get("conversation", ""))
+    name = sanitize_terminal_text(
+        item.get("long_name") or item.get("short_name") or node_id
+    )
+    return f"{name} [{node_id[-4:]}]"
+
+
 class ConversationItem(ListItem):
     def __init__(self, conversation: dict[str, Any]):
         self.conversation = conversation
         self.conversation_id = _conversation_id(conversation)
         self.label_widget = Static(self._render_label(), classes="conversation-label")
         super().__init__(self.label_widget)
-        self._update_section_class()
+        self._update_classes()
 
     def update_conversation(self, conversation: dict[str, Any]) -> None:
         self.conversation = conversation
-        self._update_section_class()
+        self._update_classes()
         self.label_widget.update(self._render_label())
 
-    def _update_section_class(self) -> None:
+    def _update_classes(self) -> None:
         self.set_class(
             bool(self.conversation.get("_section_label")),
             "conversation-section-start",
         )
+        self.set_class(
+            bool(int(self.conversation.get("unread") or 0)),
+            "conversation-unread",
+        )
 
     def _render_label(self) -> Text:
         unread = int(self.conversation.get("unread") or 0)
-        title = _conversation_title(self.conversation)
+        title = _conversation_sidebar_title(self.conversation)
         text = Text()
         section_label = sanitize_terminal_text(
             self.conversation.get("_section_label") or ""
@@ -407,15 +440,20 @@ class ConversationItem(ListItem):
             self.conversation.get("_section_hint") or ""
         )
         if section_label:
-            text.append(section_label.upper(), style="bold cyan")
+            text.append(section_label.upper(), style="bold #8da1aa")
             if section_hint:
                 text.append(f"  {section_hint}", style="dim")
             text.append("\n")
+        if self.conversation.get("kind") == "public":
+            symbol = "● " if int(self.conversation.get("channel") or 0) == 0 else "○ "
+        else:
+            symbol = "◆ "
+        emphasis = "bold cyan" if unread else None
         text.append(
-            "● " if self.conversation.get("kind") == "public" else "◆ ",
-            style="green",
+            symbol,
+            style="cyan" if unread else "green",
         )
-        text.append(title, style="bold")
+        text.append(title, style=emphasis or "bold")
         if unread:
             text.append(f"  {unread}", style="bold cyan")
         text.append("\n")
@@ -913,6 +951,7 @@ class NodeInfoScreen(ModalScreen[None]):
 
     def on_mount(self) -> None:
         self._show_tab("overview")
+        self.set_interval(1, self._refresh_action_buttons)
         now = time.monotonic()
         for action, deadline in self._action_cooldown_until.items():
             remaining = deadline - now
@@ -925,20 +964,45 @@ class NodeInfoScreen(ModalScreen[None]):
     def _refresh_action_buttons(self) -> None:
         node = self.overview_data.get("node", {})
         local = bool(node.get("is_local")) if isinstance(node, dict) else False
-        now = time.monotonic()
         exchange = self.query_one("#node-info-exchange-position", Button)
         run_trace = self.query_one("#node-info-run-traceroute", Button)
+        exchange_remaining = self._action_cooldown_remaining("position_exchange")
+        traceroute_remaining = self._action_cooldown_remaining("traceroute")
+        exchange.label = (
+            f"Vent {exchange_remaining} s"
+            if exchange_remaining
+            else "Utveksle [X]"
+        )
+        run_trace.label = (
+            f"Vent {traceroute_remaining} s"
+            if traceroute_remaining
+            else "Køyr trace [R]"
+        )
         exchange.display = self.current_tab == "position"
         exchange.disabled = (
             local
             or self._action_blocked["position_exchange"]
-            or now < self._action_cooldown_until["position_exchange"]
+            or exchange_remaining > 0
         )
         run_trace.display = self.current_tab == "traceroute"
         run_trace.disabled = (
             local
             or self._action_blocked["traceroute"]
-            or now < self._action_cooldown_until["traceroute"]
+            or traceroute_remaining > 0
+        )
+        help_text = "←/→: fane   O/M/P/T: vel   Dra: merk   Esc: lukk"
+        if self.current_tab == "traceroute" and traceroute_remaining:
+            help_text += f"   Ny traceroute om {traceroute_remaining} sekund"
+        elif self.current_tab == "position" and exchange_remaining:
+            help_text += f"   Ny posisjonsutveksling om {exchange_remaining} sekund"
+        self.query_one("#node-info-help", Static).update(help_text)
+
+    def _action_cooldown_remaining(self, action: str) -> int:
+        return max(
+            0,
+            math.ceil(
+                self._action_cooldown_until[action] - time.monotonic() - 1e-6
+            ),
         )
 
     def _show_tab(self, tab: str) -> None:
@@ -1013,7 +1077,7 @@ class NodeInfoScreen(ModalScreen[None]):
                 ]
                 text.append(" · ".join(rendered) + "\n")
                 text.append(
-                    f"  {_time(sample.get('sample_time'), seconds=True)} · "
+                    f"  {_date_time(sample.get('sample_time'), seconds=True)} · "
                     f"{_gateway_label(sample)}\n",
                     style="dim",
                 )
@@ -1030,7 +1094,7 @@ class NodeInfoScreen(ModalScreen[None]):
             if position.get("altitude_msl") is not None:
                 text.append(f" · {position['altitude_msl']} m over havet")
             text.append(
-                f"\n  {_time(position.get('sample_time'), seconds=True)} · "
+                f"\n  {_date_time(position.get('sample_time'), seconds=True)} · "
                 f"{_gateway_label(position)}\n",
                 style="dim",
             )
@@ -1088,7 +1152,7 @@ class NodeInfoScreen(ModalScreen[None]):
                 pad_edge=False,
                 collapse_padding=True,
             )
-            table.add_column("Tid", style="dim", no_wrap=True)
+            table.add_column("Dato/tid", style="dim", no_wrap=True)
             table.add_column("Via", style="dim", no_wrap=True)
             for name in ordered_names:
                 label = METRIC_TABLE_LABELS.get(
@@ -1113,7 +1177,13 @@ class NodeInfoScreen(ModalScreen[None]):
                         else _metric_label_and_value(name, raw)[1]
                     )
                 table.add_row(
-                    Text(_time(sample.get("sample_time"), seconds=True)),
+                    Text(
+                        _date_time(
+                            sample.get("sample_time"),
+                            seconds=True,
+                            multiline=True,
+                        )
+                    ),
                     Text(_gateway_label(sample).removeprefix("via ")),
                     *(Text(str(value)) for value in values),
                 )
@@ -1134,7 +1204,7 @@ class NodeInfoScreen(ModalScreen[None]):
             collapse_padding=True,
         )
         for label in (
-            "Tid",
+            "Dato/tid",
             "Via",
             "Breiddegrad",
             "Lengdegrad",
@@ -1152,7 +1222,13 @@ class NodeInfoScreen(ModalScreen[None]):
 
         for position in self.positions:
             table.add_row(
-                Text(_time(position.get("sample_time"), seconds=True)),
+                Text(
+                    _date_time(
+                        position.get("sample_time"),
+                        seconds=True,
+                        multiline=True,
+                    )
+                ),
                 Text(_gateway_label(position).removeprefix("via ")),
                 Text(f"{position['latitude']:.7f}"),
                 Text(f"{position['longitude']:.7f}"),
@@ -1189,12 +1265,18 @@ class NodeInfoScreen(ModalScreen[None]):
             pad_edge=False,
             collapse_padding=True,
         )
-        links.add_column("Tid", style="dim", no_wrap=True)
+        links.add_column("Dato/tid", style="dim", no_wrap=True)
         links.add_column("Google Maps", header_style="bold cyan", overflow="fold")
         for position in self.positions:
             url = _google_maps_url(position)
             links.add_row(
-                Text(_time(position.get("sample_time"), seconds=True)),
+                Text(
+                    _date_time(
+                        position.get("sample_time"),
+                        seconds=True,
+                        multiline=True,
+                    )
+                ),
                 _map_link(url),
             )
         log.write(links, scroll_end=False)
@@ -1213,7 +1295,7 @@ class NodeInfoScreen(ModalScreen[None]):
             pad_edge=False,
             collapse_padding=True,
         )
-        table.add_column("Tid", style="dim", no_wrap=True)
+        table.add_column("Dato/tid", style="dim", no_wrap=True)
         table.add_column("Status", no_wrap=True)
         table.add_column("Hopp F/T", justify="right", no_wrap=True)
         table.add_column("Fram", overflow="fold")
@@ -1538,29 +1620,40 @@ class MeshPiTUI(App[str | None]):
     }
 
     ConversationItem {
-        height: 4;
+        height: 3;
         padding: 0 1;
         color: #cbd0d2;
     }
 
     ConversationItem.conversation-section-start {
-        height: 6;
+        height: 5;
         padding-top: 1;
         border-top: solid #31393c;
     }
 
-    ConversationItem.--highlight {
+    #conversation-list > ConversationItem.-highlight {
+        background: transparent;
+        color: #cbd0d2;
+    }
+
+    #conversation-list:focus > ConversationItem.-highlight {
         background: #245c2a;
+        color: white;
+    }
+
+    #conversation-list > ConversationItem.conversation-unread,
+    #conversation-list:focus > ConversationItem.conversation-unread.-highlight {
+        background: $block-cursor-background;
         color: white;
     }
 
     .conversation-label {
         width: 1fr;
-        height: 3;
+        height: 2;
     }
 
     ConversationItem.conversation-section-start .conversation-label {
-        height: 4;
+        height: 3;
     }
 
     #message-log {
@@ -1616,7 +1709,7 @@ class MeshPiTUI(App[str | None]):
         color: #cbd0d2;
     }
 
-    NodeSidebarItem.--highlight {
+    NodeSidebarItem.-highlight {
         background: #245c2a;
         color: white;
     }
@@ -2220,6 +2313,7 @@ class MeshPiTUI(App[str | None]):
                 "last_text": None,
                 "unread": 0,
                 "sendable": False,
+                "_transient": True,
             }
             if self.current_conversation.startswith("dm:"):
                 with suppress(ValueError):
@@ -2271,7 +2365,11 @@ class MeshPiTUI(App[str | None]):
         conversations: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         public = [item for item in conversations if item.get("kind") == "public"]
-        direct = [item for item in conversations if item.get("kind") == "dm"]
+        direct = [
+            item
+            for item in conversations
+            if item.get("kind") == "dm" and not item.get("_transient")
+        ]
         primary = next(
             (item for item in public if item.get("channel") == 0),
             public[0] if public else None,
@@ -2295,12 +2393,31 @@ class MeshPiTUI(App[str | None]):
             visible.append(rendered)
 
         if self.show_direct_messages:
-            for index, item in enumerate(direct):
-                rendered = dict(item)
-                if index == 0:
-                    rendered["_section_label"] = "DM-samtalar"
-                    rendered["_section_hint"] = "F8 skjul"
-                visible.append(rendered)
+            grouped_direct: dict[int | None, list[dict[str, Any]]] = {}
+            for item in direct:
+                try:
+                    channel = int(item["channel"])
+                except (KeyError, TypeError, ValueError):
+                    channel = None
+                grouped_direct.setdefault(channel, []).append(item)
+            ordered_channels = sorted(
+                grouped_direct,
+                key=lambda channel: (channel is None, channel or 0),
+            )
+            first_group = True
+            for channel in ordered_channels:
+                for index, item in enumerate(grouped_direct[channel]):
+                    rendered = dict(item)
+                    if index == 0:
+                        rendered["_section_label"] = (
+                            f"Direkte samtalar · kanal {channel}"
+                            if channel is not None
+                            else "Direkte samtalar · ukjend kanal"
+                        )
+                        if first_group:
+                            rendered["_section_hint"] = "F8"
+                        first_group = False
+                    visible.append(rendered)
         return visible
 
     async def _render_conversation_sidebar(self) -> None:
@@ -2785,8 +2902,7 @@ class MeshPiTUI(App[str | None]):
         self,
         action: dict[str, Any],
     ) -> tuple[str, str, str, str, str]:
-        date_label, time_label = _message_time_parts(action.get("started_at"))
-        timestamp = f"{date_label or ''} {time_label}".strip()
+        timestamp = _date_time(action.get("started_at"), multiline=True)
         status = str(action.get("status") or "started")
         status_label = {
             "started": "Ventar",
@@ -3565,6 +3681,7 @@ class MeshPiTUI(App[str | None]):
                     "last_text": None,
                     "unread": 0,
                     "sendable": True,
+                    "_transient": True,
                 }
             )
         self.current_conversation = conversation

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>MeshPi intern beta</title>
+  <meta name="robots" content="index, follow">
+  <title>MeshPi beta</title>
   <style>
     body {
       max-width: 48rem;
@@ -20,30 +20,88 @@
       background: #17232d;
       border-radius: .25rem;
     }
+    pre {
+      overflow-x: auto;
+      padding: 1rem;
+      background: #17232d;
+      border: 1px solid #2c4658;
+      border-radius: .4rem;
+    }
+    pre code { padding: 0; }
+    section {
+      margin: 2.5rem 0;
+      padding-top: .5rem;
+      border-top: 1px solid #2c4658;
+    }
+    .warning {
+      padding: 1rem;
+      background: #2a2116;
+      border-left: .3rem solid #e8a84c;
+    }
     a { color: #8bc7ff; }
   </style>
 </head>
 <body>
   <main>
-    <h1>MeshPi intern beta</h1>
+    <h1>MeshPi beta</h1>
     <p>
-      Dette er førehandsutgåver for avtalt testing. Dei kan innehalde feil og
-      skal ikkje installerast på maskiner der stabil drift er nødvendig.
+      Betakanalen er open for alle som ønskjer å prøve dei nyaste
+      forbetringane før neste stabile utgiving.
     </p>
-    <p>Installer siste signerte beta med <code>meshpi update --beta</code>.</p>
+    <p class="warning">
+      Beta kan innehalde feil. Bruk den stabile kanalen på maskiner der stabil
+      drift er viktig. Installasjon og oppdatering bevarer konfigurasjon,
+      profilar, SQLite-database og meldingshistorikk.
+    </p>
     <section>
-      <h2>MeshPi 0.8.8b4</h2>
+      <h2>Oppdater frå MeshPi 0.8.6 eller nyare</h2>
       <p>
-        Denne betaen gjer chatten raskare å arbeide i, utan endringar i
-        databaseformat, radioåtferd eller avhengigheiter.
+        Har du MeshPi 0.8.6, 0.8.7 eller ei nyare beta, installerer du siste
+        signerte beta med:
+      </p>
+      <pre><code>meshpi update --beta</code></pre>
+      <p>
+        På Linux i <code>always</code>-modus bruker du
+        <code>sudo meshpi update --beta</code>. <code>--beta</code> gjeld berre
+        denne oppdateringa; vanleg <code>meshpi update</code> held fram med å
+        bruke stabilkanalen.
+      </p>
+    </section>
+    <section>
+      <h2>Full betainstallasjon</h2>
+      <p>
+        MeshPi 0.8.5 og eldre kjenner ikkje <code>--beta</code>. Last då ned og
+        sjå gjennom installatøren før du køyrer han mot betakanalen.
+      </p>
+      <h3>Linux og Raspberry Pi OS</h3>
+      <pre><code>curl -fLO https://venes.org/meshpi/beta/install-linux.sh
+less install-linux.sh
+sudo env MESHPI_BASE_URL=https://venes.org/meshpi/beta sh install-linux.sh</code></pre>
+      <h3>macOS</h3>
+      <pre><code>curl -fLO https://venes.org/meshpi/beta/install-macos.sh
+less install-macos.sh
+env MESHPI_BASE_URL=https://venes.org/meshpi/beta sh install-macos.sh</code></pre>
+      <h3>Windows PowerShell</h3>
+      <pre><code>Invoke-WebRequest https://venes.org/meshpi/beta/install-windows.ps1 -OutFile install-windows.ps1
+Get-Content .\install-windows.ps1
+Set-ExecutionPolicy -Scope Process Bypass
+.\install-windows.ps1 -BaseUrl https://venes.org/meshpi/beta</code></pre>
+    </section>
+    <section>
+      <h2>MeshPi 0.8.8b8</h2>
+      <p>
+        Denne betaen ryddar opp i Nodeinfo og samlar dei store
+        chatforbetringane frå 0.8.8-betaane. Databaseformat, radioåtferd og
+        avhengigheiter er uendra frå b7.
       </p>
       <ul>
-        <li><code>↑</code>/<code>↓</code> hentar eigne tidlegare meldingar per public- og DM-samtale.</li>
-        <li>Utkastet kjem tilbake når du går ned forbi den nyaste historikkmeldinga.</li>
-        <li>Ei validert melding blir hugsa sjølv om sendinga seinare feilar.</li>
-        <li>Markert tekst blir kopiert automatisk på museslepp; <code>Ctrl+C</code> verkar framleis.</li>
-        <li>Terminalar utan OSC52 kan framleis bruke si eiga markering, ofte med <code>Shift</code>.</li>
-        <li>Schema-migreringa bruker eksplisitt tillatne SQL-variantar og har ingen middels eller høge Bandit-funn.</li>
+        <li>Telemetri-, posisjons- og traceroutehistorikk viser både dato og tid.</li>
+        <li>Traceroute-knappen viser kor mange sekund som står att av cooldown-perioden.</li>
+        <li>Posisjonsutveksling viser same tydelege nedtelling.</li>
+        <li>Uleste samtalar har heildekkjande lyseblå markering.</li>
+        <li>Direkte samtalar er kompakte og grupperte per kanal.</li>
+        <li><code>↑</code>/<code>↓</code> hentar sendhistorikk, og markert chattekst kan kopierast.</li>
+        <li>Windows-oppdateraren kan byte versjon sjølv om den gamle launcher-fila er låst.</li>
       </ul>
     </section>
     <p>

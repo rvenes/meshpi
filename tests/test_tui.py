@@ -19,7 +19,9 @@ from meshpi.tui import (
     NodePickerItem,
     NodeSidebarItem,
     QuitScreen,
+    _conversation_sidebar_title,
     _conversation_title,
+    _date_time,
     _map_link,
     _message_time_parts,
     _metric_label_and_value,
@@ -629,7 +631,7 @@ def test_status_bar_shows_current_meshpi_version_and_host(monkeypatch):
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.8.8b4" in text
+            assert "MeshPi 0.8.8b8" in text
             assert "Vert: testvert" in text
 
     run_scenario(scenario)
@@ -949,8 +951,12 @@ def test_refresh_reorders_direct_messages_before_moving_section_heading():
                 RESERVE_DM_CONVERSATION,
             ]
             assert items[0].label_widget.render().plain.startswith("KANALAR")
-            assert items[1].label_widget.render().plain.startswith("DM-SAMTALAR")
-            assert not items[2].label_widget.render().plain.startswith("DM-SAMTALAR")
+            assert items[1].label_widget.render().plain.startswith(
+                "DIREKTE SAMTALAR · KANAL 0"
+            )
+            assert not items[2].label_widget.render().plain.startswith(
+                "DIREKTE SAMTALAR"
+            )
 
     run_scenario(scenario)
 
@@ -989,7 +995,9 @@ def test_sidebar_separates_and_toggles_channels_and_direct_messages():
                 RESERVE_DM_CONVERSATION,
             ]
             assert items[0].label_widget.render().plain.startswith("KANALAR")
-            assert items[2].label_widget.render().plain.startswith("DM-SAMTALAR")
+            assert items[2].label_widget.render().plain.startswith(
+                "DIREKTE SAMTALAR · KANAL 0"
+            )
 
             await pilot.press("f9")
             await pilot.pause(0.1)
@@ -1021,6 +1029,139 @@ def test_sidebar_separates_and_toggles_channels_and_direct_messages():
                 secondary_conversation,
                 RESERVE_DM_CONVERSATION,
             ]
+
+    run_scenario(scenario)
+
+
+def test_conversation_labels_use_distinct_symbols_and_unread_emphasis():
+    cases = (
+        ({"kind": "public", "channel": 0}, "● "),
+        ({"kind": "public", "channel": 2}, "○ "),
+        ({"kind": "dm", "channel": 0}, "◆ "),
+    )
+    for conversation, symbol in cases:
+        conversation.update(
+            {
+                "conversation": (
+                    "channel:test"
+                    if conversation["kind"] == "public"
+                    else "dm:test"
+                ),
+                "last_text": "Ny melding",
+                "unread": 3,
+            }
+        )
+        label = ConversationItem(conversation)._render_label()
+        spans = [
+            (label.plain[span.start : span.end], str(span.style))
+            for span in label.spans
+        ]
+
+        assert label.plain.startswith(symbol)
+        assert (symbol, "cyan") in spans
+        assert any(
+            text == _conversation_sidebar_title(conversation)
+            and style == "bold cyan"
+            for text, style in spans
+        )
+        assert ("  3", "bold cyan") in spans
+        assert any(
+            text.endswith("Ny melding") and style == "dim" for text, style in spans
+        )
+
+
+def test_read_conversation_and_section_heading_keep_the_quiet_palette():
+    conversation = {
+        "conversation": PUBLIC_CONVERSATION,
+        "kind": "public",
+        "channel": 0,
+        "last_text": "Lesen melding",
+        "unread": 0,
+        "_section_label": "Kanalar",
+    }
+
+    label = ConversationItem(conversation)._render_label()
+    spans = [
+        (label.plain[span.start : span.end], str(span.style)) for span in label.spans
+    ]
+
+    assert ("KANALAR", "bold #8da1aa") in spans
+    assert ("● ", "green") in spans
+    assert any(
+        text == _conversation_title(conversation) and style == "bold"
+        for text, style in spans
+    )
+    assert all("cyan" not in style for _text, style in spans)
+
+
+def test_direct_conversations_group_by_channel_without_repeated_route_text():
+    channel_zero = {
+        "conversation": RESERVE_DM_CONVERSATION,
+        "kind": "dm",
+        "peer_node": "!710365c8",
+        "long_name": "Venes Reserve",
+        "channel": 0,
+        "last_text": "Kanal null",
+        "unread": 0,
+    }
+    channel_one = {
+        "conversation": "dm:!040840a0:!2f779c48:local:!040840a0:1:",
+        "kind": "dm",
+        "peer_node": "!2f779c48",
+        "long_name": "VenesSol-A 9c48",
+        "channel": 1,
+        "last_text": "Kanal ein",
+        "unread": 0,
+    }
+    app = MeshPiTUI(
+        Settings(), requester=FakeBackend().request, watcher=None, update_checker=None
+    )
+
+    visible = app._sidebar_conversations([channel_one, channel_zero])
+
+    assert [item["channel"] for item in visible] == [0, 1]
+    assert visible[0]["_section_label"] == "Direkte samtalar · kanal 0"
+    assert visible[0]["_section_hint"] == "F8"
+    assert visible[1]["_section_label"] == "Direkte samtalar · kanal 1"
+    assert "_section_hint" not in visible[1]
+    for conversation in visible:
+        label = ConversationItem(conversation)._render_label().plain
+        title_line = label.splitlines()[-2]
+        assert "DM " not in title_line
+        assert "kanal" not in title_line.casefold()
+    assert "Venes Reserve [65c8]" in ConversationItem(visible[0])._render_label().plain
+
+
+def test_unread_conversation_uses_light_blue_background_without_blurred_selection():
+    async def scenario():
+        backend = FakeBackend()
+        backend.conversations[1]["unread"] = 1
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 48)) as pilot:
+            await pilot.pause(0.3)
+            conversation_list = app.query_one("#conversation-list", ListView)
+            unread_item = list(app.query(ConversationItem))[1]
+
+            assert unread_item.has_class("conversation-unread")
+            assert unread_item.styles.background.hex == "#0178D4"
+
+            conversation_list.index = 1
+            conversation_list.focus()
+            await pilot.pause(0.1)
+            assert unread_item.styles.background.hex == "#0178D4"
+
+            backend.conversations[1]["unread"] = 0
+            await app._apply_refresh(backend.conversations, backend.nodes)
+            await pilot.pause(0.1)
+            read_item = list(app.query(ConversationItem))[1]
+            assert not read_item.has_class("conversation-unread")
+            assert read_item.styles.background.hex == "#245C2A"
+
+            app.query_one("#node-list", ListView).focus()
+            await pilot.pause(0.1)
+            assert read_item.styles.background.hex == "#00000000"
 
     run_scenario(scenario)
 
@@ -1195,6 +1336,9 @@ def test_sidebar_lists_nodes_and_opens_selected_node_as_dm():
             items = list(app.query(NodeSidebarItem))
             assert len(items) == 3
             assert items[0].node["is_local"] is True
+            sidebar_conversations = [
+                item.conversation_id for item in app.query(ConversationItem)
+            ]
 
             await pilot.press("f3")
             node_list = app.query_one("#node-list", ListView)
@@ -1206,6 +1350,9 @@ def test_sidebar_lists_nodes_and_opens_selected_node_as_dm():
             await pilot.press("enter")
             await pilot.pause(0.3)
             assert app.current_conversation == VENESSOL_DM_CONVERSATION
+            assert [
+                item.conversation_id for item in app.query(ConversationItem)
+            ] == sidebar_conversations
 
     run_scenario(scenario)
 
@@ -1351,6 +1498,12 @@ def test_node_info_uses_one_screen_for_metrics_position_and_traceroute():
             assert "Kanalbruk" in telemetry
             assert "Temperatur" in telemetry
             assert telemetry.count("Eining") == 1
+            assert "Dato/tid" in telemetry
+            telemetry_date, telemetry_time = _date_time(
+                "2026-07-20T12:10:00+00:00", seconds=True, multiline=True
+            ).splitlines()
+            assert telemetry_date in telemetry
+            assert telemetry_time in telemetry
             assert "┌" not in telemetry
             assert "│" not in telemetry
 
@@ -1363,6 +1516,12 @@ def test_node_info_uses_one_screen_for_metrics_position_and_traceroute():
             assert "api=1" in positions
             assert "Posisjonslogg" in positions
             assert "Kartlenkjer" in positions
+            assert positions.count("Dato/tid") == 2
+            position_date, position_time = _date_time(
+                "2026-07-20T12:12:00+00:00", seconds=True, multiline=True
+            ).splitlines()
+            assert positions.count(position_date) == 2
+            assert positions.count(position_time) == 2
             exchange = app.screen.query_one(
                 "#node-info-exchange-position",
                 Button,
@@ -1404,6 +1563,12 @@ def test_node_info_uses_one_screen_for_metrics_position_and_traceroute():
             await pilot.pause(0.1)
             traceroutes = "\n".join(line.text for line in log.lines)
             assert "Traceroute-logg" in traceroutes
+            assert "Dato/tid" in traceroutes
+            traceroute_date, traceroute_time = _date_time(
+                "2026-07-20T12:09:00+00:00", multiline=True
+            ).splitlines()
+            assert traceroute_date in traceroutes
+            assert traceroute_time in traceroutes
             assert "Ferdig" in traceroutes
             assert "Hopp F/T" in traceroutes
             assert "1/–" in traceroutes
@@ -1417,6 +1582,11 @@ def test_node_info_uses_one_screen_for_metrics_position_and_traceroute():
             assert run_trace.parent.id == "node-info-footer"
             await pilot.click(run_trace)
             await pilot.pause(0.2)
+            assert run_trace.disabled is True
+            assert "Vent 30 s" in str(run_trace.label)
+            assert "Ny traceroute om 30 sekund" in str(
+                app.screen.query_one("#node-info-help", Static).render()
+            )
             assert {
                 "command": "node_action",
                 "action": "traceroute",
@@ -1548,11 +1718,45 @@ def test_reopened_node_info_uses_daemon_position_cooldown():
                 "#node-info-exchange-position",
                 Button,
             ).disabled
+            assert "Vent 25 s" in str(
+                app.screen.query_one(
+                    "#node-info-exchange-position",
+                    Button,
+                ).label
+            )
             assert {
                 "command": "node_action_availability",
                 "action": "position_exchange",
                 "node_id": "!710365c8",
             } in backend.calls
+
+    run_scenario(scenario)
+
+
+def test_reopened_node_info_counts_down_traceroute_cooldown():
+    async def scenario():
+        backend = FakeBackend()
+        backend.traceroute_cooldown = 30
+        app = MeshPiTUI(
+            Settings(), requester=backend.request, watcher=None, update_checker=None
+        )
+        async with app.run_test(size=(160, 50)) as pilot:
+            await pilot.pause(0.3)
+            await pilot.press("f3", "up", "down", "shift+f10", "i", "t")
+            await pilot.pause(0.4)
+            assert isinstance(app.screen, NodeInfoScreen)
+
+            button = app.screen.query_one("#node-info-run-traceroute", Button)
+            help_widget = app.screen.query_one("#node-info-help", Static)
+            assert button.disabled is True
+            assert "Vent 30 s" in str(button.label)
+            assert "Ny traceroute om 30 sekund" in str(help_widget.render())
+
+            app.screen._action_cooldown_until["traceroute"] = time.monotonic() - 1
+            app.screen._refresh_action_buttons()
+            assert button.disabled is False
+            assert str(button.label).startswith("Køyr trace")
+            assert "Ny traceroute" not in str(help_widget.render())
 
     run_scenario(scenario)
 

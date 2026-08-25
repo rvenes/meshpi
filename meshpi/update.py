@@ -430,6 +430,8 @@ def _installer_command(plan: UpdatePlan, installer_path: Path, settings: Setting
             str(installer_path),
             "-Mode",
             settings.background_mode.capitalize(),
+            "-UpdaterProcessId",
+            str(os.getpid()),
         ]
     return ["/bin/sh", str(installer_path)]
 

@@ -2,7 +2,9 @@
     [string]$BaseUrl = "https://venes.org/meshpi",
     [ValidateSet("Always", "Session")]
     [string]$Mode = "Always",
-    [switch]$SkipAutostart
+    [switch]$SkipAutostart,
+    [ValidateRange(0, [int]::MaxValue)]
+    [int]$UpdaterProcessId = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -70,10 +72,22 @@ function Find-MeshPiPython {
 }
 
 function Stop-MeshPiProcesses {
-    param([string]$InstallRoot)
+    param([string]$InstallRoot, [int]$PreserveProcessId = 0)
+    $preservedProcessIds = New-Object 'Collections.Generic.HashSet[uint32]'
+    $ancestorProcessId = [uint32][Math]::Max(0, $PreserveProcessId)
+    for ($depth = 0; $ancestorProcessId -gt 0 -and $depth -lt 32; $depth++) {
+        [void]$preservedProcessIds.Add($ancestorProcessId)
+        $ancestor = Get-CimInstance Win32_Process `
+            -Filter "ProcessId = $ancestorProcessId" -ErrorAction SilentlyContinue
+        if (-not $ancestor -or $ancestor.ParentProcessId -eq $ancestorProcessId) {
+            break
+        }
+        $ancestorProcessId = [uint32]$ancestor.ParentProcessId
+    }
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
             $_.ProcessId -ne $PID -and
+            -not $preservedProcessIds.Contains([uint32]$_.ProcessId) -and
             $_.CommandLine -and
             $_.CommandLine.IndexOf(
                 $InstallRoot,
@@ -148,6 +162,85 @@ function Set-CurrentRelease {
     Move-Item -LiteralPath $temporary -Destination $CurrentFile -Force
 }
 
+function Write-MeshPiLaunchers {
+    param(
+        [string]$BinDir,
+        [string]$Release,
+        [string]$ConfigFile
+    )
+    $releaseName = Split-Path -Leaf $Release
+    $versionPattern = (
+        "^(?:legacy|" +
+        "(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)" +
+        "(?:(?:a|b|rc)(?:0|[1-9]\d*))?)$"
+    )
+    if ($releaseName -notmatch $versionPattern) {
+        throw "Ugyldig versjonsmappe for Windows-launcheren."
+    }
+    $releaseScripts = Join-Path $Release "venv\Scripts"
+    $releaseEnvPointer = Join-Path $releaseScripts "meshpi.env-path"
+    Write-Utf8NoBom $releaseEnvPointer ($ConfigFile + "`n")
+    $relativeMeshPi = "..\releases\$releaseName\venv\Scripts\meshpi.exe"
+    $meshpiCmd = Join-Path $BinDir "meshpi.cmd"
+    $daemonCmd = Join-Path $BinDir "meshpi-daemon.cmd"
+    @"
+@echo off
+"%~dp0$relativeMeshPi" %*
+exit /b %errorlevel%
+"@ | Set-Content -Encoding ASCII $meshpiCmd
+    @"
+@echo off
+"%~dp0$relativeMeshPi" daemon
+exit /b %errorlevel%
+"@ | Set-Content -Encoding ASCII $daemonCmd
+}
+
+function Start-LegacyLauncherCleanup {
+    param(
+        [string]$LegacyLauncher,
+        [string]$BinDir,
+        [string]$PowerShellExe,
+        [int]$UpdaterProcessId
+    )
+    if (-not (Test-Path -LiteralPath $LegacyLauncher -PathType Leaf)) {
+        return
+    }
+    try {
+        Remove-Item -LiteralPath $LegacyLauncher -Force -ErrorAction Stop
+        return
+    } catch {
+        if ($UpdaterProcessId -le 0) {
+            throw (
+                "Den gamle MeshPi-launcheren er i bruk. " +
+                "Lukk andre MeshPi-terminalar og køyr installatøren på nytt."
+            )
+        }
+    }
+    $cleanupFile = Join-Path $BinDir "meshpi-launcher-cleanup.ps1"
+    @'
+param(
+    [int]$UpdaterProcessId,
+    [string]$LegacyLauncher
+)
+$ErrorActionPreference = "SilentlyContinue"
+Wait-Process -Id $UpdaterProcessId -Timeout 120 -ErrorAction SilentlyContinue
+for ($attempt = 0; $attempt -lt 40; $attempt++) {
+    Remove-Item -LiteralPath $LegacyLauncher -Force -ErrorAction SilentlyContinue
+    if (-not (Test-Path -LiteralPath $LegacyLauncher)) {
+        break
+    }
+    Start-Sleep -Milliseconds 250
+}
+Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+'@ | Set-Content -Encoding UTF8 $cleanupFile
+    Start-Process -FilePath $PowerShellExe -ArgumentList @(
+        "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass",
+        "-File", ('"' + $cleanupFile + '"'),
+        "-UpdaterProcessId", [string]$UpdaterProcessId,
+        "-LegacyLauncher", ('"' + $LegacyLauncher + '"')
+    ) -WorkingDirectory $BinDir -WindowStyle Hidden
+}
+
 Write-InstallStep 1 "Kontrollerer Python 3.11 eller nyare …"
 $python = Find-MeshPiPython
 if (-not $python) {
@@ -190,6 +283,13 @@ $taskName = if ($env:MESHPI_TASK_NAME) {
     $env:MESHPI_TASK_NAME
 } else {
     "MeshPi Daemon"
+}
+if ($UpdaterProcessId -le 0) {
+    $installerProcess = Get-CimInstance Win32_Process `
+        -Filter "ProcessId = $PID" -ErrorAction SilentlyContinue
+    if ($installerProcess -and $installerProcess.ParentProcessId -gt 0) {
+        $UpdaterProcessId = [int]$installerProcess.ParentProcessId
+    }
 }
 
 New-Item -ItemType Directory -Force -Path @(
@@ -361,7 +461,7 @@ BACKGROUND_MODE=$modeValue
     ) "MeshPi-sjølvtesten feila."
 
     Write-InstallStep 7 "Aktiverer MeshPi og konfigurerer bakgrunnstenesta …"
-    Stop-MeshPiProcesses $installRoot
+    Stop-MeshPiProcesses $installRoot $UpdaterProcessId
     $legacyVenv = Join-Path $installRoot "venv"
     if (-not $oldRelease -and (Test-Path -LiteralPath $legacyVenv)) {
         $legacyPython = Join-Path $legacyVenv "Scripts\python.exe"
@@ -389,19 +489,9 @@ BACKGROUND_MODE=$modeValue
     $daemonCmd = Join-Path $binDir "meshpi-daemon.cmd"
     $launcherFile = Join-Path $binDir "meshpi-launcher.ps1"
     $envPointerFile = Join-Path $binDir "meshpi.env-path"
-    Copy-Item -LiteralPath $releaseMeshPi -Destination $nativeLauncher -Force
     Remove-Item -LiteralPath $launcherFile -Force -ErrorAction SilentlyContinue
     Write-Utf8NoBom $envPointerFile ($configFile + "`n")
-    @"
-@echo off
-"%~dp0meshpi.exe" %*
-exit /b %errorlevel%
-"@ | Set-Content -Encoding ASCII $meshpiCmd
-    @"
-@echo off
-"%~dp0meshpi.exe" daemon
-exit /b %errorlevel%
-"@ | Set-Content -Encoding ASCII $daemonCmd
+    Write-MeshPiLaunchers $binDir $release $configFile
     $supervisorFile = Join-Path $binDir "meshpi-supervisor.ps1"
     $managerFile = Join-Path $binDir "meshpi-service.ps1"
     $powerShellExe = Join-Path ([Environment]::SystemDirectory) `
@@ -409,6 +499,12 @@ exit /b %errorlevel%
     if (-not (Test-Path -LiteralPath $powerShellExe -PathType Leaf)) {
         throw "Fann ikkje Windows PowerShell på den godkjende systemstien."
     }
+    $startupDir = if ($env:MESHPI_STARTUP_DIR) {
+        $env:MESHPI_STARTUP_DIR
+    } else {
+        [Environment]::GetFolderPath("Startup")
+    }
+    New-Item -ItemType Directory -Force -Path $startupDir | Out-Null
     @"
 `$ErrorActionPreference = "Continue"
 while (`$true) {
@@ -425,7 +521,7 @@ while (`$true) {
 "@ | Set-Content -Encoding UTF8 $supervisorFile
     @"
 param([ValidateSet("start", "enable", "disable")][string]`$Action)
-`$startup = [Environment]::GetFolderPath("Startup")
+`$startup = "$startupDir"
 `$shortcutFile = Join-Path `$startup "MeshPi Daemon.lnk"
 if (`$Action -eq "enable") {
     `$shell = New-Object -ComObject WScript.Shell
@@ -461,7 +557,7 @@ if (`$Action -eq "enable") {
     $env:Path = "$binDir;$env:Path"
 
     if ($env:MESHPI_SKIP_TASK -ne "1") {
-        $oldStartup = Join-Path ([Environment]::GetFolderPath("Startup")) "MeshPi-daemon.vbs"
+        $oldStartup = Join-Path $startupDir "MeshPi-daemon.vbs"
         Remove-Item -LiteralPath $oldStartup -Force -ErrorAction SilentlyContinue
         & $powerShellExe -NoProfile -ExecutionPolicy Bypass `
             -File $managerFile disable
@@ -497,12 +593,10 @@ if (`$Action -eq "enable") {
             }
         }
         if (-not $ready) {
-            Stop-MeshPiProcesses $installRoot
+            Stop-MeshPiProcesses $installRoot $UpdaterProcessId
             if ($oldRelease -and (Test-Path -LiteralPath $oldRelease)) {
                 Set-CurrentRelease $currentFile $oldRelease
-                Copy-Item -LiteralPath (
-                    Join-Path $oldRelease "venv\Scripts\meshpi.exe"
-                ) -Destination $nativeLauncher -Force
+                Write-MeshPiLaunchers $binDir $oldRelease $configFile
                 Remove-Item -LiteralPath $previousFile -Force `
                     -ErrorAction SilentlyContinue
                 & $powerShellExe -NoProfile -ExecutionPolicy Bypass `
@@ -513,6 +607,8 @@ if (`$Action -eq "enable") {
         }
     }
 
+    Start-LegacyLauncherCleanup `
+        $nativeLauncher $binDir $powerShellExe $UpdaterProcessId
     Write-InstallStep 8 "Installasjonen er ferdig."
     Write-Host "MeshPi $version er installert i $modeValue-modus." -ForegroundColor Green
     Write-Host "Opne eit nytt terminalvindauge og start med: meshpi"

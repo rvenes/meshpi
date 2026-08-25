@@ -2,7 +2,7 @@
 
 Sist oppdatert: 24. august 2026
 Gjeldande stabilutgiving: MeshPi 0.8.7
-Gjeldande betautgiving: MeshPi 0.8.8b4
+Gjeldande betautgiving: MeshPi 0.8.8b8
 
 Denne fila er den varige overleveringa mellom utviklingstrådar. Ho skal
 oppdaterast når ei større funksjon blir ferdig, når eit viktig arkitekturval
@@ -142,7 +142,7 @@ og BLE i Docker, er ikkje ferdig plattformtesta.
 
 - Stabil- og betakanalen har kvar sitt signerte manifest og blir validerte
   uavhengig av kvarandre.
-- `meshpi update --beta` vel uttrykkeleg den interne betakanalen. Vanleg
+- `meshpi update --beta` vel uttrykkeleg den separate betakanalen. Vanleg
   `meshpi update` held fram med å bruke berre stabilkanalen.
 - Releaseverktøyet støttar PEP 440-førehandsversjonar som `0.9.0b1` utan at
   den stabile manifestpeikaren blir endra.
@@ -185,6 +185,19 @@ og BLE i Docker, er ikkje ferdig plattformtesta.
   eksplisitte, tillatne spørjingsvariantar. Bandit har ingen middels eller høge
   funn.
 
+### Samtaleliste og Nodeinfo i 0.8.8b5–0.8.8b8
+
+- Uleste samtalar får ei heildekkjande lyseblå markering, medan nodefokus i
+  høgre nodeliste ikkje lenger legg ei konkurrerande mørkeblå markering i
+  samtalelista.
+- Direkte samtalar har kompakte namn utan gjenteken `DM`-tekst og blir grupperte
+  per kanal, slik at fleire samtalar er synlege samstundes.
+- Windows-wrapperane køyrer den aktive, versjonsspesifikke programfila og kan
+  derfor oppdaterast sjølv om den gamle launcher-fila er låst.
+- Telemetri-, posisjons- og traceroutehistorikken i Nodeinfo viser dato og tid.
+- Traceroute- og posisjonsknappane viser synleg nedtelling gjennom den lokale
+  30-sekunds cooldown-perioden.
+
 ### Milepålar
 
 | Versjon | Viktigaste endring |
@@ -204,6 +217,10 @@ og BLE i Docker, er ikkje ferdig plattformtesta.
 | 0.8.8b2 | Windows-bootstrap frå 0.8.7 med sanert oppdateringsmiljø |
 | 0.8.8b3 | Tapsfri schema-migrering og reconnect etter suspend |
 | 0.8.8b4 | Samtalespesifikk send-historikk, automatisk kopiering og SQL-herding |
+| 0.8.8b5 | Tydeleg ulestmarkering og versjonsspesifikke Windows-wrapperar |
+| 0.8.8b6 | Heildekkjande ulestfarge utan konkurrerande samtalefokus |
+| 0.8.8b7 | Kompakte, kanalgrupperte direkte samtalar |
+| 0.8.8b8 | Dato i Nodeinfo-loggar og synleg cooldown-nedtelling |
 
 ## Avklaringar som alt er tekne
 

@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.8.8b4",
-  "published_at": "2026-08-23T22:31:49Z",
+  "latest_version": "0.8.8b8",
+  "published_at": "2026-08-24T03:50:30Z",
   "minimum_python": "3.11",
   "release_notes_url": "https://venes.org/meshpi/beta/",
   "package": {
-    "url": "https://venes.org/meshpi/beta/downloads/meshpi-0.8.8b4-py3-none-any.whl",
-    "filename": "meshpi-0.8.8b4-py3-none-any.whl",
-    "sha256": "08204296ed7abf18359cb06ee5f94e9a5aeeaebc915ec9d9a0ff16964a1f2e4f",
-    "size": 134478,
+    "url": "https://venes.org/meshpi/beta/downloads/meshpi-0.8.8b8-py3-none-any.whl",
+    "filename": "meshpi-0.8.8b8-py3-none-any.whl",
+    "sha256": "f780c009a50c406dad886f440eb601fd08d074d67f7e0311c0f0edbc5fcb173d",
+    "size": 134835,
     "format": "wheel"
   },
   "locks": {
@@ -49,20 +49,20 @@
     },
     "windows": {
       "url": "https://venes.org/meshpi/beta/install-windows.ps1",
-      "sha256": "d932c3642412cc9bc1a9a613ff3280ede4bcb2a036efd44e5ed3120938922b84",
-      "size": 21481,
+      "sha256": "446ed7c9e089bdd1061825daa1f7f28f4d6e605fddd84942d948f2d3198102d0",
+      "size": 25092,
       "update_command": "meshpi update --beta"
     }
   },
   "release_notes": [
-    "Samtalespesifikk send-historikk med pil opp/ned og gjenoppretting av utkast.",
-    "Automatisk kopiering av markert chattekst, med Ctrl+C og terminalmarkering framleis tilgjengeleg.",
-    "Schema-migreringa bruker eksplisitt tillatne SQL-variantar utan middels eller høge Bandit-funn."
+    "Nodeinfo-loggane viser dato og tid utan å gøyme eksisterande kolonnar.",
+    "Traceroute og posisjonsutveksling viser synleg nedtelling gjennom cooldown-perioden.",
+    "Chatforbetringane, den kompakte samtalelista og Windows-launcherrettinga frå tidlegare 0.8.8-betaer er samla i den offentlege betaen."
   ],
   "channel": "beta",
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "pgPbtISvTxW1lZny3P08+v/k68i4r+LkQh5KiPpGri1RQAwjico+C6H1fZPJ0lGFE5SCn82KgnVfKsR/MB7Z1QzPcTzkT7e5PahKHCbAlIFvQNES0yPbH3uNajGMt++MT8E7zMHOQ8b00dncj7T4ytJQd46E+KDS/DYrHtX0is8HcBgfh+sPXFnOSbrbFhGPjujV3aDzBbgSe5O1tXrPWvww+aJS8As15NuA2m1MYLFYr+HAzRQH5BxtmXg2/m+PCdm4lnY1az2DIzLtWus1g2jSj48VvJDAY0La+TDMSgmwZ/BgTuZGhgm0TPlYKukEBdh7LN+8bnoAiGGWBe7JrBQR6wgT9HBHnKNRWf1RN5SEhxVJ7g6RFESs/jyO7TOMGIO2DVW6jUwZSj8Gr3ytrQBizMUc1jr1Wqhu5xQD15hlYIhnYs1i6Rbg7JZn3FaIyEG2c1DbPRYDIDqeuGm5NSGytzoHSeRuELpnCwOTCvWgJUXgsjknnbDO2NPrSlal"
+    "value": "ADTj8IlP3mftES20JA0DGJ3J6wS6jkERWltl5C+Ue1SeSvOgLoU/0k7h3rGCo8lxolAL0MPNvvh6gBg7rWBY++rTCz70zOAAo9Ph/5KPX45/0ze7qGf3ys+IgZFwqL+QtsMHLy+KXpLdRgpu9Bv9+cfSd95yKKuxx0NQL3Q2qp0lqd7qaW+nAzcjBpUcBd1LLF3/NCJ4GWbXhbLCDoR0lsCo+iPIjgGidQ4cfDxTG1qIAtnwW0I0rt3VMKE7onPP4a/JttqIbi46u8bj15Cx04fMaEz8WZgMpQrcpTrJ3lN2xJMTGfrULdONDW8+5g5zW8gv+31/kYuV+iD60WkVLCZZuYb8ZKRSHwwjbLP1mZldH4ro/gNtZUBMPuhz1lSeMjNtsCEaxoPR3YIA8TOQ/zlrbFba8XFzH/w7S8ZyxxK9NguE0K4nAOpncLyX/oA2LH5MPzDWXargS6hCUk4tN67WQhznnJeYaJjB6RqyXowlZ1yvMiQnY31DiysGF5r4"
   }
 }

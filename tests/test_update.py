@@ -16,6 +16,7 @@ from meshpi.update import (
     UpdateCheckError,
     UpdatePlan,
     _fetch_manifest,
+    _installer_command,
     _safe_installer_environment,
     apply_update,
     parse_update_manifest,
@@ -187,7 +188,7 @@ def test_beta_manifest_reports_update_for_current_stable_version():
     )
 
     assert notice is not None
-    assert notice.latest_version == "0.8.8b4"
+    assert notice.latest_version == "0.8.8b8"
     assert notice.command == "sudo meshpi update --beta"
 
 
@@ -289,6 +290,29 @@ def test_apply_update_downloads_verified_private_bundle(monkeypatch):
     assert installed == "0.7.0"
     assert len(calls) == 1
     assert not calls[0][1].exists()
+
+
+def test_windows_update_passes_updater_process_id(monkeypatch):
+    plan = UpdatePlan(
+        current_version="0.8.8b4",
+        latest_version="0.8.8b5",
+        platform="windows",
+        manifest={"latest_version": "0.8.8b5"},
+        manifest_bytes=b"{}",
+        installer=_artifact("installer", "install-windows.ps1", b"x"),
+        package=_artifact("pakke", "meshpi.whl", b"x"),
+        lock=_artifact("lås", "windows.txt", b"x"),
+        channel="beta",
+    )
+    monkeypatch.setattr("meshpi.update.os.getpid", lambda: 4321)
+
+    command = _installer_command(
+        plan,
+        Path("install-windows.ps1"),
+        Settings(background_mode="always"),
+    )
+
+    assert command[-2:] == ["-UpdaterProcessId", "4321"]
 
 
 def test_apply_update_rejects_tampered_download(monkeypatch):

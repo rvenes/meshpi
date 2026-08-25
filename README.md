@@ -187,7 +187,9 @@ Bruk `meshpi update --check` for berre å sjekke. Sjølve installasjonen krev at
 du skriv `OPPDATER`, eller at du legg til `--yes` for ei uttrykkeleg
 ikkje-interaktiv stadfesting.
 
-Interne testarar kan uttrykkeleg velje den separate betakanalen på venes.org:
+Alle som vil prøve komande forbetringar, kan uttrykkeleg velje den separate
+betakanalen på venes.org. Beta kan innehalde feil og bør ikkje brukast der
+stabil drift er avgjerande:
 
 ```bash
 # Linux, always-modus
@@ -202,9 +204,11 @@ meshpi update --beta
 meshpi update --beta
 ```
 
-Beta er eit eingongsval for kvar oppdatering. TUI-en og `meshpi update` utan
-`--beta` sjekkar alltid berre den stabile kanalen. Betautgåver bruker versjonar
-som `0.9.0b1`; den endelege `0.9.0` blir rekna som nyare enn alle 0.9.0-betaer.
+`--beta` finst frå MeshPi 0.8.6. Eldre installasjonar må først bruke den fulle
+beta-installatøren frå `https://venes.org/meshpi/beta/`. Beta er eit eingongsval
+for kvar oppdatering. TUI-en og `meshpi update` utan `--beta` sjekkar alltid
+berre den stabile kanalen. Betautgåver bruker versjonar som `0.9.0b1`; den
+endelege `0.9.0` blir rekna som nyare enn alle 0.9.0-betaer.
 
 TUI-en sjekkar `https://venes.org/meshpi/version.json` ved oppstart og viser
 `meshpi update` i ei lokal systemmelding når ein ny versjon finst. Kommandoen
@@ -465,7 +469,7 @@ Alle CLI-kommandoane:
 | `meshpi doctor [--offline]` | Køyr sjølvtest; `--offline` krev ikkje ein tilgjengeleg node. |
 | `meshpi export [FIL] [--force]` | Eksporter heile databasen som UTF-8 JSON Lines. |
 | `meshpi service {status,start,stop,enable,disable}` | Vis eller styr bakgrunnstenesta og autostart. |
-| `meshpi update [--check] [--yes] [--beta]` | Sjekk eller installer ei signert oppdatering; `--beta` vel den interne betakanalen. |
+| `meshpi update [--check] [--yes] [--beta]` | Sjekk eller installer ei signert oppdatering; `--beta` vel den opne betakanalen. |
 | `meshpi status` | Vis sambands- og tilkoplingsstatus. |
 | `meshpi nodes [--search TEKST] [--sort name\|seen\|id]` | Vis, filtrer og sorter kjende nodar. |
 | `meshpi node NODE-ID` | Vis alle lagra detaljar om éin node. |
@@ -799,10 +803,14 @@ lagd i tilbakekallingslista i neste trygt distribuerte utgiving. Sjå
 Bruk denne rekkjefølgja:
 
 1. Kontroller `meshpi status` og `meshpi nodes` utan å sende.
-2. La tenesta ta imot ei manuelt send melding på kanal 0.
-3. Send éi tydeleg merkt testmelding med `meshpi send-public`.
-4. Send éi tydeleg merkt DM til ein på førehand avtalt node-ID.
-5. Kontroller historikk, transportmetadata og eventuell ACK.
+2. Test mottak passivt utan at agenten sender på public-kanalen.
+3. Dersom brukaren uttrykkeleg har bestilt ei ekte sending, stadfest den fulle
+   mottakar-ID-en og send berre ei tydeleg merkt DM til den avtalte noden.
+4. Kontroller historikk, transportmetadata og eventuell ACK/NAK.
+
+Ein agentstyrt live-test skal aldri sende på public-kanalen. Public kan bli
+vidaresendt til MQTT og nå andre delar av mesh-nettet. DM-sending krev ny,
+uttrykkeleg godkjenning for den aktuelle testen.
 
 Ikkje bruk Meshtastic sine konfigurasjonskommandoar gjennom same TCP-node medan
 MeshPi køyrer.

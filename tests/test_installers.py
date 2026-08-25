@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -361,13 +362,22 @@ def test_windows_installer_reads_utf8_paths_and_environment() -> None:
 
     assert "Get-Content -LiteralPath $Path -Encoding UTF8" in windows
     assert "[IO.File]::ReadAllText(" in windows
-    assert 'Copy-Item -LiteralPath $releaseMeshPi -Destination $nativeLauncher' in windows
+    assert 'Copy-Item -LiteralPath $releaseMeshPi -Destination $nativeLauncher' not in windows
     assert 'Write-Utf8NoBom $envPointerFile ($configFile + "`n")' in windows
-    assert '"%~dp0meshpi.exe" %*' in windows
+    assert 'Write-Utf8NoBom $releaseEnvPointer ($ConfigFile + "`n")' in windows
+    assert '"%~dp0$relativeMeshPi" %*' in windows
     assert "ValueFromRemainingArguments" not in windows
     assert "Set-Content -Encoding ASCII $meshpiCmd" in windows
     assert 'set /p MESHPI_CURRENT=<' not in windows
     assert "Remove-Item -LiteralPath $previousFile" in windows
+    assert "Write-MeshPiLaunchers $binDir $oldRelease $configFile" in windows
+    assert "Start-LegacyLauncherCleanup" in windows
+    assert "-WindowStyle Hidden" in windows
+    assert "$ancestor.ParentProcessId" in windows
+    assert "$preservedProcessIds.Contains([uint32]$_.ProcessId)" in windows
+    assert "$installerProcess.ParentProcessId" in windows
+    assert "$env:MESHPI_STARTUP_DIR" in windows
+    assert '$oldStartup = Join-Path $startupDir "MeshPi-daemon.vbs"' in windows
 
 
 @pytest.mark.skipif(
@@ -426,7 +436,16 @@ def test_windows_env_helpers_preserve_non_ascii_values(tmp_path) -> None:
 def test_windows_launcher_preserves_all_arguments_and_exit_code(tmp_path) -> None:
     bin_dir = tmp_path / "Brukar Håkon" / "bin"
     bin_dir.mkdir(parents=True)
-    probe = bin_dir / "meshpi.exe"
+    probe = (
+        tmp_path
+        / "Brukar Håkon"
+        / "releases"
+        / "0.8.8b5"
+        / "venv"
+        / "Scripts"
+        / "meshpi.exe"
+    )
+    probe.parent.mkdir(parents=True)
     source = """
 using System;
 using System.IO;
@@ -468,7 +487,7 @@ public static class Probe {
     wrapper = bin_dir / "meshpi.cmd"
     wrapper.write_text(
         "@echo off\r\n"
-        '"%~dp0meshpi.exe" %*\r\n'
+        '"%~dp0..\\releases\\0.8.8b5\\venv\\Scripts\\meshpi.exe" %*\r\n'
         "exit /b %errorlevel%\r\n",
         encoding="ascii",
         newline="",
@@ -482,12 +501,91 @@ public static class Probe {
     )
 
     assert result.returncode == 7, (result.stdout, result.stderr)
-    encoded = (bin_dir / "args.txt").read_text(encoding="utf-8").splitlines()
+    encoded = probe.with_name("args.txt").read_text(encoding="utf-8").splitlines()
     decoded = [
         base64.b64decode(value).decode("utf-8")
         for value in encoded
     ]
     assert decoded == arguments
+
+
+@pytest.mark.skipif(
+    shutil.which("powershell.exe") is None,
+    reason="krev Windows PowerShell",
+)
+def test_windows_cleanup_waits_for_locked_legacy_launcher(tmp_path) -> None:
+    bin_dir = tmp_path / "Brukar Håkon" / "bin"
+    bin_dir.mkdir(parents=True)
+    legacy_launcher = bin_dir / "meshpi.exe"
+    legacy_launcher.write_bytes(b"legacy")
+    ready_file = tmp_path / "locked"
+
+    def ps_quote(path: Path) -> str:
+        return str(path).replace("'", "''")
+
+    locker = subprocess.Popen(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            (
+                f"$stream = [IO.File]::Open('{ps_quote(legacy_launcher)}', "
+                "[IO.FileMode]::Open, [IO.FileAccess]::Read, "
+                "[IO.FileShare]::Read); "
+                f"[IO.File]::WriteAllText('{ps_quote(ready_file)}', 'klar'); "
+                "Start-Sleep -Seconds 2; $stream.Dispose()"
+            ),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not ready_file.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert ready_file.exists()
+
+        function = _powershell_function(
+            _text("install-windows.ps1"), "Start-LegacyLauncherCleanup"
+        )
+        script = tmp_path / "start-cleanup.ps1"
+        script.write_text(
+            "\ufeff"
+            + function
+            + "\n"
+            + "Start-LegacyLauncherCleanup "
+            + f"-LegacyLauncher '{ps_quote(legacy_launcher)}' "
+            + f"-BinDir '{ps_quote(bin_dir)}' "
+            + "-PowerShellExe 'powershell.exe' "
+            + f"-UpdaterProcessId {locker.pid}\n",
+            encoding="utf-8",
+        )
+        subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script),
+            ],
+            check=True,
+            capture_output=True,
+        )
+
+        deadline = time.monotonic() + 10
+        cleanup_file = bin_dir / "meshpi-launcher-cleanup.ps1"
+        while legacy_launcher.exists() and time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert not legacy_launcher.exists()
+        deadline = time.monotonic() + 5
+        while cleanup_file.exists() and time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert not cleanup_file.exists()
+    finally:
+        locker.wait(timeout=10)
 
 
 def test_posix_installers_replace_config_atomically_and_clear_bad_rollback() -> None:

@@ -255,9 +255,11 @@
           blir tekne vare på.
         </p>
         <p>
-          Interne testarar kan velje ei signert førehandsutgåve med
-          <code>meshpi update --beta</code>. Utan <code>--beta</code> blir berre
-          den stabile kanalen brukt.
+          Alle kan velje den signerte betakanalen med
+          <code>meshpi update --beta</code>. Kommandoen krev MeshPi 0.8.6 eller
+          nyare. Eldre installasjonar bruker den fulle installasjonsvegen på
+          <a href="beta/">betasida</a>. Beta kan innehalde feil; utan
+          <code>--beta</code> blir berre den stabile kanalen brukt.
         </p>
         <p>
           MeshPi sjekkar <a href="version.json">version.json</a> ved oppstart.
@@ -329,7 +331,7 @@
         <div><code>meshpi doctor [--offline]</code><span>Køyr sjølvtest; offline krev ikkje ein tilgjengeleg node.</span></div>
         <div><code>meshpi export [FIL] [--force]</code><span>Eksporter heile databasen som UTF-8 JSON Lines utan å stoppe tenesta.</span></div>
         <div><code>meshpi service {status,start,stop,enable,disable}</code><span>Vis eller styr tenesta og autostart.</span></div>
-        <div><code>meshpi update [--check] [--yes] [--beta]</code><span>Sjekk eller installer ei signert oppdatering; <code>--beta</code> vel den interne betakanalen.</span></div>
+        <div><code>meshpi update [--check] [--yes] [--beta]</code><span>Sjekk eller installer ei signert oppdatering; <code>--beta</code> vel den opne betakanalen frå MeshPi 0.8.6.</span></div>
         <div><code>meshpi status</code><span>Vis sambands- og tilkoplingsstatus.</span></div>
         <div><code>meshpi nodes [--search TEKST] [--sort name|seen|id]</code><span>Vis, filtrer og sorter kjende nodar.</span></div>
         <div><code>meshpi node NODE-ID</code><span>Vis alle lagra detaljar om éin node.</span></div>

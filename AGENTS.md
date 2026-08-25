@@ -1,307 +1,129 @@
-# Arbeidsinstruks for AI-agentar
+# Arbeidsinstruks for MeshPi
 
-Denne fila gjeld heile MeshPi-repositoriet. Ho forklarer korleis prosjektet
-skal utviklast, testast og publiserast. Følg alltid nyare og meir konkrete
-instruksjonar frå brukaren dersom dei kolliderer med denne fila.
+Denne fila gjeld heile MeshPi-repositoriet. Følg den aktive globale
+instruksjonsstrukturen kumulativt når oppgåva utløyser maskin-, Mac-,
+Syncthing- eller venes.org-arbeid. Utførlege releaseprosedyrar står i
+[`RELEASING.md`](RELEASING.md).
 
-## Mål og tryggleiksgrenser
+## Radio- og datatryggleik
 
-MeshPi er ein terminalklient for Meshtastic. Bakgrunnstenesta eig sambandet til
-radioen og lagrar meldingar lokalt; CLI/TUI snakkar med tenesta over IPC på
-loopback.
-
-- Endra aldri konfigurasjonen på ein Meshtastic-node.
-- Send aldri ei ekte melding på public-kanalen under live-test. Public kan bli
-  vidaresendt til MQTT og plukka opp andre stader i mesh-nettet. Ekte
-  radiosending skal berre vere DM etter at brukaren uttrykkeleg har bedt om
-  testen og oppgitt eller stadfesta mottakar.
-- Automatiske testar skal mocke Meshtastic og skal ikkje sende på radio.
-- Ver ekstra varsam på maskiner som køyrer andre produksjonstenester. Avgrens
-  start/stopp til MeshPi og varsle før ei MeshPi-teneste blir starta på nytt.
-- Bevar eksisterande database, profilar og konfigurasjon ved installasjon og
-  oppdatering. Sletting av brukardata krev uttrykkeleg godkjenning.
+- Endra aldri kanal-, radio- eller annan konfigurasjon på ein Meshtastic-node.
+- Automatiske testar skal mocke Meshtastic og skal aldri sende på radio.
+- Send aldri ei ekte melding på public-kanalen under agentstyrt live-test.
+  Public kan bli vidaresendt til MQTT og nå andre delar av mesh-nettet.
+- Ekte radiosending skal berre vere ei tydeleg merkt DM etter at brukaren har
+  bedt om den aktuelle testen og den fulle mottakar-ID-en er stadfesta.
+- Bevar database, profilar, historikk og konfigurasjon ved installasjon,
+  oppdatering og test. Sletting av brukardata krev uttrykkeleg godkjenning.
 - Ei ny installering skal ikkje ha ein førehandsvald node. IP-adresser,
-  serienummer, node-ID-ar og vertsnamn frå utviklingsmiljøet skal aldri
-  distribuerast som standardverdiar.
-- Ikkje bind IPC til andre adresser enn `127.0.0.1`, `::1` eller `localhost`.
+  serienummer, node-ID-ar og vertsnamn frå utviklingsmiljøet skal aldri bli
+  distribuerte standardverdiar.
 - Meshtastic TCP på port 4403 er ukryptert. Ikkje framstill det som trygt over
   eit ubeskytta nett.
 
-## Språk og kodepraksis
+## Arkitektur og IPC
+
+- Berre daemonen skal eige Meshtastic-sambandet og SQLite-fila.
+- MeshPi kan ha fleire lagra tilkoplingsprofilar, men berre éin aktiv gateway
+  om gongen.
+- CLI, TUI og nye grensesnitt skal bruke den lokale IPC-protokollen; dei skal
+  ikkje opne parallelle radio- eller databasesamband.
+- IPC skal vere lokal-only: privat Unix-socket på Linux/macOS eller eksklusiv
+  loopback-TCP på Windows. TCP skal berre godta `127.0.0.1`, `::1` eller
+  `localhost` og skal aldri bindast til ei ekstern adresse.
+- IPC-token og private socketrettar skal bevarast. Nye transporttypar skal inn
+  bak daemonen og den eksisterande profilmodellen.
+
+## Utviklingskontrakt og kvalitetsportar
 
 - Brukargrensesnitt, feilmeldingar og brukarvend dokumentasjon skal vere på
-  nynorsk.
-- Python-identifikatorar og korte tekniske kommentarar kan vere på engelsk.
+  nynorsk. Python-identifikatorar og korte tekniske kommentarar kan vere på
+  engelsk.
 - Støtta Python-versjon er 3.11 eller nyare.
 - Hald CLI-kompatibilitet når det er mogleg, og legg testar til nye funksjonar
   og feilrettingar.
-- Ikkje gjer tilfeldige formatteringar eller endringar utanfor oppgåva.
-- Arbeid rundt eksisterande lokale endringar; dei tilhøyrer brukaren.
+- Før levering skal minst desse vere grøne:
 
-## Prosjektkart
+  ```text
+  python -m pytest -q
+  python -m ruff check .
+  ```
 
-- `meshpi/`: programkode, daemon, IPC, database, CLI og Textual-TUI.
-- `tests/`: testar; Meshtastic-sambandet blir mocka.
-- `installers/`: installasjon og avinstallasjon for Linux, macOS og Windows.
-- `locks/`: plattformspesifikke, hash-låste Python-avhengigheiter.
-- `scripts/prepare_release.py`: byggjer wheel, reknar hashar og signerer
-  `website/version.json`.
-- `website/`: kjeldefilene for `https://venes.org/meshpi/`.
-- `build/release-<versjon>/`: genererte utgivingsfiler; skal ikkje commitast.
-- `Dockerfile` og `docker-compose.yml`: valfri containerdrift. Systemd er
-  førstevalet på Raspberry Pi.
+- Ved tryggleiks- eller utgivingsarbeid skal Bandit køyrast dersom det er
+  installert. Ingen medium eller høge funn skal ignorerast.
+- Kontroller endra POSIX-skript med `sh -n` og endra PowerShell-skript med ein
+  PowerShell-syntakskontroll på Windows.
+- Rapporter presist kva som blei testa. Repoet har ingen eigen CI-workflow som
+  erstattar dei lokale portane.
 
-Arkitekturen har eitt viktig invariant: berre daemonen skal eige
-Meshtastic-sambandet og SQLite-fila. Nye grensesnitt skal bruke den lokale
-IPC-protokollen, ikkje opne eit parallelt radiosamband.
+## Live- og plattformtest
 
-## Vanleg utviklingsflyt
+- Les den gitignorerte `LOCAL_TESTING.md` før lokal live-, maskin- eller
+  signeringstest dersom fila finst. Ho skal aldri commitast, kopierast til ei
+  utgiving eller publiserast.
+- Start med lesande kontrollar som versjon, status, nodeliste, tenestestatus og
+  `meshpi doctor --offline`.
+- Mac-, Linux- og Windows-testar skal gjerast på den aktuelle plattforma og
+  følgje dei aktive globale vertsinstruksjonane. Private vertsdetaljar skal
+  berre liggje i lokale eller globale private instruksjonar.
+- På maskiner med andre produksjonstenester skal start/stopp avgrensast til
+  MeshPi. Varsle før ei MeshPi-teneste blir starta på nytt, og ikkje start ei
+  heil maskin på nytt berre for å teste MeshPi.
+- Dersom nødvendig plattform- eller tilgangsinformasjon manglar, stopp den
+  delen av testen i staden for å gjette.
 
-1. Les oppgåva og inspiser status før endringar:
+## Installatørar og låsefiler
 
-   ```text
-   git status --short
-   git diff
-   ```
-
-2. Opprett eller bruk eit isolert miljø og installer utviklingsavhengigheiter:
-
-   ```text
-   python -m venv .venv
-   python -m pip install -e ".[test,dev]"
-   ```
-
-   Kontroller versjonen i eit eksisterande miljø før det blir brukt:
-
-   ```text
-   .venv\Scripts\python --version
-   ```
-
-   På Windows, der fleire Python-versjonar kan vere installerte samstundes,
-   skal eit nytt miljø opprettast eksplisitt med støtta Python:
-
-   ```text
-   py -3.11 -m venv .venv
-   .venv\Scripts\python -m pip install -e ".[test,dev]"
-   ```
-
-   Eit eksisterande `.venv` som bruker Python 3.10 eller eldre, skal byggjast
-   på nytt; installasjon av ein ny global Python oppgraderer ikkje virtuelle
-   miljø automatisk.
-
-3. Gjer den minste samanhengande endringa. Oppdater testar og dokumentasjon i
-   same endring når åtferd eller kommandoar blir endra.
-
-4. Køyr relevante testar under arbeidet. Før levering skal minst dette vere
-   grønt:
-
-   ```text
-   python -m pytest -q
-   python -m ruff check .
-   ```
-
-5. Ved tryggleiks- eller utgivingsarbeid, køyr også dersom Bandit er installert:
-
-   ```text
-   python -m bandit -q -r meshpi scripts
-   ```
-
-   Vurder låge varsel konkret. Ingen medium eller høge funn skal ignorerast.
-
-6. Kontroller shell-syntaks for endra POSIX-skript med `sh -n`. Kontroller
-   PowerShell-syntaks på Windows når eit `.ps1`-skript er endra.
-
-7. Sjå gjennom `git diff --check`, heile diffen og `git status --short` før
-   commit. Testresultat skal rapporterast presist; ikkje sei at noko er testa
-   dersom det berre er lese eller simulert.
-
-## Live-testar
-
-Før lokal live-testing skal agenten lese `LOCAL_TESTING.md` dersom fila finst.
-Ho inneheld private SSH-alias, lokale adresser og rollene til testmaskinene.
-Fila er med vilje ignorert av Git og skal aldri commitast, kopierast til ei
-utgiving eller publiserast. Dersom ho manglar, bruk berre opplysningar brukaren
-gir i den aktuelle oppgåva; ikkje gjett adresser eller tilgang.
-
-Start med lesande kontrollar:
-
-```text
-meshpi --version
-meshpi status
-meshpi nodes
-meshpi doctor --offline
-meshpi service status
-```
-
-Ved ekte meldingstest skal public-steget i README-en ikkje brukast i dette
-miljøet. Test mottak passivt eller bruk ei tydeleg merkt DM til ein avtalt og
-stadfesta node-ID, berre etter uttrykkeleg beskjed frå brukaren.
-
-Mac-, Linux- og Windows-testar skal gjerast på den aktuelle plattforma. Private
-vertsnamn, SSH-alias og tilgangsdetaljar skal berre liggje i den gitignorerte
-`LOCAL_TESTING.md` eller i operatøren sine private instruksjonar utanfor
-repoet. Dei skal aldri leggjast i spora filer, commitast eller nemnast i
-offentlege loggar. Dersom instruksjonane ikkje er tilgjengelege, stopp før
-plattformarbeidet og spør brukaren.
-
-Ikkje start ei heil maskin på nytt berre for å teste MeshPi. Dersom omstart av
-maskina faktisk er nødvendig, varsle brukaren først.
-
-## Installasjon og tenestemodellar
-
-Alle plattformer støttar to modusar:
-
-- `always`: daemonen startar automatisk og lever vidare etter at TUI-en blir
-  lukka.
-- `session`: daemonen blir starta ved behov og kan stoppast når TUI-en blir
-  lukka.
-
-Installatørane skal vere idempotente, kontrollere signatur og SHA-256, bruke
-`pip --require-hashes`, byggje kvar versjon i ei eiga mappe og kunne rulle
-tilbake til førre fungerande versjon.
-
-Plattformdetaljar som ikkje må regresserast:
-
+- Alle plattformer støttar `always`- og `session`-modus.
+- Installatørane skal vere idempotente, kontrollere manifest/signatur og
+  SHA-256, bruke `pip --require-hashes`, byggje kvar versjon i eiga mappe,
+  bevare eksisterande data og kunne rulle tilbake til førre fungerande
+  versjon.
 - Linux: systemd-tenesta og `/opt/meshpi` må ikkje påverke andre tenester.
-- macOS: byte av `current`-symlenka skal bruke atomisk erstatting og ikkje BSD
+  Systemd er førstevalet på Raspberry Pi; Docker er valfritt og skal ikkje
+  eksponere IPC-porten på verten.
+- macOS: byte av `current`-symlenka skal vere atomisk og må ikkje bruke BSD
   `mv` mot ei symlenke til ei mappe. Vent til den gamle LaunchAgent-jobben er
   heilt fjerna før same label blir registrert på nytt.
-- Windows: autostart og prosessvakta er per brukar; behandl alle stiar som
+- Windows: autostart og prosessvakt er per brukar. Behandle alle stiar som
   bokstavlege stiar og bevar eksisterande konfigurasjon.
+- Direkte køyretidsavhengigheiter skal samsvare mellom `pyproject.toml` og
+  `locks/requirements.in`.
+- `locks/linux.txt`, `locks/macos.txt` og `locks/windows.txt` skal genererast
+  på rett operativsystem med hashane aktiverte. Kommandoforma står i kvar
+  låsefil og i `RELEASING.md`.
+- Etter ei avhengigheitsendring skal alle tre låser regenererast, full
+  testsuite køyrast, kvar lås installerast med `--require-hashes` på rett
+  plattform og manifestet signerast på nytt.
 
-## Avhengigheiter og låsefiler
+## Releaseintegritet
 
-Direkte køyretidsavhengigheiter skal samsvare mellom `pyproject.toml` og
-`locks/requirements.in`. `locks/linux.txt`, `locks/macos.txt` og
-`locks/windows.txt` er plattformspesifikke og må genererast på den aktuelle
-plattformen med `pip-compile --allow-unsafe --generate-hashes --strip-extras`.
-Kommandoen som sist blei brukt står i toppen av kvar låsefil.
+- Følg heile `RELEASING.md` ved versjons-, byggje-, signerings-, staging- og
+  releasearbeid.
+- Stabilkanalen skal berre peike på endelege versjonar. Betakanalen skal bruke
+  PEP 440-førehandsversjon og må aldri endre stabilmanifestet.
+- `scripts/prepare_release.py` skal generere dynamiske hashar, storleikar,
+  publiseringstid og signatur. Ikkje handrediger desse felta.
+- Den private signeringsnøkkelen skal vere utanfor repo, bygg og staging.
+  Bruk godkjend sti via argument eller `MESHPI_SIGNING_KEY`; ikkje søk breitt
+  etter nøklar eller skriv nøkkelsti/-innhald i loggar.
+- Manifestet skal binde nøyaktig wheel, tre plattformlåser og tre
+  installatørar. Ei byteendring i desse eller manifestet etter signering krev
+  ny bygging av metadata og ny signatur.
+- Versjon, kanal, utgåvetekst og artefaktlenkjer skal samsvare mellom kode,
+  testar, nettside, manifest, bygg og staging før publisering.
 
-Når ei avhengigheit blir endra:
+## Staging, publisering og lisens
 
-1. Oppdater både `pyproject.toml` og `locks/requirements.in`.
-2. Regenerer alle tre plattformfilene på rett operativsystem.
-3. Køyr full testsuite på nytt.
-4. Installer frå låsefila med `--require-hashes` på kvar plattform.
-5. Signer manifestet på nytt; ein endra låsefil gjer førre signatur ugyldig.
-
-## Versjonering
-
-MeshPi er i 0.x-serien. Bruk normalt:
-
-- patchversjon for feilrettingar og mindre UI-forbetringar;
-- minorversjon for større funksjonar eller merkbare grensesnittendringar.
-
-Interne førehandsutgåver bruker PEP 440-forma `X.Y.ZbN`, til dømes `0.9.0b1`.
-Dei skal byggjast med `scripts/prepare_release.py --channel beta`, publiserast
-berre under `website/beta/` og veljast uttrykkeleg med `meshpi update --beta`.
-Den stabile `website/version.json` skal aldri peike på ei førehandsutgåve.
-
-Ved versjonsauke skal desse stadene kontrollerast:
-
-- `pyproject.toml`
-- `meshpi/__init__.py`
-- versjonsforventningar i `tests/`
-- versjonsnummer, utgåvetekst og wheel-lenkje i `website/index.html`
-- utgåvenotat i `website/version.json`
-
-Ikkje handrediger dynamiske hashar, storleikar, publiseringstid eller signatur.
-`scripts/prepare_release.py` skal generere dei.
-
-## Byggje og signere ei utgiving
-
-Ei privat RSA-utgivingsnøkkel finst berre utanfor repoet. Ho skal aldri
-skrivast ut i terminaloutput, kopierast inn i prosjektet eller commitast. Bruk
-sti via argument eller miljøvariabelen `MESHPI_SIGNING_KEY`.
-
-Før releasebygging skal agenten lese den gitignorerte `LOCAL_TESTING.md`
-dersom ho finst. Der kan den lokale nøkkelstien og trygg bruk vere dokumentert.
-Dersom `MESHPI_SIGNING_KEY` ikkje er sett og lokal-fila ikkje gir ein eintydig
-sti, skal agenten spørje brukaren. Han skal ikkje gjennomsøkje brukarmapper
-breitt etter private nøklar eller skrive moglege nøkkelstiar til loggen.
-
-Frå prosjektre rota, etter versjonsauke og grøne testar:
-
-```text
-python scripts/prepare_release.py --signing-key <privat-nøkkelsti>
-```
-
-Skriptet:
-
-1. byggjer `build/release-<versjon>/meshpi-<versjon>-py3-none-any.whl`;
-2. reknar storleik og SHA-256 for wheel, tre låsefiler og tre installatørar;
-3. oppdaterer metadata i `website/version.json`;
-4. signerer det kanoniske manifestet med RSA-PKCS1v1.5/SHA-256;
-5. kopierer manifestet til utgivingsmappa.
-
-Køyr full testsuite etter signering. Signaturtestane skal då vere grøne. Kvar
-endring i wheel, installatør, låsefil eller manifest etter dette krev ny bygging
-og ny signatur.
-
-## Publisere på venes.org
-
-Publisering er ei ekstern endring og skal berre gjerast når brukaren ber om
-det. På hovudmaskina blir denne mappa synkronisert automatisk til webhotellet:
-
-```text
-H:\Koding\Venes.org\meshpi
-```
-
-Publiseringsmappa skal få:
-
-- `website/index.html`, `styles.css`, `script.js`, `.htaccess` og
-  `version.json` i rota;
-- alle installasjons- og avinstalleringsskript frå `installers/` i rota;
-- `LICENSE` i rota;
-- `locks/*.txt` under `locks/`;
-- den nye wheel-fila under `downloads/`.
-
-Ikkje kopier den private signeringsnøkkelen, `.env`, database, profilar,
-loggar, lokale byggjemiljø eller private utviklingsinstruksjonar.
-
-Etter at synkroniseringa har fått tid til å fullføre, last ned det offentlege
-`https://venes.org/meshpi/version.json` og kontroller:
-
-1. at `latest_version` er rett;
-2. at manifestsignaturen blir godkjend av `meshpi.signing`;
-3. at storleik og SHA-256 stemmer for alle sju artefaktar: wheel, tre
-   låsefiler og tre installatørar;
-4. at nettsida og wheel-lenkja svarar utan HTTP-feil.
-
-Ikkje test ein installatør frå venes.org før den offentlege signaturen og alle
-hashane er verifiserte. Installer deretter på dei plattformene endringa gjeld,
-og kontroller versjon, `current`-peikar, tenestestatus og
-`meshpi doctor --offline`. Ved installatørendringar bør same installatør køyrast
-to gonger for å avdekkje idempotens- og tenesterace.
-
-## Git og GitHub
-
-- Ikkje commit genererte `build/`-filer, virtuelle miljø, `.env`, data eller
-  loggar.
-- Bruk presise commit-meldingar som skildrar den ferdige endringa.
-- Ikkje push berre fordi ei lokal kodeendring er ferdig; push når brukaren har
-  bedt om publisering eller GitHub-oppdatering.
-- Ved ei publisert utgiving skal Git-versjonen, `website/version.json` og dei
-  offentlege filene vere identiske. Commit og push først etter at test og
-  offentleg verifikasjon er grøne.
-- Bruk aldri destruktive Git-kommandoar for å rydde bort endringar du ikkje
-  sjølv har laga.
-
-## Sjekkliste før ferdigmelding
-
-- [ ] Endringa er avgrensa til oppgåva og eksisterande brukarendringar er
-      bevarte.
-- [ ] Ingen utviklar-IP, node-ID, token, passord, privat nøkkel eller privat
-      vertsdetalj er lagd til.
-- [ ] `pytest`, Ruff og relevant skriptsyntaks er grøne.
-- [ ] README/nettside/installasjonskommandoar er oppdaterte dersom åtferda blei
-      endra.
-- [ ] Versjon og utgåvenotat samsvarar overalt.
-- [ ] Manifestet blei signert etter siste artefaktendring.
-- [ ] Offentleg signatur og alle artefakthashar er verifiserte etter opplasting.
-- [ ] Relevant plattforminstallasjon og offline doctor er testa.
-- [ ] Git-status, commit og push er rapporterte korrekt.
-
-MeshPi er GPL-3.0-only. Ved gjenbruk av tredjepartskode må lisensen vere
-kompatibel, kjelda må dokumenterast, og nødvendig opphavsrett/attribusjon må
-bevarast.
+- Lokal staging for den offentlege MeshPi-sida er
+  `H:\Koding\Venes.org\meshpi`. Staging publiserer ingenting automatisk.
+- Stabil- og betatreet, offentlege følgjefiler og kontrollane før/etter staging
+  er definerte i `RELEASING.md`.
+- Dersom brukaren bestiller publisering, skal den aktive globale
+  `venesorgupload.md`-flyten eigne preview, opplasting og offentleg
+  verifikasjon. Ikkje bruk konkurrerande FTP-, SFTP-, WinSCP- eller
+  synkroniseringslogikk.
+- Ikkje legg privat nøkkel, `.env`, database, profil, logg, eksport,
+  byggjemiljø eller private instruksjonar i staging eller utgiving.
+- MeshPi er GPL-3.0-only. Tredjepartskode må ha kompatibel lisens; kjelde,
+  opphavsrett og nødvendig attribusjon skal bevarast.

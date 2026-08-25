@@ -1,5 +1,5 @@
 # Direkte køyretidsavhengigheiter for MeshPi.
-# Generer plattformfilene med scripts/build-locks.* og commit resultatet.
+# Sjå RELEASING.md og kommandoen i hovudet på kvar plattformlås før regenerering.
 pip==26.1.2
 setuptools==83.0.0
 meshtastic==2.7.11
