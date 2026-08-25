@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from meshpi.i18n import tr
+
 VERSION_PATTERN = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
     r"(?:(a|b|rc)(0|[1-9]\d*))?$"
@@ -23,7 +25,7 @@ def version_key(value: str) -> tuple[int, int, int, int, int]:
     text = value.strip()
     match = VERSION_PATTERN.fullmatch(text)
     if match is None:
-        raise VersionError(f"Ugyldig versjonsnummer: {value}")
+        raise VersionError(tr("version.invalid", value=value))
     major, minor, patch, stage, stage_number = match.groups()
     return (
         int(major),

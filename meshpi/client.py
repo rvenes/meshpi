@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from typing import Any, Protocol
 
 from meshpi.config import Settings
+from meshpi.i18n import get_language, tr
 
 MAX_RESPONSE_BYTES = 2_000_000
 
@@ -32,7 +33,7 @@ class _SocketLineStream:
         if not line:
             raise StopIteration
         if len(line) > MAX_RESPONSE_BYTES:
-            raise CLIError("Svaret frå meshpi-tenesta er for stort")
+            raise CLIError(tr("client.response_too_large"))
         return line
 
     def readline(self, maximum: int) -> bytes:
@@ -90,13 +91,15 @@ def request(
         sock = _connect(settings, timeout)
     except OSError as exc:
         raise CLIUnavailableError(
-            "Får ikkje kontakt med meshpi-tenesta. "
-            "Kontroller med «meshpi service status»."
+            tr("client.unavailable")
         ) from exc
 
     try:
         with sock, sock.makefile("rwb") as stream:
-            authenticated = payload | {"token": settings.ipc_token}
+            authenticated = payload | {
+                "token": settings.ipc_token,
+                "language": get_language(),
+            }
             stream.write(
                 json.dumps(authenticated, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
                 + b"\n"
@@ -105,16 +108,15 @@ def request(
             raw = stream.readline(MAX_RESPONSE_BYTES + 1)
     except OSError as exc:
         raise CLIError(
-            "Sambandet med meshpi-tenesta blei brote før ho svarte. "
-            "Tenesta blir ikkje starta på nytt automatisk."
+            tr("client.connection_broken")
         ) from exc
     if not raw:
-        raise CLIError("Meshpi-tenesta lukka sambandet utan svar")
+        raise CLIError(tr("client.closed_without_response"))
     if len(raw) > MAX_RESPONSE_BYTES:
-        raise CLIError("Svaret frå meshpi-tenesta er for stort")
+        raise CLIError(tr("client.response_too_large"))
     response = json.loads(raw)
     if not response.get("ok"):
-        raise CLIError(str(response.get("error", "Ukjend feil")))
+        raise CLIError(str(response.get("error", tr("common.unknown_error"))))
     return response
 
 
@@ -132,6 +134,7 @@ def open_watch(
                     "command": "watch",
                     "conversation": conversation,
                     "token": settings.ipc_token,
+                    "language": get_language(),
                 },
                 ensure_ascii=False,
                 separators=(",", ":"),
@@ -150,10 +153,10 @@ def open_watch(
             posix_stream.flush()
             raw = posix_stream.readline(MAX_RESPONSE_BYTES + 1)
         if not raw or len(raw) > MAX_RESPONSE_BYTES:
-            raise CLIError("Ugyldig svar frå meshpi-tenesta")
+            raise CLIError(tr("client.invalid_response"))
         response = json.loads(raw)
         if not response.get("ok"):
-            raise CLIError(str(response.get("error", "Klarte ikkje starte overvaking")))
+            raise CLIError(str(response.get("error", tr("client.watch_failed"))))
         return sock, stream
     except Exception as exc:
         if stream is not None:
@@ -163,7 +166,7 @@ def open_watch(
         if isinstance(exc, CLIError):
             raise
         if isinstance(exc, OSError):
-            raise CLIError("Får ikkje kontakt med meshpi-tenesta") from exc
+            raise CLIError(tr("client.cannot_connect")) from exc
         raise
 
 
@@ -180,6 +183,7 @@ def open_export(settings: Settings) -> tuple[socket.socket, WatchStream]:
                 {
                     "command": "export",
                     "token": settings.ipc_token,
+                    "language": get_language(),
                 },
                 ensure_ascii=False,
                 separators=(",", ":"),
@@ -189,11 +193,11 @@ def open_export(settings: Settings) -> tuple[socket.socket, WatchStream]:
         sock.sendall(payload)
         raw = line_stream.readline(MAX_RESPONSE_BYTES + 1)
         if not raw or len(raw) > MAX_RESPONSE_BYTES:
-            raise CLIError("Ugyldig svar frå meshpi-tenesta")
+            raise CLIError(tr("client.invalid_response"))
         response = json.loads(raw)
         if not response.get("ok"):
             raise CLIError(
-                str(response.get("error", "Klarte ikkje starte databaseeksport"))
+                str(response.get("error", tr("client.export_failed")))
             )
         sock.settimeout(None)
         return sock, stream
@@ -205,5 +209,5 @@ def open_export(settings: Settings) -> tuple[socket.socket, WatchStream]:
         if isinstance(exc, CLIError):
             raise
         if isinstance(exc, OSError):
-            raise CLIError("Får ikkje kontakt med meshpi-tenesta") from exc
+            raise CLIError(tr("client.cannot_connect")) from exc
         raise

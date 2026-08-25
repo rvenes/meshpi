@@ -1,0 +1,14 @@
+{
+  "app.description": "Meshtastic chat for the terminal",
+  "language.current": "Language: {language}",
+  "language.saved": "Language set to {language}.",
+  "language.name.en": "English",
+  "language.name.nn": "Nynorsk",
+  "language.usage": "usage: meshpi language [nn|en]",
+  "common.cancel": "Cancel",
+  "common.close": "Close",
+  "common.error": "Error",
+  "common.next": "Next",
+  "common.previous": "Previous",
+  "common.unknown": "Unknown"
+}

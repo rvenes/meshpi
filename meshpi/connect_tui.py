@@ -13,8 +13,40 @@ from textual.widgets import Input, ListItem, ListView, Static
 from meshpi.client import request
 from meshpi.config import Settings
 from meshpi.connections import canonical_ble_identifier
+from meshpi.i18n import get_language, tr, using_language
 
 DISCOVERY_TIMEOUT_SECONDS = 30
+
+
+def _t(key: str, *, language: str | None = None, **values: Any) -> str:
+    if language is None:
+        return tr(f"connect.{key}", **values)
+    with using_language(language):
+        return tr(f"connect.{key}", **values)
+
+
+def _localize_bindings(app: Any, language: str) -> None:
+    for key, action, description_key in (
+        ("escape", "cancel", "binding.cancel"),
+        ("ctrl+q", "cancel", "binding.cancel"),
+        ("down", "next_choice", "binding.next"),
+        ("up", "previous_choice", "binding.previous"),
+        ("f4", "toggle_serial_ports", "binding.all_serial"),
+        ("f5", "refresh_discovery", "binding.refresh"),
+    ):
+        # Textual has no public per-instance binding replacement API.
+        app._bindings.key_to_bindings[key] = [
+            binding
+            for binding in app._bindings.key_to_bindings.get(key, [])
+            if binding.action != action
+        ]
+        app._bindings.bind(
+            key,
+            action,
+            _t(description_key, language=language),
+            priority=True,
+        )
+    app.refresh_bindings()
 
 
 def _serial_profile_available(
@@ -77,7 +109,9 @@ def build_connection_choices(
     data: dict[str, Any],
     *,
     include_all_serial: bool = False,
+    language: str | None = None,
 ) -> list[dict[str, Any]]:
+    selected_language = language or get_language()
     active_id = str(data.get("active_profile_id", ""))
     choices: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -111,7 +145,7 @@ def build_connection_choices(
             )
         )
         choice = {
-            "section": "Lagra",
+            "section": _t("section.saved", language=selected_language),
             "name": profile.get("name") or endpoint,
             "transport": transport,
             "endpoint": endpoint,
@@ -149,9 +183,9 @@ def build_connection_choices(
         choices.append(choice)
 
     for section, entries in (
-        ("USB / seriell", data.get("serial", [])),
-        ("Bluetooth / BLE", data.get("ble", [])),
-        ("TCP på lokalnettet", data.get("tcp", [])),
+        (_t("section.serial", language=selected_language), data.get("serial", [])),
+        (_t("section.ble", language=selected_language), data.get("ble", [])),
+        (_t("section.tcp", language=selected_language), data.get("tcp", [])),
     ):
         for entry in entries:
             transport = str(entry.get("transport", ""))
@@ -193,8 +227,9 @@ def build_connection_choices(
 
 
 class ConnectionItem(ListItem):
-    def __init__(self, choice: dict[str, Any]):
+    def __init__(self, choice: dict[str, Any], *, language: str | None = None):
         self.choice = choice
+        self.language = language or get_language()
         super().__init__(Static(self._label(), classes="connection-label"))
 
     def _label(self) -> Text:
@@ -212,7 +247,10 @@ class ConnectionItem(ListItem):
             style="cyan",
         )
         if unavailable:
-            text.append("  IKKJE TILKOPLA", style="bold yellow")
+            text.append(
+                f"  {_t('item.unavailable', language=self.language)}",
+                style="bold yellow",
+            )
         text.append("\n")
         text.append(
             f"  {self.choice['section']}  •  {self.choice['endpoint']}",
@@ -222,15 +260,15 @@ class ConnectionItem(ListItem):
 
 
 class ConnectionPickerApp(App[dict[str, Any] | None]):
-    TITLE = "MeshPi – ny tilkopling"
+    TITLE = "MeshPi"
     ENABLE_COMMAND_PALETTE = False
     BINDINGS = [
-        Binding("escape", "cancel", "Avbryt", priority=True),
-        Binding("ctrl+q", "cancel", "Avbryt", priority=True),
-        Binding("down", "next_choice", "Neste", priority=True),
-        Binding("up", "previous_choice", "Førre", priority=True),
-        Binding("f4", "toggle_serial_ports", "Alle serieportar", priority=True),
-        Binding("f5", "refresh_discovery", "Søk på nytt", priority=True),
+        Binding("escape", "cancel", "Cancel", priority=True),
+        Binding("ctrl+q", "cancel", "Cancel", priority=True),
+        Binding("down", "next_choice", "Next", priority=True),
+        Binding("up", "previous_choice", "Previous", priority=True),
+        Binding("f4", "toggle_serial_ports", "All serial ports", priority=True),
+        Binding("f5", "refresh_discovery", "Search again", priority=True),
     ]
 
     CSS = """
@@ -318,7 +356,10 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         requester=request,
         auto_discover: bool = False,
     ):
+        self.language = get_language()
         super().__init__()
+        self.title = self._text("title")
+        _localize_bindings(self, self.language)
         self.discovery = discovery
         self.settings = settings
         self.requester = requester
@@ -327,33 +368,38 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         self._discovering = False
         self._discovery_generation = 0
         self._closed = False
-        self.all_choices = build_connection_choices(discovery)
+        self.all_choices = build_connection_choices(
+            discovery,
+            language=self.language,
+        )
         choices_with_all_serial = build_connection_choices(
             discovery,
             include_all_serial=True,
+            language=self.language,
         )
         self.hidden_serial_count = len(choices_with_all_serial) - len(self.all_choices)
         self.filtered_choices = list(self.all_choices)
 
+    def _text(self, key: str, **values: Any) -> str:
+        return _t(key, language=self.language, **values)
+
     def compose(self) -> ComposeResult:
-        description = (
-            "Vel ei oppdaga/lagra eining, eller skriv IP, vertsnamn, "
-            "seriellsti eller ble://identifikator."
-        )
         with Container(id="picker"):
-            yield Static("Vel Meshtastic-tilkopling", id="picker-title")
-            yield Static(description, id="picker-description")
+            yield Static(self._text("picker.title"), id="picker-title")
+            yield Static(self._text("picker.description"), id="picker-description")
             yield Static("", id="discovery-status")
             yield Input(
-                placeholder="IP, vertsnamn, seriellsti eller ble://identifikator",
+                placeholder=self._text("picker.placeholder"),
                 id="connection-input",
             )
             yield Static("", id="choice-count")
             with ListView(id="connection-list"):
-                yield from (ConnectionItem(choice) for choice in self.filtered_choices)
+                yield from (
+                    ConnectionItem(choice, language=self.language)
+                    for choice in self.filtered_choices
+                )
             yield Static(
-                "Skriv: filtrer/mål   ↑/↓: vel   Enter: kopla til   "
-                "F5: søk på nytt   Esc: avbryt",
+                self._text("picker.help"),
                 id="picker-help",
             )
 
@@ -374,20 +420,17 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         status = self.query_one("#discovery-status", Static)
         local_error = str(self.discovery.get("local_error") or "").strip()
         local_prefix = (
-            f"Lokal oppdaging feila: {local_error}  ·  "
+            self._text("discovery.local_error", error=local_error)
             if local_error
             else ""
         )
         if self.discovery.get("ble_scanning"):
-            status.update(
-                f"{local_prefix}Bluetooth / BLE: Søkjer … "
-                "(tek vanlegvis om lag 10 sekund)"
-            )
+            status.update(f"{local_prefix}{self._text('discovery.scanning')}")
             return
         error = str(self.discovery.get("ble_error") or "").strip()
         if error:
             status.update(
-                f"{local_prefix}Bluetooth / BLE: {error}  ·  F5: søk på nytt"
+                f"{local_prefix}{self._text('discovery.error', error=error)}"
             )
             return
         ble_scanned = self.discovery.get(
@@ -395,30 +438,27 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
             "ble" in self.discovery,
         )
         if not ble_scanned:
-            status.update(
-                f"{local_prefix}Bluetooth / BLE: Ventar på søk  ·  F5: start søk"
-            )
+            status.update(f"{local_prefix}{self._text('discovery.waiting')}")
             return
         count = len(self.discovery.get("ble", []))
         if count:
-            suffix = "eining funnen" if count == 1 else "einingar funne"
-            status.update(
-                f"{local_prefix}Bluetooth / BLE: {count} {suffix}  ·  "
-                "F5: søk på nytt"
-            )
+            key = "discovery.found_one" if count == 1 else "discovery.found_many"
+            status.update(f"{local_prefix}{self._text(key, count=count)}")
         else:
-            status.update(
-                f"{local_prefix}Bluetooth / BLE: Ingen Meshtastic-einingar "
-                "funne  ·  "
-                "F5: søk på nytt"
-            )
+            status.update(f"{local_prefix}{self._text('discovery.none')}")
 
     def _update_count(self) -> None:
         shown = len(self.filtered_choices)
         total = len(self.all_choices)
-        label = f"{shown} av {total} tilkoplingar" if shown != total else f"{total} tilkoplingar"
+        label = (
+            self._text("count.filtered", shown=shown, total=total)
+            if shown != total
+            else self._text("count.total", total=total)
+        )
         if self.hidden_serial_count and not self.show_all_serial:
-            label += f" · {self.hidden_serial_count} serieportar skjulte (F4)"
+            label += self._text(
+                "count.hidden_serial", count=self.hidden_serial_count
+            )
         self.query_one("#choice-count", Static).update(label)
 
     async def _replace_choices(self, query: str) -> None:
@@ -431,7 +471,10 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         ]
         choices = self.query_one("#connection-list", ListView)
         await choices.clear()
-        await choices.extend(ConnectionItem(choice) for choice in self.filtered_choices)
+        await choices.extend(
+            ConnectionItem(choice, language=self.language)
+            for choice in self.filtered_choices
+        )
         choices.index = 0 if self.filtered_choices else None
         self._update_count()
 
@@ -439,23 +482,25 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         self.all_choices = build_connection_choices(
             self.discovery,
             include_all_serial=self.show_all_serial,
+            language=self.language,
         )
         choices_with_all_serial = build_connection_choices(
             self.discovery,
             include_all_serial=True,
+            language=self.language,
         )
         self.hidden_serial_count = len(choices_with_all_serial) - len(
-            build_connection_choices(self.discovery)
+            build_connection_choices(self.discovery, language=self.language)
         )
         query = self.query_one("#connection-input", Input).value.strip().casefold()
         await self._replace_choices(query)
 
     def _start_discovery(self) -> None:
         if self._discovering:
-            self.notify("Eit BLE-søk er allereie i gang")
+            self.notify(self._text("notice.search_running"))
             return
         if self.settings is None:
-            self.notify("Oppdaging er ikkje tilgjengeleg", severity="error")
+            self.notify(self._text("notice.discovery_unavailable"), severity="error")
             return
         self._discovering = True
         self._discovery_generation += 1
@@ -485,6 +530,10 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
             self.call_from_thread(callback, generation, *args)
 
     def _discovery_worker(self, generation: int) -> None:
+        with using_language(self.language):
+            self._run_discovery_worker(generation)
+
+    def _run_discovery_worker(self, generation: int) -> None:
         try:
             local = self.requester(
                 self.settings,
@@ -537,7 +586,7 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         self.discovery["local_error"] = error
         self.discovery["serial_scanned"] = False
         self.notify(
-            f"Klarte ikkje søkje etter lokale tilkoplingar: {error}",
+            self._text("notice.local_discovery_failed", error=error),
             severity="error",
         )
         self._update_discovery_status()
@@ -571,8 +620,8 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
             self.discovery.update(data)
         if error:
             self.discovery["ble"] = []
-            self.discovery["ble_error"] = (
-                f"Klarte ikkje fullføre søket: {error}"
+            self.discovery["ble_error"] = self._text(
+                "error.finish_search", error=error
             )
         self.discovery["ble_scanning"] = False
         self.discovery["ble_scanned"] = bool(
@@ -594,6 +643,7 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         self.all_choices = build_connection_choices(
             self.discovery,
             include_all_serial=self.show_all_serial,
+            language=self.language,
         )
         query = self.query_one("#connection-input", Input).value.strip().casefold()
         await self._replace_choices(query)
@@ -614,7 +664,7 @@ class ConnectionPickerApp(App[dict[str, Any] | None]):
         if target:
             self.exit({"target": target})
         else:
-            self.notify("Vel ei tilkopling eller skriv eit mål", severity="error")
+            self.notify(self._text("notice.choose_or_target"), severity="error")
 
     @on(ListView.Selected, "#connection-list")
     def select_choice(self, event: ListView.Selected) -> None:

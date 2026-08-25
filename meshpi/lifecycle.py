@@ -9,6 +9,7 @@ from pathlib import Path
 
 from meshpi.client import CLIError, CLIUnavailableError, request
 from meshpi.config import Settings
+from meshpi.i18n import tr
 
 
 @dataclass(slots=True)
@@ -91,14 +92,12 @@ def start_session_daemon(
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            raise RuntimeError(
-                f"Session-daemonen stoppa under oppstart. Sjå {log_path}"
-            )
+            raise RuntimeError(tr("lifecycle.session_stopped", path=log_path))
         if daemon_status(settings) is not None:
             return DaemonHandle(process=process, owned=True)
         time.sleep(0.15)
     process.terminate()
-    raise RuntimeError(f"Session-daemonen svarte ikkje. Sjå {log_path}")
+    raise RuntimeError(tr("lifecycle.session_timeout", path=log_path))
 
 
 def wait_for_daemon(settings: Settings, timeout: float = 15) -> dict:
@@ -108,7 +107,7 @@ def wait_for_daemon(settings: Settings, timeout: float = 15) -> dict:
         if status is not None:
             return status
         time.sleep(0.15)
-    raise RuntimeError("Bakgrunnstenesta svarte ikkje etter start")
+    raise RuntimeError(tr("lifecycle.service_timeout"))
 
 
 def stop_daemon(settings: Settings, timeout: float = 10) -> bool:
@@ -129,4 +128,4 @@ def stop_daemon(settings: Settings, timeout: float = 10) -> bool:
         time.sleep(0.1)
     if request_error is not None:
         raise request_error
-    raise RuntimeError("Daemonen stoppa ikkje innan fristen")
+    raise RuntimeError(tr("lifecycle.stop_timeout"))

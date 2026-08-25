@@ -1,0 +1,14 @@
+{
+  "app.description": "Meshtastic-chat for terminalen",
+  "language.current": "Språk: {language}",
+  "language.saved": "Språket er sett til {language}.",
+  "language.name.en": "English",
+  "language.name.nn": "Nynorsk",
+  "language.usage": "bruk: meshpi language [nn|en]",
+  "common.cancel": "Avbryt",
+  "common.close": "Lukk",
+  "common.error": "Feil",
+  "common.next": "Neste",
+  "common.previous": "Førre",
+  "common.unknown": "Ukjend"
+}

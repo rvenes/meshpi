@@ -21,6 +21,14 @@ from meshpi.client import request as _request
 from meshpi.config import Settings
 from meshpi.daemon import run_daemon
 from meshpi.doctor import offline_checks
+from meshpi.i18n import (
+    LANGUAGE_NAMES,
+    get_language,
+    initialize_language,
+    language_file,
+    set_language,
+    tr,
+)
 from meshpi.lifecycle import (
     DaemonHandle,
     daemon_status,
@@ -55,6 +63,7 @@ COMMANDS = {
     "send-dm",
     "watch",
     "chat",
+    "language",
 }
 
 
@@ -88,6 +97,32 @@ def _default_export_path() -> Path:
     return Path.cwd() / f"meshpi-export-{timestamp}.jsonl"
 
 
+def _env_file_from_argv(argv: list[str]) -> str:
+    for index, value in enumerate(argv):
+        if value == "--env-file" and index + 1 < len(argv):
+            return argv[index + 1]
+        if value.startswith("--env-file="):
+            return value.split("=", 1)[1]
+    return _default_env_file()
+
+
+class MeshPiArgumentParser(argparse.ArgumentParser):
+    def format_help(self) -> str:
+        value = super().format_help()
+        replacements = {
+            "usage:": tr("cli.argparse.usage"),
+            "options:": tr("cli.argparse.options"),
+            "positional arguments:": tr("cli.argparse.arguments"),
+        }
+        for source, translated in replacements.items():
+            value = value.replace(source, translated)
+        return value
+
+    def error(self, message: str) -> None:
+        self.print_usage(sys.stderr)
+        self.exit(2, f"{self.prog}: {tr('cli.argparse.error', message=message)}\n")
+
+
 def _write_database_export(
     settings: Settings,
     destination: Path,
@@ -96,14 +131,12 @@ def _write_database_export(
 ) -> tuple[Path, int]:
     destination = destination.expanduser().absolute()
     if destination.is_dir():
-        raise ValueError(f"Utstien er ei mappe: {destination}")
+        raise ValueError(tr("cli.export.path_is_directory", path=destination))
     if (destination.exists() or destination.is_symlink()) and not force:
-        raise ValueError(
-            f"Fila finst frå før: {destination}. Bruk --force for å skrive over."
-        )
+        raise ValueError(tr("cli.export.exists", path=destination))
     parent = destination.parent
     if not parent.is_dir():
-        raise ValueError(f"Mappa finst ikkje: {parent}")
+        raise ValueError(tr("cli.export.parent_missing", path=parent))
 
     try:
         descriptor, temporary_name = tempfile.mkstemp(
@@ -112,7 +145,7 @@ def _write_database_export(
             dir=parent,
         )
     except OSError as exc:
-        raise CLIError(f"Klarte ikkje opprette eksportfila: {exc}") from exc
+        raise CLIError(tr("cli.export.create_failed", error=exc)) from exc
     temporary = Path(temporary_name)
     sock = stream = None
     row_count = 0
@@ -128,46 +161,41 @@ def _write_database_export(
                 try:
                     record = json.loads(raw)
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                    raise CLIError("Databaseeksporten inneheld ugyldig JSON") from exc
+                    raise CLIError(tr("cli.export.invalid_json")) from exc
                 if not isinstance(record, dict):
-                    raise CLIError("Databaseeksporten inneheld ei ugyldig linje")
+                    raise CLIError(tr("cli.export.invalid_line"))
                 if record.get("ok") is False:
-                    raise CLIError(
-                        str(record.get("error", "Databaseeksporten feila"))
-                    )
+                    raise CLIError(str(record.get("error", tr("cli.export.failed"))))
                 record_type = record.get("record")
                 if not saw_metadata:
                     if (
                         record_type != "metadata"
                         or record.get("format") != "meshpi-database-export"
                     ):
-                        raise CLIError("Databaseeksporten manglar gyldige metadata")
+                        raise CLIError(tr("cli.export.invalid_metadata"))
                     saw_metadata = True
                 elif saw_complete:
-                    raise CLIError("Databaseeksporten har data etter sluttmarkøren")
+                    raise CLIError(tr("cli.export.data_after_end"))
                 elif record_type == "row":
                     row_count += 1
                 elif record_type == "complete":
                     expected_rows = record.get("rows")
                     if expected_rows != row_count:
-                        raise CLIError("Databaseeksporten har feil radtal")
+                        raise CLIError(tr("cli.export.wrong_row_count"))
                     saw_complete = True
                 else:
-                    raise CLIError("Databaseeksporten inneheld ein ukjend posttype")
+                    raise CLIError(tr("cli.export.unknown_record"))
                 output.write(raw if raw.endswith(b"\n") else raw + b"\n")
             if not saw_complete:
-                raise CLIError("Databaseeksporten blei broten før han var ferdig")
+                raise CLIError(tr("cli.export.interrupted"))
             output.flush()
             os.fsync(output.fileno())
         if not force and (destination.exists() or destination.is_symlink()):
-            raise ValueError(
-                f"Fila blei oppretta under eksporten: {destination}. "
-                "Bruk --force for å skrive over."
-            )
+            raise ValueError(tr("cli.export.created_during", path=destination))
         os.replace(temporary, destination)
         return destination, row_count
     except OSError as exc:
-        raise CLIError(f"Klarte ikkje lagre eksportfila: {exc}") from exc
+        raise CLIError(tr("cli.export.save_failed", error=exc)) from exc
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -202,8 +230,24 @@ def _battery(value: Any) -> str:
     if value in (None, ""):
         return "–"
     if value in (0, 101, "0", "101"):
-        return "Straum"
+        return tr("cli.value.power")
     return f"{value}%"
+
+
+def _display_value(value: Any) -> str:
+    text = str(value or "ukjend")
+    key = {
+        "ukjend": "common.unknown",
+        "tilkopla": "cli.value.connected",
+        "fråkopla": "cli.value.disconnected",
+        "starta": "cli.value.started",
+        "stoppa": "cli.value.stopped",
+        "always": "cli.value.always",
+        "session": "cli.value.session",
+        "ja": "cli.value.yes",
+        "nei": "cli.value.no",
+    }.get(text)
+    return tr(key) if key else sanitize_terminal_text(text)
 
 
 def _public_channel_options(value: str | None) -> dict[str, Any]:
@@ -213,14 +257,12 @@ def _public_channel_options(value: str | None) -> dict[str, Any]:
     if channel.isdecimal():
         channel_index = int(channel)
         if not 0 <= channel_index <= 7:
-            raise CLIError("Kanalindeksen må vere mellom 0 og 7")
+            raise CLIError(tr("cli.channel.range"))
         return {"channel_index": channel_index}
     try:
         parse_public_conversation_id(channel)
     except ValueError as exc:
-        raise CLIError(
-            "Kanalvalet må vere ein indeks eller ein samtale-ID som startar med channel:"
-        ) from exc
+        raise CLIError(tr("cli.channel.invalid")) from exc
     return {"conversation": channel}
 
 
@@ -231,19 +273,17 @@ def _format_message(message: dict[str, Any]) -> str:
         message.get("from_long_name")
         or message.get("from_short_name")
         or message.get("from_node")
-        or "Ukjend"
+        or tr("common.unknown")
     )
     short_id = (message.get("from_node") or "????")[-4:]
-    transport = message.get("transport") or "Ukjend"
-    transport = "transport ukjend" if transport == "Ukjend" else transport
+    transport = message.get("transport") or tr("common.unknown")
+    transport = (
+        tr("cli.value.unknown_transport") if transport in {"Ukjend", "Unknown"} else transport
+    )
     direction = "→" if message.get("direction") == "ut" else "←"
     channel = message.get("channel")
     channel_label = channel if channel is not None else 0
-    context = (
-        f"CH{channel_label}"
-        if message.get("kind") == "public"
-        else f"DM{channel_label}"
-    )
+    context = f"CH{channel_label}" if message.get("kind") == "public" else f"DM{channel_label}"
     status_value = "ACK" if message.get("status") == "stadfesta" else message.get("status")
     status_value = status_value or "sendt"
     status = f" [{status_value}]" if message.get("direction") == "ut" else ""
@@ -254,7 +294,11 @@ def _format_message(message: dict[str, Any]) -> str:
         quality.append(f"SNR {message['snr']}")
     if message.get("hop_start") is not None or message.get("hop_limit") is not None:
         quality.append(
-            f"hopp {message.get('hop_start', '–')}/{message.get('hop_limit', '–')}"
+            tr(
+                "cli.message.hops",
+                start=message.get("hop_start", "–"),
+                limit=message.get("hop_limit", "–"),
+            )
         )
     detail = f"  ({', '.join(quality)})" if quality else ""
     return (
@@ -264,7 +308,7 @@ def _format_message(message: dict[str, Any]) -> str:
 
 
 def _print_status(data: dict[str, Any]) -> None:
-    print(f"Status:       {data.get('state', 'ukjend')}")
+    print(tr("cli.status.state", value=_display_value(data.get("state"))))
     endpoint = data.get("endpoint")
     host = data.get("host")
     port = data.get("port")
@@ -272,56 +316,67 @@ def _print_status(data: dict[str, Any]) -> None:
         endpoint = f"{host}:{port}"
     if endpoint:
         transport = str(data.get("transport") or "tcp").upper()
-        print(f"Meshtastic:   {transport} {endpoint}")
+        print(tr("cli.status.meshtastic", value=f"{transport} {endpoint}"))
     else:
-        print("Meshtastic:   ingen node vald")
-    print(f"Lokal node:   {data.get('local_node_id') or 'ikkje kjend enno'}")
-    print(f"Tilkopla frå: {_local_time(data.get('connected_since'))}")
+        print(tr("cli.status.no_node"))
+    print(
+        tr(
+            "cli.status.local_node",
+            value=data.get("local_node_id") or tr("cli.value.not_known_yet"),
+        )
+    )
+    print(tr("cli.status.connected_since", value=_local_time(data.get("connected_since"))))
     if data.get("reconnect_attempt"):
-        print(f"Reconnect:    forsøk {data['reconnect_attempt']}")
+        print(tr("cli.status.reconnect", value=data["reconnect_attempt"]))
     if data.get("last_reconnect_reason"):
-        print(f"Siste brot:   {data['last_reconnect_reason']}")
+        print(tr("cli.status.last_disconnect", value=data["last_reconnect_reason"]))
     if data.get("error"):
-        print(f"Feil:         {data['error']}")
+        print(tr("cli.status.error", value=data["error"]))
 
 
 def _print_service(data: dict[str, Any], action: str) -> None:
     if action == "status":
-        state = data.get("state", "ukjend")
-        print(f"Bakgrunn:     {state}")
-        print(f"Modus:        {data.get('background_mode', 'ukjend')}")
+        print(tr("cli.service.background", value=_display_value(data.get("state"))))
+        print(tr("cli.service.mode", value=_display_value(data.get("background_mode"))))
         if data.get("daemon_pid"):
-            print(f"Prosess-ID:   {data['daemon_pid']}")
+            print(tr("cli.service.pid", value=data["daemon_pid"]))
         if data.get("endpoint"):
-            print(f"Meshtastic:   {str(data.get('transport') or 'tcp').upper()} "
-                  f"{data['endpoint']}")
+            print(
+                tr(
+                    "cli.status.meshtastic",
+                    value=(f"{str(data.get('transport') or 'tcp').upper()} {data['endpoint']}"),
+                )
+            )
         if data.get("error"):
-            print(f"Feil:         {data['error']}")
+            print(tr("cli.status.error", value=data["error"]))
         return
     labels = {
-        "start": "Bakgrunnstenesta er starta.",
-        "stop": "Bakgrunnstenesta er stoppa.",
-        "enable": "Automatisk oppstart er slått på.",
-        "disable": "Automatisk oppstart er slått av.",
+        "start": tr("cli.service.started"),
+        "stop": tr("cli.service.stopped"),
+        "enable": tr("cli.service.enabled"),
+        "disable": tr("cli.service.disabled"),
     }
     print(labels[action])
 
 
 def _print_nodes(nodes: list[dict[str, Any]]) -> None:
     if not nodes:
-        print("Ingen kjende nodar.")
+        print(tr("cli.nodes.empty"))
         return
-    print(
-        f"{' ':1} {'Namn':24} {'Kort':6} {'Node-ID':10} {'Sist sett':19} "
-        f"{'Batt':5} {'SNR':6} {'Hopp':4} {'Veg':7} {'DM':7}"
-    )
+    print(tr("cli.nodes.header"))
     print("─" * 105)
     for node in nodes:
         marker = "*" if node.get("is_local") else " "
-        name = node.get("long_name") or node.get("short_name") or "Ukjend"
+        name = node.get("long_name") or node.get("short_name") or tr("common.unknown")
         battery = _battery(node.get("battery_level"))
         can_dm = node.get("can_receive_dm")
-        dm = "ja" if can_dm is True else "nei" if can_dm is False else "ukjend"
+        dm = (
+            tr("cli.value.yes")
+            if can_dm is True
+            else tr("cli.value.no")
+            if can_dm is False
+            else tr("common.unknown")
+        )
         print(
             f"{marker} {_trim(name, 24):24} "
             f"{_trim(node.get('short_id'), 6):6} "
@@ -331,42 +386,51 @@ def _print_nodes(nodes: list[dict[str, Any]]) -> None:
             f"{_trim(node.get('hops_away'), 4):4} "
             f"{_trim(node.get('transport'), 7):7} {dm:7}"
         )
-    print("\n* = lokal node")
+    print(tr("cli.nodes.local_legend"))
 
 
 def _print_node(node: dict[str, Any]) -> None:
     can_dm = node.get("can_receive_dm")
-    dm = "ja" if can_dm is True else "nei" if can_dm is False else "ukjend"
+    dm = (
+        tr("cli.value.yes")
+        if can_dm is True
+        else tr("cli.value.no")
+        if can_dm is False
+        else tr("common.unknown")
+    )
     fields = (
-        ("Namn", node.get("long_name")),
-        ("Kortnamn", node.get("short_name")),
+        (tr("cli.node.name"), node.get("long_name")),
+        (tr("cli.node.short_name"), node.get("short_name")),
         ("Node-ID", node.get("node_id")),
-        ("Kort-ID", node.get("short_id")),
-        ("Nodenummer", node.get("node_num")),
-        ("Maskinvare", node.get("hw_model")),
-        ("Rolle", node.get("role")),
-        ("Sist sett", _local_time(node.get("last_heard"))),
-        ("Batteri", _battery(node.get("battery_level"))),
-        ("Spenning", f"{node['voltage']} V" if node.get("voltage") is not None else None),
+        (tr("cli.node.short_id"), node.get("short_id")),
+        (tr("cli.node.number"), node.get("node_num")),
+        (tr("cli.node.hardware"), node.get("hw_model")),
+        (tr("cli.node.role"), node.get("role")),
+        (tr("cli.node.last_seen"), _local_time(node.get("last_heard"))),
+        (tr("cli.node.battery"), _battery(node.get("battery_level"))),
+        (
+            tr("cli.node.voltage"),
+            f"{node['voltage']} V" if node.get("voltage") is not None else None,
+        ),
         ("SNR", node.get("snr")),
         ("RSSI", node.get("rssi")),
-        ("Hopp", node.get("hops_away")),
-        ("Siste transport", node.get("transport")),
-        ("Kan ta imot DM", dm),
-        ("Lokal node", "ja" if node.get("is_local") else "nei"),
+        (tr("cli.node.hops"), node.get("hops_away")),
+        (tr("cli.node.transport"), node.get("transport")),
+        (tr("cli.node.can_dm"), dm),
+        (tr("cli.node.local"), tr("cli.value.yes") if node.get("is_local") else tr("cli.value.no")),
     )
     for label, value in fields:
         rendered = sanitize_terminal_text(value) if value not in (None, "") else "–"
         print(f"{label + ':':18} {rendered}")
     if not node.get("is_local"):
-        print(f"\nStart samtale: meshpi chat {node['node_id']}")
+        print(tr("cli.node.start_chat", node_id=node["node_id"]))
 
 
 def _print_conversations(conversations: list[dict[str, Any]]) -> None:
     if not conversations:
-        print("Ingen samtalar er lagra enno.")
+        print(tr("cli.conversations.empty"))
         return
-    print(f"{'Samtale':28} {'Ulest':5} {'Siste melding':19}  Tekst")
+    print(tr("cli.conversations.header"))
     print("─" * 90)
     for item in conversations:
         if item["kind"] == "public":
@@ -380,27 +444,35 @@ def _print_conversations(conversations: list[dict[str, Any]]) -> None:
             )
             suffix = (
                 f" [{str(item.get('local_node_id'))[-4:]}]"
-                if channel_key.startswith("local:")
-                and item.get("local_node_id")
+                if channel_key.startswith("local:") and item.get("local_node_id")
                 else ""
             )
             if legacy_scope:
-                label = (
-                    f"Public (arkiv {_trim(legacy_scope, 10)}) – kanal "
-                    f"{channel if channel is not None else '?'}"
+                label = tr(
+                    "cli.conversations.public_archive",
+                    archive=_trim(legacy_scope, 10),
+                    channel=channel if channel is not None else "?",
                 )
             elif channel_key.startswith("provisional:"):
-                label = (
-                    "Public (uavklart rute) – kanal "
-                    f"{channel if channel is not None else '?'}"
+                label = tr(
+                    "cli.conversations.public_provisional",
+                    channel=channel if channel is not None else "?",
                 )
             else:
                 label = (
-                    f"{name} – kanal {channel}{suffix}"
+                    tr(
+                        "cli.conversations.public_named",
+                        name=name,
+                        channel=channel if channel is not None else "?",
+                        suffix=suffix,
+                    )
                     if name
                     else (
-                        f"Public – kanal "
-                        f"{channel if channel is not None else '?'}{suffix}"
+                        tr(
+                            "cli.conversations.public",
+                            channel=channel if channel is not None else "?",
+                            suffix=suffix,
+                        )
                     )
                 )
         else:
@@ -416,9 +488,9 @@ def _print_conversations(conversations: list[dict[str, Any]]) -> None:
 
 def _print_channels(channels: list[dict[str, Any]]) -> None:
     if not channels:
-        print("Ingen kanalar er tilgjengelege på den aktive noden.")
+        print(tr("cli.channels.empty"))
         return
-    print(f"{'Indeks':6} {'Rolle':10} {'Namn':20} Samtale-ID")
+    print(tr("cli.channels.header"))
     print("─" * 90)
     for channel in channels:
         print(
@@ -433,9 +505,9 @@ def _print_connections(data: dict[str, Any]) -> None:
     active_id = data.get("active_profile_id")
     profiles = data.get("profiles", [])
     if not profiles:
-        print("Ingen lagra tilkoplingar.")
+        print(tr("cli.connections.empty"))
         return
-    print(f"{' ':1} {'Namn':24} {'Type':8} Endepunkt")
+    print(tr("cli.connections.header"))
     print("─" * 76)
     for profile in profiles:
         marker = "*" if profile.get("profile_id") == active_id else " "
@@ -444,12 +516,12 @@ def _print_connections(data: dict[str, Any]) -> None:
             f"{str(profile.get('transport', '')).upper():8} "
             f"{profile.get('endpoint', '–')}"
         )
-    print("\n* = aktiv tilkopling")
+    print(tr("cli.connections.active_legend"))
 
 
 def _print_messages(messages: list[dict[str, Any]]) -> None:
     if not messages:
-        print("Ingen meldingar.")
+        print(tr("cli.messages.empty"))
         return
     for message in messages:
         print(_format_message(message))
@@ -468,11 +540,18 @@ def _watch(settings: Settings, conversation: str, raw_json: bool = False) -> Non
             elif event.get("type") == "message_status":
                 data = event["data"]
                 print(
-                    f"Status for pakke {data.get('packet_id')}: {data.get('status')}",
+                    tr(
+                        "cli.watch.packet_status",
+                        packet=data.get("packet_id"),
+                        status=data.get("status"),
+                    ),
                     flush=True,
                 )
             elif event.get("type") == "status":
-                print(f"— Samband: {event['data'].get('state')} —", flush=True)
+                print(
+                    tr("cli.watch.connection", state=_display_value(event["data"].get("state"))),
+                    flush=True,
+                )
     except KeyboardInterrupt:
         pass
     finally:
@@ -487,11 +566,7 @@ def _chat_dm_peer(
     if not conversation.startswith("dm:"):
         return conversation
     peer = next(
-        (
-            str(message["peer_node"])
-            for message in reversed(history)
-            if message.get("peer_node")
-        ),
+        (str(message["peer_node"]) for message in reversed(history) if message.get("peer_node")),
         "",
     )
     if peer:
@@ -520,19 +595,19 @@ def _chat(settings: Settings, conversation: str, limit: int) -> None:
     )["data"]
     dm_peer = _chat_dm_peer(normalized, history)
     label = (
-        "Public – primærkanal"
+        tr("cli.chat.public_primary")
         if normalized == "public"
         else (
-            f"Kanal {normalized}"
+            tr("cli.chat.channel", conversation=normalized)
             if normalized.startswith("channel:")
-            else f"DM {normalized}"
+            else tr("cli.chat.dm", conversation=normalized)
         )
     )
     status = _request(settings, {"command": "status"})["data"]
     print(f"\n{label}   |   {status.get('state')}")
     print("─" * 78)
     _print_messages(history)
-    print("\nSkriv /hjelp for kommandoar. Ctrl-D eller /slutt avsluttar.\n")
+    print(tr("cli.chat.intro"))
 
     sock, stream = _open_watch(settings, normalized)
     stop = threading.Event()
@@ -547,12 +622,20 @@ def _chat(settings: Settings, conversation: str, limit: int) -> None:
                     print(_format_message(event["data"]))
                 elif event.get("type") == "message_status":
                     data = event["data"]
-                    print(f"— Pakke {data.get('packet_id')}: {data.get('status')} —")
+                    print(
+                        tr(
+                            "cli.watch.packet",
+                            packet=data.get("packet_id"),
+                            status=data.get("status"),
+                        )
+                    )
                 elif event.get("type") == "status":
-                    print(f"— Samband: {event['data'].get('state')} —")
+                    print(
+                        tr("cli.watch.connection", state=_display_value(event["data"].get("state")))
+                    )
         except (OSError, ValueError):
             if not stop.is_set():
-                print("— Overvakingssambandet blei brote —")
+                print(tr("cli.watch.broken"))
 
     receiver = threading.Thread(target=receive, name="cli-watch", daemon=True)
     receiver.start()
@@ -569,13 +652,13 @@ def _chat(settings: Settings, conversation: str, limit: int) -> None:
                     continue
                 if command in {"/slutt", "/quit", "/exit"}:
                     break
-                if command == "/hjelp":
-                    print("/hjelp  /status  /nodar  /slutt")
+                if command in {"/hjelp", "/help"}:
+                    print(tr("cli.chat.commands"))
                     continue
                 if command == "/status":
                     _print_status(_request(settings, {"command": "status"})["data"])
                     continue
-                if command == "/nodar":
+                if command in {"/nodar", "/nodes"}:
                     _print_nodes(_request(settings, {"command": "nodes"})["data"])
                     continue
                 payload = (
@@ -593,17 +676,13 @@ def _chat(settings: Settings, conversation: str, limit: int) -> None:
                         "command": "send_dm",
                         "node_id": dm_peer,
                         "text": command,
-                        **(
-                            {"conversation": normalized}
-                            if normalized.startswith("dm:")
-                            else {}
-                        ),
+                        **({"conversation": normalized} if normalized.startswith("dm:") else {}),
                     }
                 )
                 try:
                     _request(settings, payload)
                 except CLIError as exc:
-                    print(f"Feil: {exc}")
+                    print(f"{tr('common.error')}: {exc}")
     finally:
         stop.set()
         with suppress(OSError):
@@ -614,10 +693,12 @@ def _chat(settings: Settings, conversation: str, limit: int) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = MeshPiArgumentParser(
         prog="meshpi",
-        description="Meshtastic-chat for terminalen",
+        description=tr("app.description"),
+        add_help=False,
     )
+    parser.add_argument("-h", "--help", action="help", help=tr("cli.help.help"))
     parser.add_argument(
         "--version",
         action="version",
@@ -626,134 +707,142 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--env-file",
         default=_default_env_file(),
-        help="sti til miljøfil (standard: .env)",
+        help=tr("cli.help.env_file"),
     )
     parser.add_argument(
         "--json",
         action="store_true",
-        help="skriv maskinlesbar JSON for ikkje-interaktive kommandoar",
+        help=tr("cli.help.json"),
     )
     sub = parser.add_subparsers(dest="command")
     parser.set_defaults(command="tui")
-    sub.add_parser("tui", help="start fullskjerms terminalgrensesnitt")
-    sub.add_parser("new", help="oppdag, vel eller legg til ei tilkopling")
-    connect = sub.add_parser("connect", help="byt til TCP-, seriell- eller BLE-tilkopling")
+    sub.add_parser("tui", help=tr("cli.help.tui"))
+    sub.add_parser("new", help=tr("cli.help.new"))
+    connect = sub.add_parser("connect", help=tr("cli.help.connect"))
     connect.add_argument(
         "target",
-        help="IP, vert[:port], /dev/sti, COM-port eller ble://identifikator",
+        help=tr("cli.help.connect_target"),
     )
-    connect.add_argument("--name", help="namn på den lagra profilen")
-    sub.add_parser("connections", help="vis lagra tilkoplingar")
-    daemon = sub.add_parser("daemon", help="køyr bakgrunnstenesta i framgrunnen")
+    connect.add_argument("--name", help=tr("cli.help.profile_name"))
+    sub.add_parser("connections", help=tr("cli.help.connections"))
+    daemon = sub.add_parser("daemon", help=tr("cli.help.daemon"))
     daemon.add_argument("--parent-pid", type=int, help=argparse.SUPPRESS)
-    doctor = sub.add_parser("doctor", help="køyr ein offline sjølvtest")
+    doctor = sub.add_parser("doctor", help=tr("cli.help.doctor"))
     doctor.add_argument(
         "--offline",
         action="store_true",
-        help="ikkje krev ein tilgjengeleg Meshtastic-node",
+        help=tr("cli.help.offline"),
     )
     export = sub.add_parser(
         "export",
-        help="eksporter heile databasen som UTF-8-tekst",
+        help=tr("cli.help.export"),
     )
     export.add_argument(
         "output",
         nargs="?",
         type=Path,
-        help="utfil (standard: tidsstempla .jsonl-fil i gjeldande mappe)",
+        help=tr("cli.help.export_output"),
     )
     export.add_argument(
         "--force",
         action="store_true",
-        help="skriv over utfila dersom ho finst frå før",
+        help=tr("cli.help.force"),
     )
-    service = sub.add_parser("service", help="styr bakgrunnstenesta")
+    service = sub.add_parser("service", help=tr("cli.help.service"))
     service.add_argument(
         "action",
         choices=("status", "start", "stop", "enable", "disable"),
     )
     update = sub.add_parser(
         "update",
-        help="last ned og installer ei signert MeshPi-oppdatering",
+        help=tr("cli.help.update"),
     )
     update.add_argument(
         "--check",
         action="store_true",
-        help="sjekk berre om ei ny utgåve finst",
+        help=tr("cli.help.update_check"),
     )
     update.add_argument(
         "--yes",
         action="store_true",
-        help="stadfest installasjonen utan interaktivt spørsmål",
+        help=tr("cli.help.yes_update"),
     )
     update.add_argument(
         "--beta",
         action="store_true",
-        help="bruk den interne betakanalen på venes.org",
+        help=tr("cli.help.beta"),
     )
-    sub.add_parser("status", help="vis tilkoplingsstatus")
+    sub.add_parser("status", help=tr("cli.help.status"))
 
-    nodes = sub.add_parser("nodes", help="vis kjende nodar")
-    nodes.add_argument("--search", default="", help="søk på namn eller node-ID")
+    nodes = sub.add_parser("nodes", help=tr("cli.help.nodes"))
+    nodes.add_argument("--search", default="", help=tr("cli.help.search"))
     nodes.add_argument(
         "--sort",
         choices=("name", "seen", "id"),
         default="seen",
-        help="sorter nodelista",
+        help=tr("cli.help.sort"),
     )
-    node = sub.add_parser("node", help="vis alle detaljar om éin node")
+    node = sub.add_parser("node", help=tr("cli.help.node"))
     node.add_argument("node_id")
-    sub.add_parser("conversations", help="vis samtalar og uleste meldingar")
-    sub.add_parser("channels", help="vis kanalar på den aktive noden")
+    sub.add_parser("conversations", help=tr("cli.help.conversations"))
+    sub.add_parser("channels", help=tr("cli.help.channels"))
     delete_messages = sub.add_parser(
         "delete-messages",
-        help="slett lagra meldingar frå public, DM eller begge",
+        help=tr("cli.help.delete_messages"),
     )
     delete_messages.add_argument("scope", choices=("public", "dm", "all"))
     delete_messages.add_argument(
         "--yes",
         action="store_true",
-        help="stadfest slettinga utan interaktivt spørsmål",
+        help=tr("cli.help.yes_delete"),
     )
 
-    public = sub.add_parser("public", help="vis meldingar frå ein public-kanal")
+    public = sub.add_parser("public", help=tr("cli.help.public"))
     public.add_argument("--limit", type=int, default=100)
     public.add_argument(
         "--channel",
-        help="kanalindeks eller samtale-ID; standard er primærkanalen",
+        help=tr("cli.help.public_channel"),
     )
-    dm = sub.add_parser("dm", help="vis DM-samtale")
+    dm = sub.add_parser("dm", help=tr("cli.help.dm"))
     dm.add_argument("node_id")
     dm.add_argument("--limit", type=int, default=100)
-    dm.add_argument("--channel", type=int, help="kanalindeks for DM-ruta")
+    dm.add_argument("--channel", type=int, help=tr("cli.help.dm_channel"))
 
-    send_public = sub.add_parser("send-public", help="send til ein public-kanal")
+    send_public = sub.add_parser("send-public", help=tr("cli.help.send_public"))
     send_public.add_argument("text")
     send_public.add_argument(
         "--channel",
-        help="kanalindeks eller samtale-ID; standard er primærkanalen",
+        help=tr("cli.help.public_channel"),
     )
-    send_dm = sub.add_parser("send-dm", help="send direkte melding")
+    send_dm = sub.add_parser("send-dm", help=tr("cli.help.send_dm"))
     send_dm.add_argument("node_id")
     send_dm.add_argument("text")
-    send_dm.add_argument("--channel", type=int, help="kanalindeks for DM-ruta")
+    send_dm.add_argument("--channel", type=int, help=tr("cli.help.dm_channel"))
 
-    watch = sub.add_parser("watch", help="følg nye meldingar")
+    watch = sub.add_parser("watch", help=tr("cli.help.watch"))
     watch.add_argument(
         "conversation",
         nargs="?",
         default="all",
-        help="all, public, samtale-ID eller node-ID",
+        help=tr("cli.help.watch_conversation"),
     )
-    chat = sub.add_parser("chat", help="start interaktiv chat")
-    chat.add_argument("conversation", help="public, samtale-ID eller node-ID")
+    chat = sub.add_parser("chat", help=tr("cli.help.chat"))
+    chat.add_argument("conversation", help=tr("cli.help.chat_conversation"))
     chat.add_argument("--limit", type=int, default=50)
+    language = sub.add_parser("language", help=tr("cli.help.language"))
+    language.add_argument("language", nargs="?", choices=("nn", "en"))
     return parser
 
 
 def run(args: argparse.Namespace, settings: Settings) -> str | None:
     command = args.command
-    if command == "tui":
+    if command == "language":
+        if args.language is None:
+            print(tr("language.current", language=LANGUAGE_NAMES[get_language()]))
+        else:
+            selected = set_language(args.language, persist=True)
+            print(tr("language.saved", language=LANGUAGE_NAMES[selected]))
+    elif command == "tui":
         from meshpi.connect_tui import choose_connection
         from meshpi.tui import run_tui
 
@@ -792,10 +881,11 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
     elif command == "doctor":
         failed = False
         for name, ok, detail in offline_checks(settings):
-            print(f"{'OK' if ok else 'FEIL':4}  {name:18} {detail}")
+            result_label = "OK" if ok else tr("cli.doctor.failed_label")
+            print(f"{result_label:4}  {name:18} {detail}")
             failed = failed or not ok
         if failed:
-            raise RuntimeError("Sjølvtesten fann feil")
+            raise RuntimeError(tr("cli.doctor.failed"))
     elif command == "export":
         destination, rows = _write_database_export(
             settings,
@@ -811,11 +901,8 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
         if args.json:
             print(json.dumps(result, ensure_ascii=False))
         else:
-            print(f"Eksporterte {rows} datarader til {destination}")
-            print(
-                "Fila kan innehalde private meldingar og posisjonar. "
-                "Oppbevar henne trygt."
-            )
+            print(tr("cli.export.completed", rows=rows, path=destination))
+            print(tr("cli.export.privacy_warning"))
     elif command == "service":
         data = manage_service(args.action, settings, args.env_file)
         print(json.dumps(data, ensure_ascii=False)) if args.json else _print_service(
@@ -833,11 +920,10 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
             if args.json:
                 print(json.dumps(result, ensure_ascii=False))
             else:
-                channel_label = "betakanalen" if args.beta else "stabilkanalen"
-                print(
-                    f"Ingen nyare MeshPi-utgåve finst i {channel_label} "
-                    f"(installert: {__version__})."
+                channel_label = tr(
+                    "cli.update.beta_channel" if args.beta else "cli.update.stable_channel"
                 )
+                print(tr("cli.update.none", channel=channel_label, version=__version__))
             return None
         if args.check:
             result = {
@@ -849,20 +935,24 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
             if args.json:
                 print(json.dumps(result, ensure_ascii=False))
             else:
+                channel_label = tr(
+                    "cli.update.beta_channel" if args.beta else "cli.update.stable_channel"
+                )
                 print(
-                    f"MeshPi {notice.latest_version} er tilgjengeleg i "
-                    f"{'betakanalen' if args.beta else 'stabilkanalen'} "
-                    f"(installert: {notice.current_version})."
+                    tr(
+                        "cli.update.available",
+                        latest=notice.latest_version,
+                        channel=channel_label,
+                        current=notice.current_version,
+                    )
                 )
             return None
         if args.json and not args.yes:
-            raise ValueError("Bruk --yes saman med --json for å stadfeste oppdateringa")
+            raise ValueError(tr("cli.update.json_requires_yes"))
         if not args.yes:
-            answer = input(
-                f"Installer MeshPi {notice.latest_version}? Skriv OPPDATER for å halde fram: "
-            )
-            if answer.strip() != "OPPDATER":
-                print("Oppdateringa blei avbroten.")
+            answer = input(tr("cli.update.confirm", version=notice.latest_version))
+            if answer.strip().upper() not in {"OPPDATER", "UPDATE"}:
+                print(tr("cli.update.cancelled"))
                 return None
         installed = apply_update(
             settings,
@@ -876,7 +966,7 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
         if args.json:
             print(json.dumps(result, ensure_ascii=False))
         else:
-            print(f"MeshPi {result['version']} er installert.")
+            print(tr("cli.update.installed", version=result["version"]))
     elif command == "status":
         data = _request(settings, {"command": "status"})["data"]
         print(json.dumps(data, ensure_ascii=False)) if args.json else _print_status(data)
@@ -901,17 +991,15 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
     elif command == "delete-messages":
         if not args.yes:
             if args.json:
-                raise ValueError("Bruk --yes saman med --json for å stadfeste slettinga")
+                raise ValueError(tr("cli.delete.json_requires_yes"))
             labels = {
-                "public": "alle meldingar frå public-kanalane",
-                "dm": "alle DM-meldingar",
-                "all": "alle meldingar frå public-kanalane og DM",
+                "public": tr("cli.delete.scope_public"),
+                "dm": tr("cli.delete.scope_dm"),
+                "all": tr("cli.delete.scope_all"),
             }
-            answer = input(
-                f"Dette slettar {labels[args.scope]} permanent. Skriv SLETT for å halde fram: "
-            )
-            if answer.strip() != "SLETT":
-                print("Ingen meldingar blei sletta.")
+            answer = input(tr("cli.delete.confirm", scope=labels[args.scope]))
+            if answer.strip().upper() not in {"SLETT", "DELETE"}:
+                print(tr("cli.delete.cancelled"))
                 return None
         data = _request(
             settings,
@@ -920,12 +1008,10 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
         if args.json:
             print(json.dumps(data, ensure_ascii=False))
         else:
-            print(f"Sletta {data['deleted']} meldingar.")
+            print(tr("cli.delete.completed", count=data["deleted"]))
     elif command in {"public", "dm"}:
         conversation = "public" if command == "public" else normalize_node_id(args.node_id)
-        public_options = (
-            _public_channel_options(args.channel) if command == "public" else {}
-        )
+        public_options = _public_channel_options(args.channel) if command == "public" else {}
         if public_options.get("conversation"):
             conversation = str(public_options["conversation"])
         data = _request(
@@ -936,11 +1022,8 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
                 "limit": args.limit,
                 "mark_read": not args.json,
                 **(
-                    {
-                        "channel_index": public_options["channel_index"]
-                    }
-                    if command == "public"
-                    and "channel_index" in public_options
+                    {"channel_index": public_options["channel_index"]}
+                    if command == "public" and "channel_index" in public_options
                     else (
                         {"channel_index": args.channel}
                         if command == "dm" and args.channel is not None
@@ -956,13 +1039,16 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
             "text": args.text,
         }
         send_payload.update(_public_channel_options(args.channel))
-        message = _request(
-            settings, send_payload
-        )["data"]
+        message = _request(settings, send_payload)["data"]
         if args.json:
             print(json.dumps(message, ensure_ascii=False))
         else:
-            print(f"Sendt som pakke {message.get('packet_id') or 'utan kjend ID'}.")
+            print(
+                tr(
+                    "cli.send.completed",
+                    packet=message.get("packet_id") or tr("cli.value.unknown_id"),
+                )
+            )
     elif command == "send-dm":
         message = _request(
             settings,
@@ -970,22 +1056,22 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
                 "command": "send_dm",
                 "node_id": args.node_id,
                 "text": args.text,
-                **(
-                    {"channel_index": args.channel}
-                    if args.channel is not None
-                    else {}
-                ),
+                **({"channel_index": args.channel} if args.channel is not None else {}),
             },
         )["data"]
         if args.json:
             print(json.dumps(message, ensure_ascii=False))
         else:
-            print(f"Sendt som pakke {message.get('packet_id') or 'utan kjend ID'}.")
+            print(
+                tr(
+                    "cli.send.completed",
+                    packet=message.get("packet_id") or tr("cli.value.unknown_id"),
+                )
+            )
     elif command == "watch":
         conversation = args.conversation
-        if (
-            conversation not in {"all", "public"}
-            and not conversation.startswith(("channel:", "dm:"))
+        if conversation not in {"all", "public"} and not conversation.startswith(
+            ("channel:", "dm:")
         ):
             conversation = normalize_node_id(conversation)
         _watch(settings, conversation, raw_json=args.json)
@@ -996,12 +1082,20 @@ def run(args: argparse.Namespace, settings: Settings) -> str | None:
 def main(argv: list[str] | None = None) -> None:
     _configure_console_output()
     raw_argv = _normalize_argv(list(sys.argv[1:] if argv is None else argv))
+    initial_env_file = Path(_env_file_from_argv(raw_argv)).expanduser()
+    initialize_language(path=language_file(), legacy_paths=(initial_env_file,))
     parser = build_parser()
     args = parser.parse_args(raw_argv)
     try:
         settings = Settings.load(args.env_file)
         handle = DaemonHandle()
-        needs_daemon = args.command not in {"daemon", "doctor", "service", "update"}
+        needs_daemon = args.command not in {
+            "daemon",
+            "doctor",
+            "language",
+            "service",
+            "update",
+        }
         if needs_daemon:
             if settings.background_mode == "session":
                 handle = start_session_daemon(settings, args.env_file)
@@ -1017,5 +1111,5 @@ def main(argv: list[str] | None = None) -> None:
             elif handle.owned and outcome != "leave":
                 stop_daemon(settings)
     except (CLIError, ValueError, RuntimeError) as exc:
-        print(f"Feil: {exc}", file=sys.stderr)
+        print(f"{tr('common.error')}: {exc}", file=sys.stderr)
         raise SystemExit(EXIT_ERROR) from exc

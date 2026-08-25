@@ -24,6 +24,7 @@ from meshpi.channels import (
 from meshpi.config import Settings
 from meshpi.database import Database
 from meshpi.events import EventHub
+from meshpi.i18n import tr, using_language
 from meshpi.models import normalize_node_id
 from meshpi.service import MeshtasticService
 
@@ -176,15 +177,15 @@ class IPCApplication:
                 legacy_peer = normalize_node_id(conversation)
             except ValueError as exc:
                 raise ValueError(
-                    "Ugyldig samtale-ID for direkte melding"
+                    tr("error.channel.dm_invalid")
                 ) from exc
             if legacy_peer == node_id:
                 return None
-            raise ValueError("Ugyldig samtale-ID for direkte melding")
+            raise ValueError(tr("error.channel.dm_invalid"))
         _, route_peer, _ = parse_dm_conversation_id(conversation)
         if route_peer != node_id:
             raise ValueError(
-                "Samtaleruta samsvarar ikkje med noden som skal arkiverast"
+                tr("backend.ipc.archive_route_peer_mismatch")
             )
         return conversation
 
@@ -209,7 +210,7 @@ class IPCApplication:
             }
         if command == "shutdown":
             if self.shutdown_callback is None:
-                raise RuntimeError("Denne daemonen kan ikkje stoppast via IPC")
+                raise RuntimeError(tr("backend.ipc.shutdown_unavailable"))
             return {"ok": True, "data": {"stopping": True}}
         if command == "connections":
             return {"ok": True, "data": self.service.list_connections()}
@@ -250,7 +251,7 @@ class IPCApplication:
                 else None
             )
             if node is None:
-                raise ValueError(f"Fann ikkje noden {node_id}")
+                raise ValueError(tr("backend.ipc.node_not_found", node_id=node_id))
             return {"ok": True, "data": node}
         if command == "node_overview":
             local_node_id = self.history_local_node_id()
@@ -261,7 +262,7 @@ class IPCApplication:
                 else None
             )
             if node is None:
-                raise ValueError(f"Fann ikkje noden {node_id}")
+                raise ValueError(tr("backend.ipc.node_not_found", node_id=node_id))
             return {
                 "ok": True,
                 "data": {
@@ -387,7 +388,7 @@ class IPCApplication:
             scope = str(request.get("scope", ""))
             local_node_id = self.history_local_node_id()
             if not local_node_id:
-                raise RuntimeError("Ingen lokal node er vald")
+                raise RuntimeError(tr("backend.local_node.not_selected"))
             return {
                 "ok": True,
                 "data": {
@@ -398,7 +399,7 @@ class IPCApplication:
         if command == "archive_conversation":
             local_node_id = self.history_local_node_id()
             if not local_node_id:
-                raise RuntimeError("Ingen lokal node er vald")
+                raise RuntimeError(tr("backend.local_node.not_selected"))
             node_id = normalize_node_id(str(request.get("node_id", "")))
             conversation = self._validated_archived_route(
                 node_id,
@@ -408,7 +409,7 @@ class IPCApplication:
                 route_local, _, _ = parse_dm_conversation_id(conversation)
                 if route_local != local_node_id:
                     raise ValueError(
-                        "Samtaleruta høyrer til ein annan lokal node"
+                        tr("backend.ipc.route_other_local_node")
                     )
             self.database.archive_conversation(
                 node_id,
@@ -419,7 +420,7 @@ class IPCApplication:
         if command == "unarchive_conversation":
             local_node_id = self.history_local_node_id()
             if not local_node_id:
-                raise RuntimeError("Ingen lokal node er vald")
+                raise RuntimeError(tr("backend.local_node.not_selected"))
             node_id = normalize_node_id(str(request.get("node_id", "")))
             conversation = self._validated_archived_route(
                 node_id,
@@ -429,7 +430,7 @@ class IPCApplication:
                 route_local, _, _ = parse_dm_conversation_id(conversation)
                 if route_local != local_node_id:
                     raise ValueError(
-                        "Samtaleruta høyrer til ein annan lokal node"
+                        tr("backend.ipc.route_other_local_node")
                     )
             self.database.unarchive_conversation(
                 node_id,
@@ -450,7 +451,7 @@ class IPCApplication:
                     not isinstance(requested_routes, list)
                     or not 1 <= len(requested_routes) <= 64
                 ):
-                    raise ValueError("Samtalerutene må vere ei liste med 1–64 ruter")
+                    raise ValueError(tr("backend.ipc.routes_invalid"))
                 routes: list[str] = []
                 peers: set[str] = set()
                 for value in requested_routes:
@@ -459,14 +460,14 @@ class IPCApplication:
                     )
                     if route_local != local_node_id:
                         raise ValueError(
-                            "Samanslåtte DM-ruter må høyre til den valde lokale noden"
+                            tr("backend.ipc.merged_routes_other_local_node")
                         )
                     routes.append(
                         dm_conversation_id(route_local, route_peer, route_key)
                     )
                     peers.add(route_peer)
                 if len(peers) != 1:
-                    raise ValueError("Samanslåtte DM-ruter må ha same mottakar")
+                    raise ValueError(tr("backend.ipc.merged_routes_peer_mismatch"))
                 data = self.database.list_messages(
                     "dm",
                     conversation_ids=list(dict.fromkeys(routes)),
@@ -480,7 +481,7 @@ class IPCApplication:
                 )
                 if request.get("channel_index") is not None and primary is None:
                     raise ValueError(
-                        "Kanalindeksen finst ikkje på den aktive noden"
+                        tr("backend.channel.index_missing")
                     )
                 data = (
                     self.database.list_messages(
@@ -497,7 +498,7 @@ class IPCApplication:
                 route_local, channel_key = parse_public_conversation_id(conversation)
                 if route_local is not None and route_local != local_node_id:
                     raise ValueError(
-                        "Public-ruta høyrer til ein annan lokal node"
+                        tr("backend.ipc.public_route_other_local_node")
                     )
                 data = self.database.list_messages(
                     "public",
@@ -514,7 +515,7 @@ class IPCApplication:
                     conversation
                 )
                 if route_local != local_node_id:
-                    raise ValueError("DM-ruta høyrer til ein annan lokal node")
+                    raise ValueError(tr("backend.ipc.dm_route_other_local_node"))
                 data = self.database.list_messages(
                     "dm",
                     conversation_id=dm_conversation_id(
@@ -540,7 +541,7 @@ class IPCApplication:
                     channel = self.active_channel(int(request["channel_index"]))
                     if channel is None:
                         raise ValueError(
-                            "Kanalindeksen finst ikkje på den aktive noden"
+                            tr("backend.channel.index_missing")
                         )
                     data = self.database.list_messages(
                         "dm",
@@ -616,7 +617,7 @@ class IPCApplication:
                     str(request.get("node_id", "")),
                 ),
             }
-        raise ValueError("Ukjend kommando")
+        raise ValueError(tr("backend.ipc.unknown_command"))
 
     def complete_request(self, request: dict[str, Any]) -> None:
         if request.get("command") == "shutdown" and self.shutdown_callback is not None:
@@ -680,7 +681,7 @@ else:
     class _IPCUnixServer:  # type: ignore[no-redef]
         def __init__(self, address: str, app: IPCApplication):
             del address, app
-            raise RuntimeError("Unix-socket er ikkje støtta på Windows")
+            raise RuntimeError(tr("backend.ipc.unix_windows"))
 
 
 class _IPCHandler(socketserver.StreamRequestHandler):
@@ -698,23 +699,30 @@ class _IPCHandler(socketserver.StreamRequestHandler):
             if not raw:
                 return
             if len(raw) > MAX_REQUEST_BYTES:
-                raise ValueError("Førespurnaden er for stor")
-            request = json.loads(raw)
-            if not isinstance(request, dict):
-                raise ValueError("Førespurnaden må vere eit JSON-objekt")
-            if not self.server.app.is_authenticated(request):
-                raise PermissionError("IPC-autentisering feila")
-            if request.get("command") == "watch":
-                self._watch(request)
-                return
-            if request.get("command") == "export":
-                self._export()
-                return
-            response = self.server.app.dispatch(request)
+                raise ValueError(tr("backend.ipc.request_too_large"))
             try:
-                self._write(response)
-            finally:
-                self.server.app.complete_request(request)
+                request = json.loads(raw)
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ValueError(tr("backend.ipc.request_invalid_json")) from exc
+            if not isinstance(request, dict):
+                raise ValueError(tr("backend.ipc.request_not_object"))
+            language = str(request.get("language") or "nn")
+            if language not in {"nn", "en"}:
+                language = "nn"
+            with using_language(language):
+                if not self.server.app.is_authenticated(request):
+                    raise PermissionError(tr("backend.ipc.authentication_failed"))
+                if request.get("command") == "watch":
+                    self._watch(request)
+                    return
+                if request.get("command") == "export":
+                    self._export()
+                    return
+                response = self.server.app.dispatch(request)
+                try:
+                    self._write(response)
+                finally:
+                    self.server.app.complete_request(request)
         except (BrokenPipeError, ConnectionResetError):
             return
         except Exception as exc:
@@ -723,7 +731,7 @@ class _IPCHandler(socketserver.StreamRequestHandler):
 
     def _watch(self, request: dict[str, Any]) -> None:
         if not self.server._watcher_slots.acquire(blocking=False):
-            raise RuntimeError("For mange aktive overvakingar; prøv igjen seinare")
+            raise RuntimeError(tr("backend.ipc.too_many_watchers"))
         conversation = str(request.get("conversation", "all"))
         try:
             if (
@@ -750,7 +758,7 @@ class _IPCHandler(socketserver.StreamRequestHandler):
 
     def _export(self) -> None:
         if not self.server._export_slots.acquire(blocking=False):
-            raise RuntimeError("For mange aktive databaseeksportar; prøv igjen seinare")
+            raise RuntimeError(tr("backend.ipc.too_many_exports"))
         try:
             self._write(
                 {
@@ -782,7 +790,7 @@ class _IPCHandler(socketserver.StreamRequestHandler):
 class IPCServer:
     def __init__(self, settings: Settings, app: IPCApplication):
         if len(settings.ipc_token) < 32:
-            raise ValueError("IPC_TOKEN må vere minst 32 teikn")
+            raise ValueError(tr("backend.ipc.token_too_short"))
         self.settings = settings
         self._unix_identity: tuple[int, int] | None = None
         if settings.ipc_uses_unix:
@@ -810,16 +818,16 @@ class IPCServer:
     @staticmethod
     def _prepare_unix_path(path: Path) -> None:
         if len(os.fsencode(path)) > 100:
-            raise ValueError("IPC-socketstien er for lang")
+            raise ValueError(tr("backend.ipc.socket_path_too_long"))
         parent = path.parent
         if parent.exists():
             parent_stat = parent.lstat()
             if stat.S_ISLNK(parent_stat.st_mode) or not stat.S_ISDIR(
                 parent_stat.st_mode
             ):
-                raise ValueError("IPC-socketmappa må vere ei vanleg mappe")
+                raise ValueError(tr("backend.ipc.socket_parent_invalid"))
             if parent_stat.st_uid != os.geteuid():
-                raise PermissionError("IPC-socketmappa har feil eigar")
+                raise PermissionError(tr("backend.ipc.socket_parent_wrong_owner"))
         else:
             parent.mkdir(parents=True, mode=0o700)
         try:
@@ -831,7 +839,7 @@ class IPCServer:
             or not stat.S_ISSOCK(existing.st_mode)
             or existing.st_uid != os.geteuid()
         ):
-            raise PermissionError("IPC-socketstien er ikkje ein trygg, eigd socket")
+            raise PermissionError(tr("backend.ipc.socket_path_unsafe"))
         probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         probe.settimeout(0.2)
         try:
@@ -839,7 +847,7 @@ class IPCServer:
         except OSError:
             path.unlink()
         else:
-            raise OSError("IPC-socketen er allereie i bruk")
+            raise OSError(tr("backend.ipc.socket_path_in_use"))
         finally:
             probe.close()
 

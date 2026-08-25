@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import Any
 
+from meshpi.i18n import tr
+
 
 class BLEDiscoveryError(RuntimeError):
     pass
@@ -27,34 +29,28 @@ def _discovery_error_message(exc: Exception) -> str:
         BleakBluetoothNotAvailableError,
     ):
         if exc.reason == BleakBluetoothNotAvailableReason.POWERED_OFF:
-            return "Bluetooth er slått av. Slå på Bluetooth og prøv på nytt."
+            return tr("ble.powered_off")
         if exc.reason in {
             BleakBluetoothNotAvailableReason.DENIED_BY_USER,
             BleakBluetoothNotAvailableReason.DENIED_BY_SYSTEM,
             BleakBluetoothNotAvailableReason.DENIED_BY_UNKNOWN,
         }:
-            return (
-                "MeshPi har ikkje løyve til å bruke Bluetooth. "
-                "Gi Bluetooth-løyve i systeminnstillingane og prøv på nytt."
-            )
+            return tr("ble.permission_system")
         if exc.reason in {
             BleakBluetoothNotAvailableReason.NO_BLUETOOTH,
             BleakBluetoothNotAvailableReason.NO_BLE_CENTRAL_ROLE,
         }:
-            return "Fann ingen BLE-adapter som MeshPi kan bruke."
+            return tr("ble.no_adapter")
 
     detail = str(exc).casefold()
     if any(
         marker in detail
         for marker in ("access denied", "not authorized", "permission denied")
     ):
-        return (
-            "MeshPi har ikkje løyve til å bruke Bluetooth. "
-            "Kontroller Bluetooth-løyva og prøv på nytt."
-        )
+        return tr("ble.permission")
     if any(marker in detail for marker in ("powered off", "not ready")):
-        return "Bluetooth er slått av eller ikkje klart. Prøv på nytt når adapteren er på."
-    return "BLE-søket feila. Kontroller Bluetooth-adapteren og prøv på nytt."
+        return tr("ble.not_ready")
+    return tr("ble.discovery_failed")
 
 
 def _meshtastic_scan() -> Iterable[Any]:
@@ -66,29 +62,19 @@ def _meshtastic_scan() -> Iterable[Any]:
 def connection_error_message(exc: Exception) -> str:
     kind = str(getattr(exc, "kind", "") or "")
     if kind == "device_not_found":
-        return (
-            "Fann ikkje BLE-noden. Kontroller at han er slått på, "
-            "i rekkevidd og framleis har same identifikator."
-        )
+        return tr("ble.device_not_found")
     if kind == "multiple_devices":
-        return "Fann fleire BLE-einingar med same identifikator eller namn."
+        return tr("ble.multiple_devices")
     if kind in {"read_error", "write_error"}:
-        return (
-            "BLE-sambandet blei avvist. Kontroller paring og Bluetooth-løyve "
-            "i operativsystemet."
-        )
+        return tr("ble.connection_denied")
 
     detail = str(exc).casefold()
     if any(marker in detail for marker in ("pair", "authentication", "encrypt")):
-        return (
-            "BLE-noden er ikkje para eller godkjenninga feila. "
-            "Godkjenn paringsdialogen i operativsystemet og prøv på nytt. "
-            "På macOS må PIN-koden skrivast i systemdialogen."
-        )
+        return tr("ble.pairing_failed")
     adapter_message = _discovery_error_message(exc)
-    if not adapter_message.startswith("BLE-søket feila"):
+    if adapter_message != tr("ble.discovery_failed"):
         return adapter_message
-    return "Klarte ikkje kople til BLE-noden. Kontroller rekkevidd og paring."
+    return tr("ble.connection_failed")
 
 
 def discover_ble(

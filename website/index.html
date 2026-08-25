@@ -10,38 +10,42 @@
   <script src="script.js" defer></script>
 </head>
 <body>
-  <a class="skip-link" href="#installasjon">Gå til installasjon</a>
+  <a class="skip-link" href="#installasjon" data-en="Skip to installation">Gå til installasjon</a>
 
   <header class="site-header">
-    <a class="brand" href="#" aria-label="MeshPi heim">
+    <a class="brand" href="#" aria-label="MeshPi heim" data-aria-en="MeshPi home">
       <span class="brand-mark" aria-hidden="true">◆</span>
       <span>meshpi</span>
     </a>
-    <nav aria-label="Hovudmeny">
-      <a href="#funksjonar">Funksjonar</a>
-      <a href="#installasjon">Installer</a>
-      <a href="#oppdatering">Oppdater</a>
-      <a href="#drift">Drift</a>
-      <a href="#kommandoar">Kommandoar</a>
+    <nav aria-label="Hovudmeny" data-aria-en="Main menu">
+      <a href="#funksjonar" data-en="Features">Funksjonar</a>
+      <a href="#installasjon" data-en="Install">Installer</a>
+      <a href="#oppdatering" data-en="Update">Oppdater</a>
+      <a href="#drift" data-en="Operations">Drift</a>
+      <a href="#kommandoar" data-en="Commands">Kommandoar</a>
       <a href="https://github.com/rvenes/meshpi">GitHub</a>
     </nav>
+    <div class="language-switcher" role="group" aria-label="Språk" data-aria-en="Language">
+      <button type="button" data-language="nn" aria-pressed="true">Nynorsk</button>
+      <button type="button" data-language="en" aria-pressed="false">English</button>
+    </div>
   </header>
 
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> Versjon 0.8.9</div>
-        <h1>Meshtastic-chat.<br><span>Rett i terminalen.</span></h1>
-        <p class="lead">
+        <div class="eyebrow"><span class="status-dot"></span> <span data-en="Version 0.8.9">Versjon 0.8.9</span></div>
+        <h1><span class="heading-line" data-en="Meshtastic chat.">Meshtastic-chat.</span><br><span data-en="Right in your terminal.">Rett i terminalen.</span></h1>
+        <p class="lead" data-en="MeshPi keeps the radio connection open in the background, receives messages in real time, and gives you public chat, direct messages, history, and a node list in a fast terminal interface.">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
           sanntid og gir deg public chat, DM, historikk og nodeliste i eit
           raskt terminalgrensesnitt.
         </p>
         <div class="hero-actions">
-          <a class="button primary" href="#installasjon">Installer MeshPi</a>
-          <a class="button secondary" href="https://github.com/rvenes/meshpi">Sjå kjeldekoden</a>
+          <a class="button primary" href="#installasjon" data-en="Install MeshPi">Installer MeshPi</a>
+          <a class="button secondary" href="https://github.com/rvenes/meshpi" data-en="View source code">Sjå kjeldekoden</a>
         </div>
-        <ul class="badges" aria-label="Teknisk informasjon">
+        <ul class="badges" aria-label="Teknisk informasjon" data-aria-en="Technical information">
           <li>Linux</li>
           <li>macOS</li>
           <li>Windows</li>
@@ -49,40 +53,40 @@
         </ul>
       </div>
 
-      <div class="terminal" role="img" aria-label="Førehandsvising av MeshPi sitt terminalgrensesnitt">
+      <div class="terminal" role="img" aria-label="Førehandsvising av MeshPi sitt terminalgrensesnitt" data-aria-en="Preview of the MeshPi terminal interface">
         <div class="terminal-bar">
           <span></span><span></span><span></span>
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.8.9</b><i>●</i> Tilkopla
+          <b>MeshPi 0.8.9</b><i>●</i> <span data-en="Connected">Tilkopla</span>
           <span>BLE Meshtastic</span>
         </div>
         <div class="terminal-grid">
           <div class="terminal-list">
-            <h3>Samtalar</h3>
-            <div class="selected">● Public – kanal 0<small>17:38 Hei frå fjorden</small></div>
-            <div>◆ DM Fjellnode<small>17:32 Det verkar!</small></div>
-            <div>◆ DM Skognode<small>16:51 Takk</small></div>
+            <h3 data-en="Conversations">Samtalar</h3>
+            <div class="selected"><span data-en="● Public – channel 0">● Public – kanal 0</span><small data-en="17:38 Hello from the fjord">17:38 Hei frå fjorden</small></div>
+            <div>◆ DM Mountain Node<small data-en="17:32 It works!">17:32 Det verkar!</small></div>
+            <div>◆ DM Forest Node<small data-en="16:51 Thanks">16:51 Takk</small></div>
           </div>
           <div class="terminal-chat">
-            <h3>Public – kanal 0</h3>
-            <p><time>17:35</time> <b>Fjellnode [beef]</b> <em>RF</em><br>Hei frå fjellet 👋</p>
-            <p><time>17:38</time> <b>Dalnode [f00d]</b> <em>MQTT</em><br>Alt ser fint ut her.</p>
-            <div class="terminal-input">Skriv melding og trykk Enter</div>
+            <h3 data-en="Public – channel 0">Public – kanal 0</h3>
+            <p><time>17:35</time> <b>Mountain Node [beef]</b> <em>RF</em><br><span data-en="Hello from the mountain 👋">Hei frå fjellet 👋</span></p>
+            <p><time>17:38</time> <b>Valley Node [f00d]</b> <em>MQTT</em><br><span data-en="Everything looks good here.">Alt ser fint ut her.</span></p>
+            <div class="terminal-input" data-en="Write a message and press Enter">Skriv melding og trykk Enter</div>
           </div>
           <div class="terminal-nodes">
-            <h3>Nodedetaljar</h3>
+            <h3 data-en="Node details">Nodedetaljar</h3>
             <dl>
-              <dt>Langt namn</dt><dd>Fjellnode</dd>
+              <dt data-en="Long name">Langt namn</dt><dd>Mountain Node</dd>
               <dt>Node-ID</dt><dd>!deadbeef</dd>
-              <dt>Batteri</dt><dd>75%</dd>
-              <dt>Hopp</dt><dd>0</dd>
+              <dt data-en="Battery">Batteri</dt><dd>75%</dd>
+              <dt data-en="Hops">Hopp</dt><dd>0</dd>
             </dl>
-            <h3>Nodar · 27</h3>
-            <div>◆ Lokal node [babe]</div>
-            <div class="selected">● Fjellnode [beef]</div>
-            <div>● Skognode [cafe]</div>
+            <h3 data-en="Nodes · 27">Nodar · 27</h3>
+            <div data-en="◆ Local node [babe]">◆ Lokal node [babe]</div>
+            <div class="selected">● Mountain Node [beef]</div>
+            <div>● Forest Node [cafe]</div>
           </div>
         </div>
       </div>
@@ -90,39 +94,39 @@
 
     <section id="funksjonar" class="section">
       <div class="section-heading">
-        <span>Det viktigaste</span>
-        <h2>Bygd for å stå på heile tida</h2>
-        <p>Daemonen eig sambandet. Terminalgrensesnittet kan opnast og lukkast utan at meldingar går tapt.</p>
+        <span data-en="The essentials">Det viktigaste</span>
+        <h2 data-en="Built to stay online">Bygd for å stå på heile tida</h2>
+        <p data-en="The daemon owns the connection. You can open and close the terminal interface without losing messages.">Daemonen eig sambandet. Terminalgrensesnittet kan opnast og lukkast utan at meldingar går tapt.</p>
       </div>
       <div class="feature-grid">
         <article>
           <span class="feature-number">01</span>
-          <h3>Sanntidschat</h3>
-          <p>Alle aktiverte public-kanalar og direktemeldingar med kanalrute dukkar opp automatisk, med RF/MQTT, SNR, RSSI og ACK når data finst.</p>
+          <h3 data-en="Real-time chat">Sanntidschat</h3>
+          <p data-en="All enabled public channels and routed direct messages appear automatically, with RF/MQTT, SNR, RSSI, and ACK details when available.">Alle aktiverte public-kanalar og direktemeldingar med kanalrute dukkar opp automatisk, med RF/MQTT, SNR, RSSI og ACK når data finst.</p>
         </article>
         <article>
           <span class="feature-number">02</span>
-          <h3>Heile nodelista</h3>
-          <p>Naviger med Tab og piltastar, sjå detaljar og trykk Enter for å opne DM med ein node.</p>
+          <h3 data-en="The full node list">Heile nodelista</h3>
+          <p data-en="Navigate with Tab and the arrow keys, view details, and press Enter to open a direct message with a node.">Naviger med Tab og piltastar, sjå detaljar og trykk Enter for å opne DM med ein node.</p>
         </article>
         <article>
           <span class="feature-number">03</span>
-          <h3>TCP, USB og BLE</h3>
-          <p>Byt mellom lagra eller oppdaga Meshtastic-nodar utan omstart. BLE-støtta er eksperimentell og er live-testa på Windows og macOS.</p>
+          <h3 data-en="TCP, USB, and BLE">TCP, USB og BLE</h3>
+          <p data-en="Switch between saved or discovered Meshtastic nodes without restarting. BLE support is experimental and has been tested live on Windows and macOS.">Byt mellom lagra eller oppdaga Meshtastic-nodar utan omstart. BLE-støtta er eksperimentell og er live-testa på Windows og macOS.</p>
         </article>
         <article>
           <span class="feature-number">04</span>
-          <h3>Lokal historikk</h3>
-          <p>Meldingar, traceroute-resultat, ulest-status og nodeinformasjon blir lagra lokalt i SQLite. Arkivering slettar ingenting, og meldingar kan tømmast etter omfang med CLI-en.</p>
+          <h3 data-en="Local history">Lokal historikk</h3>
+          <p data-en="Messages, traceroute results, unread status, and node information are stored locally in SQLite. Archiving deletes nothing, and the CLI can clear messages by scope.">Meldingar, traceroute-resultat, ulest-status og nodeinformasjon blir lagra lokalt i SQLite. Arkivering slettar ingenting, og meldingar kan tømmast etter omfang med CLI-en.</p>
         </article>
       </div>
     </section>
 
     <section id="installasjon" class="section install-section">
       <div class="section-heading">
-        <span>Kom i gang</span>
-        <h2>Vel kor lenge bakgrunnen skal køyre</h2>
-        <p>
+        <span data-en="Get started">Kom i gang</span>
+        <h2 data-en="Choose how long the background service runs">Vel kor lenge bakgrunnen skal køyre</h2>
+        <p data-en-html="The default is &lt;strong&gt;always&lt;/strong&gt;: messages arrive even when the terminal interface is closed. Choose &lt;strong&gt;session&lt;/strong&gt; if the daemon should run only while you are using MeshPi. MeshPi stores every message it receives in session mode, but cannot guarantee that the node will deliver messages received while MeshPi was closed.">
           Standard er <strong>always</strong>: meldingar kjem inn også når
           terminalgrensesnittet er lukka. Vel <strong>session</strong> dersom
           daemonen berre skal køyre medan du bruker MeshPi. MeshPi lagrar alle
@@ -131,7 +135,7 @@
         </p>
       </div>
 
-      <div class="platform-tabs" role="tablist" aria-label="Vel operativsystem">
+      <div class="platform-tabs" role="tablist" aria-label="Vel operativsystem" data-aria-en="Choose operating system">
         <button role="tab" data-platform-tab="linux" aria-selected="true">Linux / Pi</button>
         <button role="tab" data-platform-tab="macos" aria-selected="false">macOS</button>
         <button role="tab" data-platform-tab="windows" aria-selected="false">Windows</button>
@@ -139,23 +143,23 @@
 
       <div class="platform-panel active" data-platform-panel="linux">
         <div>
-          <h3>Linux og Raspberry Pi OS</h3>
-          <p>Installerer under <code>/opt/meshpi</code> og set opp ei avgrensa systemd-teneste (always).</p>
-          <p>Minimal Debian/Ubuntu kan først trenge <code>sudo apt install curl python3-venv</code>. Installatøren viser rett versjonspakke dersom den valde Python-versjonen manglar venv.</p>
+          <h3 data-en="Linux and Raspberry Pi OS">Linux og Raspberry Pi OS</h3>
+          <p data-en-html="Installs under &lt;code&gt;/opt/meshpi&lt;/code&gt; and configures a restricted systemd service (always).">Installerer under <code>/opt/meshpi</code> og set opp ei avgrensa systemd-teneste (always).</p>
+          <p data-en-html="A minimal Debian/Ubuntu system may first need &lt;code&gt;sudo apt install curl python3-venv&lt;/code&gt;. The installer shows the correct versioned package if the selected Python version lacks venv.">Minimal Debian/Ubuntu kan først trenge <code>sudo apt install curl python3-venv</code>. Installatøren viser rett versjonspakke dersom den valde Python-versjonen manglar venv.</p>
         </div>
         <div class="install-options">
           <div class="install-option">
-            <p><strong>Always – køyrer òg når terminalen er lukka:</strong></p>
+            <p><strong data-en="Always – also runs when the terminal is closed:">Always – køyrer òg når terminalen er lukka:</strong></p>
             <div class="command-box">
               <code id="install-linux-command">curl -fLO https://venes.org/meshpi/install-linux.sh &amp;&amp; sudo sh install-linux.sh</code>
-              <button data-copy-target="install-linux-command">Kopier</button>
+              <button data-copy-target="install-linux-command" data-en="Copy">Kopier</button>
             </div>
           </div>
           <div class="install-option">
-            <p><strong>Session – køyrer berre medan MeshPi er i bruk, utan sudo:</strong></p>
+            <p><strong data-en="Session – runs only while MeshPi is in use, without sudo:">Session – køyrer berre medan MeshPi er i bruk, utan sudo:</strong></p>
             <div class="command-box">
               <code id="install-linux-session-command">curl -fLO https://venes.org/meshpi/install-linux.sh &amp;&amp; sh install-linux.sh --mode=session</code>
-              <button data-copy-target="install-linux-session-command">Kopier</button>
+              <button data-copy-target="install-linux-session-command" data-en="Copy">Kopier</button>
             </div>
           </div>
         </div>
@@ -164,21 +168,21 @@
       <div class="platform-panel" data-platform-panel="macos" hidden>
         <div>
           <h3>macOS</h3>
-          <p>Installerer for gjeldande brukar og held daemonen i gang med launchd (always).</p>
+          <p data-en="Installs for the current user and keeps the daemon running with launchd (always).">Installerer for gjeldande brukar og held daemonen i gang med launchd (always).</p>
         </div>
         <div class="install-options">
           <div class="install-option">
-            <p><strong>Always – køyrer òg når terminalen er lukka:</strong></p>
+            <p><strong data-en="Always – also runs when the terminal is closed:">Always – køyrer òg når terminalen er lukka:</strong></p>
             <div class="command-box">
               <code id="install-macos-command">curl -fLO https://venes.org/meshpi/install-macos.sh &amp;&amp; sh install-macos.sh</code>
-              <button data-copy-target="install-macos-command">Kopier</button>
+              <button data-copy-target="install-macos-command" data-en="Copy">Kopier</button>
             </div>
           </div>
           <div class="install-option">
-            <p><strong>Session – køyrer berre medan MeshPi er i bruk:</strong></p>
+            <p><strong data-en="Session – runs only while MeshPi is in use:">Session – køyrer berre medan MeshPi er i bruk:</strong></p>
             <div class="command-box">
               <code id="install-macos-session-command">curl -fLO https://venes.org/meshpi/install-macos.sh &amp;&amp; sh install-macos.sh --mode=session</code>
-              <button data-copy-target="install-macos-session-command">Kopier</button>
+              <button data-copy-target="install-macos-session-command" data-en="Copy">Kopier</button>
             </div>
           </div>
         </div>
@@ -187,34 +191,34 @@
       <div class="platform-panel" data-platform-panel="windows" hidden>
         <div>
           <h3>Windows PowerShell</h3>
-          <p>Installerer per brukar og bruker ein prosessvakt som startar daemonen ved innlogging og etter krasj.</p>
+          <p data-en="Installs per user and uses a process supervisor that starts the daemon at sign-in and after crashes.">Installerer per brukar og bruker ein prosessvakt som startar daemonen ved innlogging og etter krasj.</p>
         </div>
         <div class="install-options">
           <div class="install-option">
-            <p><strong>Always – startar ved innlogging og køyrer i bakgrunnen:</strong></p>
+            <p><strong data-en="Always – starts at sign-in and runs in the background:">Always – startar ved innlogging og køyrer i bakgrunnen:</strong></p>
             <div class="command-box">
               <code id="install-windows-command">Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; .\install-windows.ps1</code>
-              <button data-copy-target="install-windows-command">Kopier</button>
+              <button data-copy-target="install-windows-command" data-en="Copy">Kopier</button>
             </div>
           </div>
           <div class="install-option">
-            <p><strong>Session – køyrer berre medan MeshPi er i bruk:</strong></p>
+            <p><strong data-en="Session – runs only while MeshPi is in use:">Session – køyrer berre medan MeshPi er i bruk:</strong></p>
             <div class="command-box">
               <code id="install-windows-session-command">Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; .\install-windows.ps1 -Mode Session</code>
-              <button data-copy-target="install-windows-session-command">Kopier</button>
+              <button data-copy-target="install-windows-session-command" data-en="Copy">Kopier</button>
             </div>
           </div>
         </div>
       </div>
 
       <div class="after-install">
-        <h3>Etter installasjon</h3>
+        <h3 data-en="After installation">Etter installasjon</h3>
         <ol>
-          <li>Opne ein ny terminal.</li>
-          <li>Køyr <code>meshpi</code>. Ved første oppstart opnar nodeveljaren automatisk.</li>
-          <li>Vel ei oppdaga TCP-, USB- eller BLE-eining, eller skriv målet manuelt.</li>
+          <li data-en="Open a new terminal.">Opne ein ny terminal.</li>
+          <li data-en-html="Run &lt;code&gt;meshpi&lt;/code&gt;. The node picker opens automatically on first launch.">Køyr <code>meshpi</code>. Ved første oppstart opnar nodeveljaren automatisk.</li>
+          <li data-en="Choose a discovered TCP, USB, or BLE device, or enter the target manually.">Vel ei oppdaga TCP-, USB- eller BLE-eining, eller skriv målet manuelt.</li>
         </ol>
-        <p>
+        <p data-en="The installer creates a new version directory, verifies the package and every dependency with SHA-256, runs an offline self-test, and only then switches versions. If the health check fails, the previous version is restored automatically.">
           Installeren lagar ei ny versjonsmappe, kontrollerer pakken og alle
           avhengigheiter med SHA-256, køyrer ein offline sjølvtest og byter
           først deretter. Ved mislykka helsesjekk blir førre versjon sett
@@ -223,13 +227,13 @@
       </div>
 
       <div class="after-install">
-        <h3>Les skriptet før du køyrer det</h3>
-        <p>
+        <h3 data-en="Read the script before running it">Les skriptet før du køyrer det</h3>
+        <p data-en="The short commands above trust what the server provides at that moment. You can instead download the script, review it, and run the local file:">
           Dei korte kommandoane over stoler på det serveren leverer akkurat
           då. Du kan i staden laste ned skriptet, lese det og køyre den lokale
           fila:
         </p>
-        <p><code>less</code> viser berre fila. Bla med piltastane og trykk <code>q</code> for å lukke visaren før du køyrer neste linje.</p>
+        <p data-en-html="&lt;code&gt;less&lt;/code&gt; only displays the file. Scroll with the arrow keys and press &lt;code&gt;q&lt;/code&gt; to close the viewer before running the next line."><code>less</code> viser berre fila. Bla med piltastane og trykk <code>q</code> for å lukke visaren før du køyrer neste linje.</p>
         <p><code>sudo apt install curl python3-venv</code><br>
           <code>curl -fLO https://venes.org/meshpi/install-linux.sh</code><br>
           <code>less install-linux.sh</code><br>
@@ -240,120 +244,121 @@
         <p><code>Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1</code><br>
           <code>Get-Content .\install-windows.ps1</code><br>
           <code>Set-ExecutionPolicy -Scope Process Bypass; .\install-windows.ps1</code></p>
-        <p>Windows session-modus: <code>.\install-windows.ps1 -Mode Session</code>.</p>
+        <p data-en-html="Windows session mode: &lt;code&gt;.\install-windows.ps1 -Mode Session&lt;/code&gt;.">Windows session-modus: <code>.\install-windows.ps1 -Mode Session</code>.</p>
       </div>
     </section>
 
     <section id="oppdatering" class="section split-section">
       <div>
-        <span class="section-kicker">Oppdatering</span>
-        <h2>Signert oppdatering. Ingen datatap.</h2>
-        <p>
+        <span class="section-kicker" data-en="Updates">Oppdatering</span>
+        <h2 data-en="Signed updates. No data loss.">Signert oppdatering. Ingen datatap.</h2>
+        <p data-en-html="After the first installation, run &lt;code&gt;meshpi update&lt;/code&gt;. Linux in always mode uses &lt;code&gt;sudo meshpi update&lt;/code&gt;. Existing configuration, connection profiles, and SQLite history are preserved.">
           Etter første installasjon køyrer du <code>meshpi update</code>.
           Linux i always-modus bruker <code>sudo meshpi update</code>.
           Eksisterande konfigurasjon, tilkoplingsprofilar og SQLite-historikk
           blir tekne vare på.
         </p>
-        <p>
+        <p data-en-html="Anyone can choose the signed beta channel with &lt;code&gt;meshpi update --beta&lt;/code&gt;. This command requires MeshPi 0.8.6 or newer. Older installations use the full installation path on the &lt;a href=&quot;beta/&quot;&gt;beta page&lt;/a&gt;. Beta releases may contain bugs; without &lt;code&gt;--beta&lt;/code&gt;, only the stable channel is used.">
           Alle kan velje den signerte betakanalen med
           <code>meshpi update --beta</code>. Kommandoen krev MeshPi 0.8.6 eller
           nyare. Eldre installasjonar bruker den fulle installasjonsvegen på
           <a href="beta/">betasida</a>. Beta kan innehalde feil; utan
           <code>--beta</code> blir berre den stabile kanalen brukt.
         </p>
-        <p>
+        <p data-en-html="MeshPi checks &lt;a href=&quot;version.json&quot;&gt;version.json&lt;/a&gt; at startup. When a new version is available, the update command appears as a local system message in the chat log. It is never sent to the mesh network.">
           MeshPi sjekkar <a href="version.json">version.json</a> ved oppstart.
           Når ein ny versjon finst, blir oppdateringskommandoen vist som ei lokal
           systemmelding i chatloggen. Han blir aldri sendt til mesh-nettet.
         </p>
       </div>
       <div class="info-card">
-        <h3>Kontrollert nedlasting</h3>
+        <h3 data-en="Verified download">Kontrollert nedlasting</h3>
         <ul>
-          <li>Signert manifest og HTTPS utan usignert kommandokøyring</li>
-          <li>Signert storleik og SHA-256 for installatør, pakke og låsefil</li>
-          <li>Offline sjølvtest og automatisk rollback</li>
-          <li>Eksplisitt stadfesting før installasjon</li>
-          <li>Ingen telemetri eller konto</li>
+          <li data-en="Signed manifest and HTTPS with no unsigned command execution">Signert manifest og HTTPS utan usignert kommandokøyring</li>
+          <li data-en="Signed size and SHA-256 for the installer, package, and lock file">Signert storleik og SHA-256 for installatør, pakke og låsefil</li>
+          <li data-en="Offline self-test and automatic rollback">Offline sjølvtest og automatisk rollback</li>
+          <li data-en="Explicit confirmation before installation">Eksplisitt stadfesting før installasjon</li>
+          <li data-en="No telemetry or account">Ingen telemetri eller konto</li>
         </ul>
-        <p>
+        <p data-en="The manifest is digitally signed with a separate RSA-3072 key allowlisted in the app and every installer. Modified, unknown, revoked, or unsigned manifests are rejected before packages are installed. The updater never executes a command from the manifest.">
           Manifestet er digitalt signert med ein separat RSA-3072-nøkkel som er
           allowlista i appen og alle installatørane. Endra, ukjende,
           tilbakekalla eller usignerte manifest blir avviste før pakkar blir
           installerte. Oppdateraren køyrer aldri ein kommando frå manifestet.
         </p>
-        <a href="version.json">Opne versjonsmanifestet →</a>
+        <a href="version.json" data-en="Open the version manifest →">Opne versjonsmanifestet →</a>
       </div>
     </section>
 
     <section id="drift" class="section split-section">
       <div>
-        <span class="section-kicker">Bakgrunn og diagnostikk</span>
-        <h2>Styr daemonen utan å leite i systemmenyar</h2>
+        <span class="section-kicker" data-en="Background service and diagnostics">Bakgrunn og diagnostikk</span>
+        <h2 data-en="Control the daemon without hunting through system menus">Styr daemonen utan å leite i systemmenyar</h2>
         <p><code>meshpi service status</code><br>
           <code>meshpi service start</code><br>
           <code>meshpi service stop</code><br>
           <code>meshpi doctor --offline</code></p>
-        <p>
+        <p data-en="MeshPi starts a stopped daemon when needed. When you exit the TUI, you can choose whether it should stop or keep running.">
           MeshPi startar ein stoppa daemon ved behov. Når du avsluttar TUI-en,
           kan du velje om han skal stoppast eller stå att.
         </p>
       </div>
       <div class="info-card">
-        <h3>Avinstaller utan datatap</h3>
-        <p>Standard avinstallering fjernar program og autostart, men bevarer konfigurasjon, historikk og profilar.</p>
+        <h3 data-en="Uninstall without losing data">Avinstaller utan datatap</h3>
+        <p data-en="A standard uninstall removes the program and automatic startup, but preserves configuration, history, and profiles.">Standard avinstallering fjernar program og autostart, men bevarer konfigurasjon, historikk og profilar.</p>
         <ul>
-          <li><a href="uninstall-linux.sh">Linux / Pi</a> – bruk <code>--purge-data</code> for full sletting</li>
-          <li><a href="uninstall-macos.sh">macOS</a> – bruk <code>--purge-data</code> for full sletting</li>
-          <li><a href="uninstall-windows.ps1">Windows</a> – bruk <code>-PurgeData</code> for full sletting</li>
+          <li data-en-html="&lt;a href=&quot;uninstall-linux.sh&quot;&gt;Linux / Pi&lt;/a&gt; – use &lt;code&gt;--purge-data&lt;/code&gt; for complete removal"><a href="uninstall-linux.sh">Linux / Pi</a> – bruk <code>--purge-data</code> for full sletting</li>
+          <li data-en-html="&lt;a href=&quot;uninstall-macos.sh&quot;&gt;macOS&lt;/a&gt; – use &lt;code&gt;--purge-data&lt;/code&gt; for complete removal"><a href="uninstall-macos.sh">macOS</a> – bruk <code>--purge-data</code> for full sletting</li>
+          <li data-en-html="&lt;a href=&quot;uninstall-windows.ps1&quot;&gt;Windows&lt;/a&gt; – use &lt;code&gt;-PurgeData&lt;/code&gt; for complete removal"><a href="uninstall-windows.ps1">Windows</a> – bruk <code>-PurgeData</code> for full sletting</li>
         </ul>
-        <p>Detaljerte mapper, loggkommandoar og drift står i <a href="https://github.com/rvenes/meshpi#drift-filer-og-avinstallering">README-en</a>.</p>
+        <p data-en-html="Detailed directories, log commands, and operations are documented in the &lt;a href=&quot;https://github.com/rvenes/meshpi#operations-files-and-uninstallation&quot;&gt;README&lt;/a&gt;.">Detaljerte mapper, loggkommandoar og drift står i <a href="https://github.com/rvenes/meshpi#drift-filer-og-avinstallering">README-en</a>.</p>
       </div>
     </section>
 
     <section id="kommandoar" class="section">
       <div class="section-heading">
-        <span>Komplett CLI-referanse</span>
-        <h2>Alle MeshPi-kommandoane</h2>
-        <p>
+        <span data-en="Complete CLI reference">Komplett CLI-referanse</span>
+        <h2 data-en="Every MeshPi command">Alle MeshPi-kommandoane</h2>
+        <p data-en-html="Use &lt;code&gt;meshpi COMMAND --help&lt;/code&gt; for details about an option. Global options such as &lt;code&gt;--json&lt;/code&gt; and &lt;code&gt;--env-file&lt;/code&gt; must appear before the command.">
           Bruk <code>meshpi KOMMANDO --help</code> for detaljar om eitt val.
           Globale val som <code>--json</code> og <code>--env-file</code> skal stå
           før kommandoen.
         </p>
       </div>
       <div class="command-reference">
-        <div><code>meshpi</code><span>Start fullskjermsgrensesnittet.</span></div>
-        <div><code>meshpi tui</code><span>Start fullskjermsgrensesnittet uttrykkeleg.</span></div>
-        <div><code>meshpi new</code><span>Oppdag eller vel ei tilkopling. F4 viser alle Linux-portar, og F5 startar eit nytt BLE-søk.</span></div>
-        <div><code>meshpi connect MÅL [--name NAMN]</code><span>Byt til TCP, seriellsti, COM-port eller <code>ble://IDENTIFIKATOR</code>.</span></div>
-        <div><code>meshpi connections</code><span>Vis lagra tilkoplingsprofilar.</span></div>
-        <div><code>meshpi daemon</code><span>Køyr bakgrunnstenesta i framgrunnen for feilsøking eller tenesteoppsett.</span></div>
-        <div><code>meshpi doctor [--offline]</code><span>Køyr sjølvtest; offline krev ikkje ein tilgjengeleg node.</span></div>
-        <div><code>meshpi export [FIL] [--force]</code><span>Eksporter heile databasen som UTF-8 JSON Lines utan å stoppe tenesta.</span></div>
-        <div><code>meshpi service {status,start,stop,enable,disable}</code><span>Vis eller styr tenesta og autostart.</span></div>
-        <div><code>meshpi update [--check] [--yes] [--beta]</code><span>Sjekk eller installer ei signert oppdatering; <code>--beta</code> vel den opne betakanalen frå MeshPi 0.8.6.</span></div>
-        <div><code>meshpi status</code><span>Vis sambands- og tilkoplingsstatus.</span></div>
-        <div><code>meshpi nodes [--search TEKST] [--sort name|seen|id]</code><span>Vis, filtrer og sorter kjende nodar.</span></div>
-        <div><code>meshpi node NODE-ID</code><span>Vis alle lagra detaljar om éin node.</span></div>
-        <div><code>meshpi conversations</code><span>Vis samtalar og uleste meldingar.</span></div>
-        <div><code>meshpi channels</code><span>Vis kanalar på den aktive noden.</span></div>
-        <div><code>meshpi delete-messages {public,dm,all} [--yes]</code><span>Slett meldingar frå valt omfang etter stadfesting.</span></div>
-        <div><code>meshpi public [--channel INDEKS|SAMTALE-ID] [--limit TAL]</code><span>Vis historikken frå ein public-kanal.</span></div>
-        <div><code>meshpi dm NODE-ID [--channel INDEKS] [--limit TAL]</code><span>Vis DM-historikken med éin node.</span></div>
-        <div><code>meshpi send-public TEKST [--channel INDEKS|SAMTALE-ID]</code><span>Send til vald public-kanal.</span></div>
-        <div><code>meshpi send-dm NODE-ID TEKST [--channel INDEKS]</code><span>Send ein DM via vald kanal.</span></div>
-        <div><code>meshpi watch [all|public|SAMTALE-ID|NODE-ID]</code><span>Følg nye meldingar i sanntid.</span></div>
-        <div><code>meshpi chat {public|SAMTALE-ID|NODE-ID} [--limit TAL]</code><span>Start interaktiv linjebasert chat.</span></div>
+        <div><code>meshpi</code><span data-en="Start the full-screen interface.">Start fullskjermsgrensesnittet.</span></div>
+        <div><code>meshpi tui</code><span data-en="Explicitly start the full-screen interface.">Start fullskjermsgrensesnittet uttrykkeleg.</span></div>
+        <div><code>meshpi new</code><span data-en="Discover or choose a connection. F4 shows all Linux ports, and F5 starts a new BLE scan.">Oppdag eller vel ei tilkopling. F4 viser alle Linux-portar, og F5 startar eit nytt BLE-søk.</span></div>
+        <div><code data-en="meshpi connect TARGET [--name NAME]">meshpi connect MÅL [--name NAMN]</code><span data-en-html="Switch to TCP, a serial path, a COM port, or &lt;code&gt;ble://IDENTIFIER&lt;/code&gt;.">Byt til TCP, seriellsti, COM-port eller <code>ble://IDENTIFIKATOR</code>.</span></div>
+        <div><code>meshpi connections</code><span data-en="Show saved connection profiles.">Vis lagra tilkoplingsprofilar.</span></div>
+        <div><code>meshpi daemon</code><span data-en="Run the background service in the foreground for troubleshooting or service setup.">Køyr bakgrunnstenesta i framgrunnen for feilsøking eller tenesteoppsett.</span></div>
+        <div><code>meshpi doctor [--offline]</code><span data-en="Run the self-test; offline does not require an available node.">Køyr sjølvtest; offline krev ikkje ein tilgjengeleg node.</span></div>
+        <div><code data-en="meshpi export [FILE] [--force]">meshpi export [FIL] [--force]</code><span data-en="Export the entire database as UTF-8 JSON Lines without stopping the service.">Eksporter heile databasen som UTF-8 JSON Lines utan å stoppe tenesta.</span></div>
+        <div><code>meshpi service {status,start,stop,enable,disable}</code><span data-en="Show or control the service and automatic startup.">Vis eller styr tenesta og autostart.</span></div>
+        <div><code>meshpi update [--check] [--yes] [--beta]</code><span data-en-html="Check for or install a signed update; &lt;code&gt;--beta&lt;/code&gt; selects the open beta channel available since MeshPi 0.8.6.">Sjekk eller installer ei signert oppdatering; <code>--beta</code> vel den opne betakanalen frå MeshPi 0.8.6.</span></div>
+        <div><code>meshpi language [nn|en]</code><span data-en="Show or choose the interface language.">Vis eller vel språk for brukargrensesnittet.</span></div>
+        <div><code>meshpi status</code><span data-en="Show connection and transport status.">Vis sambands- og tilkoplingsstatus.</span></div>
+        <div><code data-en="meshpi nodes [--search TEXT] [--sort name|seen|id]">meshpi nodes [--search TEKST] [--sort name|seen|id]</code><span data-en="Show, filter, and sort known nodes.">Vis, filtrer og sorter kjende nodar.</span></div>
+        <div><code>meshpi node NODE-ID</code><span data-en="Show every stored detail for one node.">Vis alle lagra detaljar om éin node.</span></div>
+        <div><code>meshpi conversations</code><span data-en="Show conversations and unread messages.">Vis samtalar og uleste meldingar.</span></div>
+        <div><code>meshpi channels</code><span data-en="Show channels on the active node.">Vis kanalar på den aktive noden.</span></div>
+        <div><code>meshpi delete-messages {public,dm,all} [--yes]</code><span data-en="Delete messages from the selected scope after confirmation.">Slett meldingar frå valt omfang etter stadfesting.</span></div>
+        <div><code data-en="meshpi public [--channel INDEX|CONVERSATION-ID] [--limit NUMBER]">meshpi public [--channel INDEKS|SAMTALE-ID] [--limit TAL]</code><span data-en="Show history from a public channel.">Vis historikken frå ein public-kanal.</span></div>
+        <div><code data-en="meshpi dm NODE-ID [--channel INDEX] [--limit NUMBER]">meshpi dm NODE-ID [--channel INDEKS] [--limit TAL]</code><span data-en="Show direct-message history with one node.">Vis DM-historikken med éin node.</span></div>
+        <div><code data-en="meshpi send-public TEXT [--channel INDEX|CONVERSATION-ID]">meshpi send-public TEKST [--channel INDEKS|SAMTALE-ID]</code><span data-en="Send to the selected public channel.">Send til vald public-kanal.</span></div>
+        <div><code data-en="meshpi send-dm NODE-ID TEXT [--channel INDEX]">meshpi send-dm NODE-ID TEKST [--channel INDEKS]</code><span data-en="Send a direct message through the selected channel.">Send ein DM via vald kanal.</span></div>
+        <div><code data-en="meshpi watch [all|public|CONVERSATION-ID|NODE-ID]">meshpi watch [all|public|SAMTALE-ID|NODE-ID]</code><span data-en="Follow new messages in real time.">Følg nye meldingar i sanntid.</span></div>
+        <div><code data-en="meshpi chat {public|CONVERSATION-ID|NODE-ID} [--limit NUMBER]">meshpi chat {public|SAMTALE-ID|NODE-ID} [--limit TAL]</code><span data-en="Start an interactive line-based chat.">Start interaktiv linjebasert chat.</span></div>
       </div>
       <div class="global-options info-card">
-        <h3>Globale val</h3>
-        <p>
+        <h3 data-en="Global options">Globale val</h3>
+        <p data-en-html="&lt;code&gt;-h / --help&lt;/code&gt; shows help · &lt;code&gt;--version&lt;/code&gt; shows the version · &lt;code&gt;--env-file FILE&lt;/code&gt; selects an environment file · &lt;code&gt;--json&lt;/code&gt; writes a machine-readable response">
           <code>-h / --help</code> viser hjelp ·
           <code>--version</code> viser versjonen ·
           <code>--env-file FIL</code> vel miljøfil ·
           <code>--json</code> skriv maskinlesbart svar
         </p>
-        <p>
+        <p data-en-html="You can also enter the target directly, for example &lt;code&gt;meshpi 192.0.2.42&lt;/code&gt; or &lt;code&gt;meshpi COM4&lt;/code&gt;. This is shorthand for &lt;code&gt;meshpi connect TARGET&lt;/code&gt;.">
           Du kan òg skrive målet direkte, til dømes
           <code>meshpi 192.0.2.42</code> eller <code>meshpi COM4</code>.
           Det er ein snarveg til <code>meshpi connect MÅL</code>.
@@ -363,46 +368,47 @@
 
     <section class="section shortcuts">
       <div class="section-heading">
-        <span>Tastatur</span>
-        <h2>Alt som står under F1</h2>
+        <span data-en="Keyboard">Tastatur</span>
+        <h2 data-en="Everything listed under F1">Alt som står under F1</h2>
       </div>
       <div class="shortcut-grid">
-        <div><kbd>F1</kbd><span>Vis eller lukk denne oversikta</span></div>
-        <div><kbd>Tab / Shift+Tab</kbd><span>Flytt mellom samtalar, melding og nodar</span></div>
-        <div><kbd>Enter</kbd><span>Opne vald samtale/node eller send melding</span></div>
-        <div><kbd>↑ / ↓</kbd><span>Naviger i lista; i meldingsfeltet: eigne meldingar/utkast</span></div>
-        <div><kbd>Mus / Ctrl+C</kbd><span>Marker og kopier tekst frå samtalevindauget</span></div>
-        <div><kbd>Ctrl+L</kbd><span>Flytt markøren til meldingsfeltet</span></div>
-        <div><kbd>Ctrl+D</kbd><span>Finn ein node og start ein ny DM</span></div>
-        <div><kbd>F2</kbd><span>Flytt markøren til samtalelista</span></div>
-        <div><kbd>F3</kbd><span>Flytt markøren til nodelista</span></div>
-        <div><kbd>F8</kbd><span>Vis eller skjul DM-samtalane</span></div>
-        <div><kbd>F9</kbd><span>Vis eller skjul sekundærkanalane; primærkanalen blir ståande</span></div>
-        <div><kbd>Shift+F10</kbd><span>Opne handlingar for markert node</span></div>
-        <div><kbd>Delete</kbd><span>Lukk vald DM utan å slette historikken</span></div>
-        <div><kbd>Ctrl+R</kbd><span>Oppdater status, samtalar og nodar</span></div>
-        <div><kbd>Ctrl+U</kbd><span>Kopier oppdateringskommandoen når ein ny versjon finst</span></div>
-        <div><kbd>Ctrl+Q</kbd><span>Avslutt MeshPi og vel kva som skjer med daemonen</span></div>
-        <div><kbd>Esc</kbd><span>Lukk dialogen som er open</span></div>
+        <div><kbd>F1</kbd><span data-en="Show or close this overview">Vis eller lukk denne oversikta</span></div>
+        <div><kbd>Tab / Shift+Tab</kbd><span data-en="Move between conversations, messages, and nodes">Flytt mellom samtalar, melding og nodar</span></div>
+        <div><kbd>Enter</kbd><span data-en="Open the selected conversation/node or send a message">Opne vald samtale/node eller send melding</span></div>
+        <div><kbd>↑ / ↓</kbd><span data-en="Navigate the list; in the message field: sent messages/drafts">Naviger i lista; i meldingsfeltet: eigne meldingar/utkast</span></div>
+        <div><kbd>Mouse / Ctrl+C</kbd><span data-en="Select and copy text from the conversation window">Marker og kopier tekst frå samtalevindauget</span></div>
+        <div><kbd>Ctrl+L</kbd><span data-en="Move focus to the message field">Flytt markøren til meldingsfeltet</span></div>
+        <div><kbd>Ctrl+D</kbd><span data-en="Find a node and start a new DM">Finn ein node og start ein ny DM</span></div>
+        <div><kbd>F2</kbd><span data-en="Move focus to the conversation list">Flytt markøren til samtalelista</span></div>
+        <div><kbd>F3</kbd><span data-en="Move focus to the node list">Flytt markøren til nodelista</span></div>
+        <div><kbd>F8</kbd><span data-en="Show or hide DM conversations">Vis eller skjul DM-samtalane</span></div>
+        <div><kbd>F9</kbd><span data-en="Show or hide secondary channels; the primary remains visible">Vis eller skjul sekundærkanalane; primærkanalen blir ståande</span></div>
+        <div><kbd>F10</kbd><span data-en="Choose language and other app settings">Vel språk og andre appinnstillingar</span></div>
+        <div><kbd>Shift+F10</kbd><span data-en="Open actions for the selected node">Opne handlingar for markert node</span></div>
+        <div><kbd>Delete</kbd><span data-en="Close the selected DM without deleting its history">Lukk vald DM utan å slette historikken</span></div>
+        <div><kbd>Ctrl+R</kbd><span data-en="Refresh status, conversations, and nodes">Oppdater status, samtalar og nodar</span></div>
+        <div><kbd>Ctrl+U</kbd><span data-en="Copy the update command when a new version is available">Kopier oppdateringskommandoen når ein ny versjon finst</span></div>
+        <div><kbd>Ctrl+Q</kbd><span data-en="Quit MeshPi and choose what happens to the daemon">Avslutt MeshPi og vel kva som skjer med daemonen</span></div>
+        <div><kbd>Esc</kbd><span data-en="Close the open dialog">Lukk dialogen som er open</span></div>
       </div>
     </section>
 
     <section id="release-0.8.9" class="section release-section">
       <div class="section-heading">
-        <span>Siste versjon</span>
+        <span data-en="Latest version">Siste versjon</span>
         <h2>MeshPi 0.8.9</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li>Strengt dataskilje per lokal gateway og kanalbundne samtaler</li>
-          <li>Tapsfri databasemigrering og automatisk reconnect etter dvale</li>
-          <li>Kompakte samtaler, tydeleg ulestmarkering, sendhistorikk og kopiering av chattekst</li>
-          <li>Dato og tid i Nodeinfo-loggar og synleg nedtelling for nodehandlingar</li>
-          <li>Tryggare Windows-oppdatering med versjonsspesifikke launcherar</li>
+          <li data-en="Strict data separation per local gateway and channel-bound conversations">Strengt dataskilje per lokal gateway og kanalbundne samtaler</li>
+          <li data-en="Lossless database migration and automatic reconnection after sleep">Tapsfri databasemigrering og automatisk reconnect etter dvale</li>
+          <li data-en="Compact conversations, clear unread highlighting, send history, and chat text copying">Kompakte samtaler, tydeleg ulestmarkering, sendhistorikk og kopiering av chattekst</li>
+          <li data-en="Date and time in Node Info logs, with visible countdowns for node actions">Dato og tid i Nodeinfo-loggar og synleg nedtelling for nodehandlingar</li>
+          <li data-en="Safer Windows updates with version-specific launchers">Tryggare Windows-oppdatering med versjonsspesifikke launcherar</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.8.9-py3-none-any.whl">Last ned Python-pakken</a>
-          <a href="https://github.com/rvenes/meshpi">Kjeldekode på GitHub</a>
+          <a href="downloads/meshpi-0.8.9-py3-none-any.whl" data-en="Download the Python package">Last ned Python-pakken</a>
+          <a href="https://github.com/rvenes/meshpi" data-en="Source code on GitHub">Kjeldekode på GitHub</a>
         </div>
       </div>
     </section>
@@ -411,14 +417,14 @@
   <footer>
     <div>
       <span class="brand"><span class="brand-mark">◆</span> meshpi</span>
-      <p>Fri programvare under GPL-3.0-only.</p>
+      <p data-en="Free software under GPL-3.0-only.">Fri programvare under GPL-3.0-only.</p>
     </div>
     <div>
       <a href="https://github.com/rvenes/meshpi">GitHub</a>
       <a href="version.json">version.json</a>
-      <a href="LICENSE">Lisens</a>
+      <a href="LICENSE" data-en="License">Lisens</a>
     </div>
-    <small id="manifest-status">Kontrollerer siste versjon …</small>
+    <small id="manifest-status" data-en="Checking the latest version …">Kontrollerer siste versjon …</small>
   </footer>
 </body>
 </html>

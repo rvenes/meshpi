@@ -29,6 +29,7 @@ from meshpi.connections import (
 )
 from meshpi.database import Database
 from meshpi.events import EventHub
+from meshpi.i18n import tr
 from meshpi.models import (
     ConversationKind,
     Direction,
@@ -244,7 +245,7 @@ class MeshtasticService:
         self._stop.set()
         self._lost.set()
         self._switch_requested.set()
-        self._fail_pending_node_actions("Meshtastic-sambandet blei stoppa")
+        self._fail_pending_node_actions(tr("backend.connection.stopped"))
         with self._lock:
             interface = self._interface
             self._interface = None
@@ -301,9 +302,9 @@ class MeshtasticService:
             return {
                 "ble": [],
                 "ble_error": (
-                    "BLE-noden er i ferd med å kople til. Vent litt og prøv på nytt."
+                    tr("backend.ble.connecting")
                     if self._ble_connect_active.is_set()
-                    else "Eit BLE-søk er allereie i gang."
+                    else tr("backend.ble.discovery_active")
                 ),
                 "ble_scanned": False,
             }
@@ -337,7 +338,7 @@ class MeshtasticService:
             )
             profile = self.connections.save_and_activate(profile)
         else:
-            raise ValueError("Oppgi profil-ID eller tilkoplingsmål")
+            raise ValueError(tr("backend.connection.profile_or_target_required"))
 
         with self._lock:
             if profile == self._profile and self._interface is not None:
@@ -349,7 +350,7 @@ class MeshtasticService:
             self._channel_bindings = {}
             self._switch_requested.set()
             self._lost.set()
-        self._fail_pending_node_actions("Meshtastic-sambandet blei bytt")
+        self._fail_pending_node_actions(tr("backend.connection.switched"))
         with self._state_lock:
             self._status.update(self._profile_status(profile))
             self._status["local_node_id"] = None
@@ -458,7 +459,7 @@ class MeshtasticService:
                         if profile != self._profile:
                             interface.close()
                             self._switch_requested.set()
-                            raise RuntimeError("Tilkoplingsprofilen blei endra")
+                            raise RuntimeError(tr("backend.connection.profile_changed"))
                         self._interface = interface
                     self._discover_local_node(interface)
                     self._sync_channels(interface)
@@ -483,11 +484,11 @@ class MeshtasticService:
                         monotonic_checkpoint = monotonic_now
                         reconnect_reason = None
                         if interface_reader_stopped(interface):
-                            reconnect_reason = "Meshtastic-lesetråden stoppa"
+                            reconnect_reason = tr("backend.connection.reader_stopped")
                         elif slept >= SUSPEND_GAP_THRESHOLD_SECONDS:
-                            reconnect_reason = (
-                                "Maskina vakna etter dvale eller djup søvn "
-                                f"({slept:.0f} sekund)"
+                            reconnect_reason = tr(
+                                "backend.connection.resumed",
+                                seconds=f"{slept:.0f}",
                             )
                         if reconnect_reason:
                             with self._state_lock:
@@ -506,7 +507,7 @@ class MeshtasticService:
                         LOG.error("Meshtastic-feil: %s", exc)
                         self._set_status("feil", error=str(exc), attempt=attempt + 1)
                 finally:
-                    self._fail_pending_node_actions("Meshtastic-sambandet blei brote")
+                    self._fail_pending_node_actions(tr("backend.connection.broken"))
                     with self._lock:
                         old_interface = self._interface
                         self._interface = None
@@ -551,11 +552,11 @@ class MeshtasticService:
             if interface is not self._interface:
                 return
         with self._state_lock:
-            self._status["last_reconnect_reason"] = (
-                "Meshtastic-sambandet melde frå om brot"
+            self._status["last_reconnect_reason"] = tr(
+                "backend.connection.reported_lost"
             )
         self._lost.set()
-        self._fail_pending_node_actions("Meshtastic-sambandet fall ut")
+        self._fail_pending_node_actions(tr("backend.connection.lost"))
 
     def _discover_local_node(self, interface: Interface) -> None:
         local_id: str | None = None
@@ -698,7 +699,7 @@ class MeshtasticService:
         if binding is not None:
             return binding
         if not local_node_id:
-            raise RuntimeError("Lokal node-ID er ikkje kjend enno")
+            raise RuntimeError(tr("backend.local_node.id_unknown"))
         binding = ChannelBinding(
             local_node_id=local_node_id,
             channel_index=channel_index,
@@ -890,19 +891,19 @@ class MeshtasticService:
             return self._start_traceroute(normalized_node_id)
         if normalized_action == "position_exchange":
             return self._start_position_exchange(normalized_node_id)
-        raise ValueError(f"Ukjend nodehandling: {action}")
+        raise ValueError(tr("backend.node_action.unknown", action=action))
 
     def node_action_status(self, action_id: str) -> dict[str, Any]:
         with self._lock:
             action = self._node_actions.get(action_id)
             if action is None:
-                raise ValueError("Fann ikkje nodehandlinga")
+                raise ValueError(tr("backend.node_action.not_found"))
             return dict(action)
 
     def node_action_availability(self, action: str, node_id: str) -> dict[str, Any]:
         normalized_action = action.strip().lower()
         if normalized_action not in {"traceroute", "position_exchange"}:
-            raise ValueError(f"Ukjend nodehandling: {action}")
+            raise ValueError(tr("backend.node_action.unknown", action=action))
         normalized_node_id = normalize_node_id(node_id)
         with self._lock:
             remaining = (
@@ -912,22 +913,25 @@ class MeshtasticService:
             )
             connected = self._interface is not None and self.status()["state"] == "tilkopla"
             local = normalized_node_id == self._local_node_id
-        label = (
-            "Traceroute"
-            if normalized_action == "traceroute"
-            else "Posisjonsutveksling"
-        )
         reason = None
         if not connected:
-            reason = "Meshtastic-noden er ikkje tilkopla"
+            reason = tr("backend.connection.not_connected")
         elif local:
             reason = (
-                "Kan ikkje køyre traceroute til den lokale noden"
+                tr("backend.traceroute.local_target")
                 if normalized_action == "traceroute"
-                else "Kan ikkje utveksle posisjon med den lokale noden"
+                else tr("backend.position.local_target")
             )
         elif remaining:
-            reason = f"{label} kan sendast igjen om {remaining} sekund"
+            reason = tr(
+                "backend.node_action.cooldown",
+                action=(
+                    tr("backend.node_action.traceroute")
+                    if normalized_action == "traceroute"
+                    else tr("backend.node_action.position_exchange")
+                ),
+                seconds=remaining,
+            )
         return {
             "action": normalized_action,
             "node_id": normalized_node_id,
@@ -943,16 +947,20 @@ class MeshtasticService:
             interface = self._interface
             state = self.status()["state"]
             if interface is None or state != "tilkopla":
-                raise RuntimeError("Meshtastic-noden er ikkje tilkopla")
+                raise RuntimeError(tr("backend.connection.not_connected"))
             local_node_id = self._local_node_id
             if not local_node_id:
-                raise RuntimeError("Lokal node-ID er ikkje kjend enno")
+                raise RuntimeError(tr("backend.local_node.id_unknown"))
             if node_id == local_node_id:
-                raise ValueError("Kan ikkje køyre traceroute til den lokale noden")
+                raise ValueError(tr("backend.traceroute.local_target"))
             cooldown = self._traceroute_cooldown_remaining()
             if cooldown:
                 raise RuntimeError(
-                    f"Traceroute kan sendast igjen om {cooldown} sekund"
+                    tr(
+                        "backend.node_action.cooldown",
+                        action=tr("backend.node_action.traceroute"),
+                        seconds=cooldown,
+                    )
                 )
 
             action_id = uuid.uuid4().hex
@@ -974,7 +982,7 @@ class MeshtasticService:
                 with self._lock:
                     current_interface = self._interface
                 if interface is not current_interface:
-                    raise NodeActionError("Meshtastic-sambandet blei bytt")
+                    raise NodeActionError(tr("backend.connection.switched"))
                 result = parse_traceroute_response(
                     packet,
                     local_node_id=local_node_id,
@@ -996,15 +1004,16 @@ class MeshtasticService:
                 hopLimit=self._traceroute_hop_limit(interface),
             )
         except Exception as exc:
-            self._finish_node_action(action_id, error=f"Klarte ikkje sende traceroute: {exc}")
-            raise RuntimeError(f"Klarte ikkje sende traceroute: {exc}") from exc
+            error = tr("backend.traceroute.send_failed", error=exc)
+            self._finish_node_action(action_id, error=error)
+            raise RuntimeError(error) from exc
 
         packet_id = _sent_packet_id(sent)
         def on_timeout() -> None:
             self._discard_response_handler(interface, packet_id)
             self._finish_node_action(
                 action_id,
-                error="Traceroute fekk ikkje svar innan tidsfristen",
+                error=tr("backend.traceroute.timeout"),
             )
 
         timer = threading.Timer(TRACEROUTE_TIMEOUT_SECONDS, on_timeout)
@@ -1037,19 +1046,20 @@ class MeshtasticService:
             interface = self._interface
             state = self.status()["state"]
             if interface is None or state != "tilkopla":
-                raise RuntimeError("Meshtastic-noden er ikkje tilkopla")
+                raise RuntimeError(tr("backend.connection.not_connected"))
             local_node_id = self._local_node_id
             if not local_node_id:
-                raise RuntimeError("Lokal node-ID er ikkje kjend enno")
+                raise RuntimeError(tr("backend.local_node.id_unknown"))
             if node_id == local_node_id:
-                raise ValueError(
-                    "Kan ikkje be den lokale noden utveksle posisjon med seg sjølv"
-                )
+                raise ValueError(tr("backend.position.local_target_request"))
             cooldown = self._position_exchange_cooldown_remaining()
             if cooldown:
                 raise RuntimeError(
-                    "Posisjonsutveksling kan sendast igjen om "
-                    f"{cooldown} sekund"
+                    tr(
+                        "backend.node_action.cooldown",
+                        action=tr("backend.node_action.position_exchange"),
+                        seconds=cooldown,
+                    )
                 )
             local_position = self._local_position_for_exchange(
                 interface,
@@ -1061,11 +1071,11 @@ class MeshtasticService:
                 0,
             }
             if local_position is None:
-                share_reason = "ingen lokal posisjon er tilgjengeleg"
+                share_reason = tr("backend.position.share_unavailable")
             elif precision is None:
-                share_reason = "posisjonspresisjonen er ukjend"
+                share_reason = tr("backend.position.precision_unknown")
             elif precision == 0:
-                share_reason = "posisjonsdeling er slått av for kanalen"
+                share_reason = tr("backend.position.sharing_disabled")
             else:
                 share_reason = None
 
@@ -1096,10 +1106,10 @@ class MeshtasticService:
                 with self._lock:
                     current_interface = self._interface
                 if interface is not current_interface:
-                    raise NodeActionError("Meshtastic-sambandet blei bytt")
+                    raise NodeActionError(tr("backend.connection.switched"))
                 decoded = packet.get("decoded")
                 if not isinstance(decoded, dict):
-                    raise NodeActionError("Posisjonssvaret manglar dekoda data")
+                    raise NodeActionError(tr("backend.position.missing_decoded"))
                 portnum = decoded.get("portnum")
                 if portnum in {"ROUTING_APP", 5}:
                     routing = decoded.get("routing")
@@ -1109,10 +1119,14 @@ class MeshtasticService:
                         else "UKJEND_FEIL"
                     )
                     raise NodeActionError(
-                        f"Posisjonsførespurnaden feila ({reason or 'UKJEND_FEIL'})"
+                        tr(
+                            "backend.error.with_reason",
+                            message=tr("backend.position.request_failed"),
+                            reason=reason or "UKJEND_FEIL",
+                        )
                     )
                 if portnum not in {"POSITION_APP", 3}:
-                    raise NodeActionError("Mottok feil svartype for posisjon")
+                    raise NodeActionError(tr("backend.position.wrong_response"))
             except Exception as exc:
                 self._finish_node_action(action_id, error=str(exc))
             else:
@@ -1155,13 +1169,9 @@ class MeshtasticService:
         except Exception as exc:
             with self._lock:
                 self._position_exchange_cooldown_until = 0.0
-            self._finish_node_action(
-                action_id,
-                error=f"Klarte ikkje sende posisjonsførespurnad: {exc}",
-            )
-            raise RuntimeError(
-                f"Klarte ikkje sende posisjonsførespurnad: {exc}"
-            ) from exc
+            error = tr("backend.position.send_failed", error=exc)
+            self._finish_node_action(action_id, error=error)
+            raise RuntimeError(error) from exc
 
         packet_id = _sent_packet_id(sent)
 
@@ -1169,7 +1179,7 @@ class MeshtasticService:
             self._discard_response_handler(interface, packet_id)
             self._finish_node_action(
                 action_id,
-                error="Posisjonsførespurnaden fekk ikkje svar innan tidsfristen",
+                error=tr("backend.position.timeout"),
             )
 
         timer = threading.Timer(POSITION_EXCHANGE_TIMEOUT_SECONDS, on_timeout)
@@ -1365,10 +1375,10 @@ class MeshtasticService:
             profile = self._profile
             state = self.status()["state"]
             if interface is None or profile is None or state != "tilkopla":
-                raise RuntimeError("Meshtastic-noden er ikkje tilkopla")
+                raise RuntimeError(tr("backend.connection.not_connected"))
             local_node_id = self._local_node_id
             if not local_node_id:
-                raise RuntimeError("Lokal node-ID er ikkje kjend enno")
+                raise RuntimeError(tr("backend.local_node.id_unknown"))
             requested_key: str | None = None
             if conversation is not None:
                 if public:
@@ -1377,7 +1387,7 @@ class MeshtasticService:
                     )
                     if route_local is not None and route_local != local_node_id:
                         raise RuntimeError(
-                            "Den valde public-ruta høyrer til ein annan lokal node"
+                            tr("backend.send.public_route_other_local_node")
                         )
                 else:
                     route_local, route_peer, requested_key = (
@@ -1385,11 +1395,11 @@ class MeshtasticService:
                     )
                     if route_local != local_node_id:
                         raise RuntimeError(
-                            "Den valde samtaleruta høyrer til ein annan lokal node"
+                            tr("backend.send.dm_route_other_local_node")
                         )
                     if route_peer != destination:
                         raise ValueError(
-                            "Mottakaren samsvarar ikkje med den valde samtaleruta"
+                            tr("backend.send.recipient_route_mismatch")
                         )
             if requested_key is not None:
                 requested_index = next(
@@ -1402,24 +1412,24 @@ class MeshtasticService:
                 )
                 if requested_index is None:
                     raise RuntimeError(
-                        "Den valde kanalen finst ikkje på den aktive noden"
+                        tr("backend.channel.selected_missing")
                     )
                 if channel_index is not None and int(channel_index) != requested_index:
                     raise ValueError(
-                        "Kanalindeksen samsvarar ikkje med den valde samtaleruta"
+                        tr("backend.send.channel_route_mismatch")
                     )
                 channel_index = requested_index
             selected_index = 0 if channel_index is None else int(channel_index)
             if not 0 <= selected_index <= 7:
-                raise ValueError("Kanalindeksen må vere mellom 0 og 7")
+                raise ValueError(tr("backend.channel.index_range"))
             binding = self._channel_bindings.get(selected_index)
             if binding is None or not binding.active:
                 raise RuntimeError(
-                    "Den valde kanalen finst ikkje på den aktive noden"
+                    tr("backend.channel.selected_missing")
                 )
             if requested_key is not None and binding.channel_key != requested_key:
                 raise RuntimeError(
-                    "Den valde kanalen finst ikkje på den aktive noden"
+                    tr("backend.channel.selected_missing")
                 )
 
             pending_id: int | None = None

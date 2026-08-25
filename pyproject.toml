@@ -34,6 +34,9 @@ meshpi = "meshpi.cli:main"
 [tool.setuptools.packages.find]
 include = ["meshpi*"]
 
+[tool.setuptools.package-data]
+meshpi = ["locales/*.json"]
+
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]

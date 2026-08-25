@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 
 from meshpi import __version__
 from meshpi.config import Settings
+from meshpi.i18n import get_language, tr
 from meshpi.platform_service import windows_powershell_path
 from meshpi.signing import SignatureError, verify_manifest_signature
 from meshpi.versions import VersionError, version_key
@@ -67,7 +68,7 @@ class UpdatePlan:
 def _channel(value: str) -> str:
     channel = value.strip().lower()
     if channel not in UPDATE_CHANNELS:
-        raise UpdateCheckError(f"Ugyldig oppdateringskanal: {value}")
+        raise UpdateCheckError(tr("update.invalid_channel", value=value))
     return channel
 
 
@@ -84,7 +85,7 @@ def _https_url(value: Any, label: str) -> str:
     url = str(value or "").strip()
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.netloc or parsed.username is not None:
-        raise UpdateCheckError(f"{label} må bruke ei gyldig HTTPS-adresse")
+        raise UpdateCheckError(tr("update.invalid_https", label=label))
     return url
 
 
@@ -96,24 +97,20 @@ def _artifact(
     filename: str | None = None,
 ) -> UpdateArtifact:
     if not isinstance(data, dict):
-        raise UpdateCheckError(f"Versjonsmanifestet manglar {label}")
+        raise UpdateCheckError(tr("update.missing_artifact", label=label))
     url = _https_url(data.get("url"), label)
     expected_hash = str(data.get("sha256", "")).strip().lower()
     if SHA256.fullmatch(expected_hash) is None:
-        raise UpdateCheckError(f"{label} har ugyldig SHA-256")
+        raise UpdateCheckError(tr("update.invalid_hash", label=label))
     try:
         size = int(data.get("size", 0))
     except (TypeError, ValueError) as exc:
-        raise UpdateCheckError(f"{label} har ugyldig storleik") from exc
+        raise UpdateCheckError(tr("update.invalid_size", label=label)) from exc
     if not 0 < size <= maximum_size:
-        raise UpdateCheckError(f"{label} har ugyldig storleik")
+        raise UpdateCheckError(tr("update.invalid_size", label=label))
     artifact_name = filename or Path(urlparse(url).path).name
-    if (
-        not artifact_name
-        or artifact_name != Path(artifact_name).name
-        or "\x00" in artifact_name
-    ):
-        raise UpdateCheckError(f"{label} har ugyldig filnamn")
+    if not artifact_name or artifact_name != Path(artifact_name).name or "\x00" in artifact_name:
+        raise UpdateCheckError(tr("update.invalid_filename", label=label))
     return UpdateArtifact(
         label=label,
         filename=artifact_name,
@@ -137,15 +134,14 @@ def _parse_update_plan(
     except SignatureError as exc:
         raise UpdateCheckError(str(exc)) from exc
     if manifest.get("schema_version") != 1:
-        raise UpdateCheckError("Ustøtta versjonsmanifest")
+        raise UpdateCheckError(tr("update.unsupported_manifest"))
     expected_channel = _channel(channel)
     manifest_channel = str(manifest.get("channel", "stable")).strip().lower()
     if manifest_channel not in UPDATE_CHANNELS:
-        raise UpdateCheckError("Versjonsmanifestet har ein ugyldig kanal")
+        raise UpdateCheckError(tr("update.manifest_invalid_channel"))
     if manifest_channel != expected_channel:
         raise UpdateCheckError(
-            f"Versjonsmanifestet er for {manifest_channel}-kanalen, "
-            f"ikkje {expected_channel}-kanalen"
+            tr("update.manifest_wrong_channel", actual=manifest_channel, expected=expected_channel)
         )
     latest = str(manifest.get("latest_version", "")).strip()
     try:
@@ -159,27 +155,25 @@ def _parse_update_plan(
     installers = manifest.get("installers")
     locks = manifest.get("locks")
     if not isinstance(installers, dict) or not isinstance(locks, dict):
-        raise UpdateCheckError("Versjonsmanifestet manglar plattformfiler")
+        raise UpdateCheckError(tr("update.missing_platform_files"))
     installer = _artifact(
         installers.get(platform),
-        label=f"{platform}-installatøren",
+        label=tr("update.label.installer", platform=platform),
         maximum_size=MAX_INSTALLER_BYTES,
     )
     package_data = manifest.get("package")
     package_filename = (
-        str(package_data.get("filename", "")).strip()
-        if isinstance(package_data, dict)
-        else ""
+        str(package_data.get("filename", "")).strip() if isinstance(package_data, dict) else ""
     )
     package = _artifact(
         package_data,
-        label="MeshPi-pakken",
+        label=tr("update.label.package"),
         maximum_size=MAX_PACKAGE_BYTES,
         filename=package_filename,
     )
     lock = _artifact(
         locks.get(platform),
-        label=f"{platform}-låsefila",
+        label=tr("update.label.lock", platform=platform),
         maximum_size=MAX_LOCK_BYTES,
     )
     return UpdatePlan(
@@ -215,7 +209,7 @@ def parse_update_manifest(
         return None
     notes = str(manifest.get("release_notes_url", "")).strip() or None
     if notes is not None:
-        notes = _https_url(notes, "Utgåvenotata")
+        notes = _https_url(notes, tr("update.label.release_notes"))
     selected_channel = _channel(channel)
     command_suffix = " --beta" if selected_channel == "beta" else ""
     return UpdateNotice(
@@ -234,7 +228,7 @@ def parse_update_manifest(
 def _read_limited(response: BinaryIO, maximum: int, label: str) -> bytes:
     raw = response.read(maximum + 1)
     if len(raw) > maximum:
-        raise UpdateCheckError(f"{label} er for stor")
+        raise UpdateCheckError(tr("update.too_large", label=label))
     return raw
 
 
@@ -244,10 +238,8 @@ def _fetch_manifest(
     channel: str = "stable",
 ) -> tuple[dict[str, Any], bytes]:
     selected_channel = _channel(channel)
-    configured_url = (
-        settings.update_url if selected_channel == "stable" else BETA_UPDATE_URL
-    )
-    url = _https_url(configured_url, "Oppdateringsadressa")
+    configured_url = settings.update_url if selected_channel == "stable" else BETA_UPDATE_URL
+    url = _https_url(configured_url, tr("update.label.address"))
     request = Request(
         url,
         headers={
@@ -258,18 +250,18 @@ def _fetch_manifest(
     try:
         # URL-en og den endelege adressa blir eksplisitt kontrollerte som HTTPS.
         with urlopen(request, timeout=settings.update_timeout) as response:  # nosec B310
-            _https_url(response.geturl(), "Den endelege oppdateringsadressa")
-            raw = _read_limited(response, MAX_MANIFEST_BYTES, "Versjonsmanifestet")
+            _https_url(response.geturl(), tr("update.label.final_address"))
+            raw = _read_limited(response, MAX_MANIFEST_BYTES, tr("update.label.manifest"))
     except UpdateCheckError:
         raise
     except OSError as exc:
-        raise UpdateCheckError(f"Klarte ikkje sjekke oppdatering: {exc}") from exc
+        raise UpdateCheckError(tr("update.check_failed", error=exc)) from exc
     try:
         manifest = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise UpdateCheckError("Versjonsmanifestet er ikkje gyldig JSON") from exc
+        raise UpdateCheckError(tr("update.invalid_json")) from exc
     if not isinstance(manifest, dict):
-        raise UpdateCheckError("Versjonsmanifestet må vere eit JSON-objekt")
+        raise UpdateCheckError(tr("update.not_object"))
     return manifest, raw
 
 
@@ -340,7 +332,7 @@ def _download_artifact(
                     break
                 total += len(chunk)
                 if total > artifact.maximum_size or total > artifact.size:
-                    raise UpdateCheckError(f"{artifact.label} er større enn signert")
+                    raise UpdateCheckError(tr("update.larger_than_signed", label=artifact.label))
                 digest.update(chunk)
                 output.write(chunk)
     except Exception as exc:
@@ -348,14 +340,14 @@ def _download_artifact(
         if isinstance(exc, UpdateCheckError):
             raise
         raise UpdateCheckError(
-            f"Klarte ikkje laste ned {artifact.filename}: {exc}"
+            tr("update.download_failed", filename=artifact.filename, error=exc)
         ) from exc
     if total != artifact.size:
         destination.unlink(missing_ok=True)
-        raise UpdateCheckError(f"Storleiken på {artifact.label} stemmer ikkje")
+        raise UpdateCheckError(tr("update.size_mismatch", label=artifact.label))
     if digest.hexdigest() != artifact.sha256:
         destination.unlink(missing_ok=True)
-        raise UpdateCheckError(f"SHA-256 for {artifact.label} stemmer ikkje")
+        raise UpdateCheckError(tr("update.hash_mismatch", label=artifact.label))
 
 
 def _safe_installer_environment(
@@ -414,6 +406,7 @@ def _safe_installer_environment(
             "MESHPI_LOCK_FILE": str(lock_path),
             "MESHPI_MODE": settings.background_mode,
             "MESHPI_PYTHON": sys.executable,
+            "MESHPI_LANGUAGE": get_language(),
         }
     )
     return environment
@@ -432,8 +425,10 @@ def _installer_command(plan: UpdatePlan, installer_path: Path, settings: Setting
             settings.background_mode.capitalize(),
             "-UpdaterProcessId",
             str(os.getpid()),
+            "-Language",
+            get_language(),
         ]
-    return ["/bin/sh", str(installer_path)]
+    return ["/bin/sh", str(installer_path), f"--language={get_language()}"]
 
 
 def apply_update(
@@ -448,13 +443,11 @@ def apply_update(
     if platform == "linux" and hasattr(os, "geteuid"):
         is_root = os.geteuid() == 0
         if settings.background_mode == "always" and not is_root:
-            raise UpdateCheckError(
-                "Always-installasjonen må oppdaterast med «sudo meshpi update»"
-            )
+            raise UpdateCheckError(tr("update.always_requires_sudo"))
         if settings.background_mode == "session" and is_root:
-            raise UpdateCheckError("Session-installasjonen skal oppdaterast utan sudo")
+            raise UpdateCheckError(tr("update.session_without_sudo"))
     if platform == "macos" and hasattr(os, "geteuid") and os.geteuid() == 0:
-        raise UpdateCheckError("macOS-installasjonen skal oppdaterast utan sudo")
+        raise UpdateCheckError(tr("update.macos_without_sudo"))
     plan = prepare_update(
         settings,
         current_version=current_version,
@@ -464,9 +457,7 @@ def apply_update(
     if plan is None:
         return None
     if expected_version is not None and plan.latest_version != expected_version:
-        raise UpdateCheckError(
-            "Den tilgjengelege versjonen endra seg; køyr oppdateringa på nytt"
-        )
+        raise UpdateCheckError(tr("update.version_changed"))
     with tempfile.TemporaryDirectory(
         prefix="meshpi-update-",
         ignore_cleanup_errors=platform == "windows",
@@ -511,12 +502,11 @@ def apply_update(
                     beta_base_url = BETA_UPDATE_URL.removesuffix("/version.json")
                     beta_option = f" -BaseUrl {beta_base_url}"
                 manual_install = (
-                    "\nPrøv den direkte Windows-installatøren i PowerShell:\n"
-                    f"Invoke-WebRequest {plan.installer.url} "
+                    tr("update.windows_manual_prefix") + f"Invoke-WebRequest {plan.installer.url} "
                     "-OutFile install-windows.ps1; "
                     f".\\install-windows.ps1{beta_option}"
                 )
             raise UpdateCheckError(
-                f"Installatøren stoppa med status {exc.returncode}{manual_install}"
+                tr("update.installer_failed", status=exc.returncode, detail=manual_install)
             ) from exc
     return plan.latest_version

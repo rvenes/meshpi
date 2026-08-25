@@ -4,12 +4,76 @@
     [string]$Mode = "Always",
     [switch]$SkipAutostart,
     [ValidateRange(0, [int]::MaxValue)]
-    [int]$UpdaterProcessId = 0
+    [int]$UpdaterProcessId = 0,
+    [string]$Language = ""
 )
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$detectedLanguage = if (
+    [Globalization.CultureInfo]::CurrentUICulture.Name -match "^(nn|nb|no)(-|$)"
+) { "nn" } else { "en" }
+if (-not $Language) {
+    $Language = if ($env:MESHPI_LANGUAGE) {
+        $env:MESHPI_LANGUAGE
+    } else {
+        $detectedLanguage
+    }
+}
+$Language = $Language.ToLowerInvariant()
+
+$Messages = @{
+    invalid_language = @{ nn = 'Språket må vere «nn» eller «en».'; en = 'Language must be “nn” or “en”.' }
+    windows_folders = @{ nn = 'Klarte ikkje finne Windows-mappene for gjeldande brukar.'; en = 'Could not locate the Windows folders for the current user.' }
+    invalid_release = @{ nn = 'Ugyldig versjonsmappe for Windows-launcheren.'; en = 'Invalid release folder for the Windows launcher.' }
+    legacy_locked = @{ nn = 'Den gamle MeshPi-launcheren er i bruk. Lukk andre MeshPi-terminalar og køyr installatøren på nytt.'; en = 'The old MeshPi launcher is in use. Close other MeshPi terminals and run the installer again.' }
+    check_python = @{ nn = 'Kontrollerer Python 3.11 eller nyare …'; en = 'Checking for Python 3.11 or newer …' }
+    python_required = @{ nn = 'MeshPi krev Python 3.11+. Installer frå https://python.org og køyr skriptet igjen.'; en = 'MeshPi requires Python 3.11+. Install it from https://python.org and run the script again.' }
+    install_python = @{ nn = 'Installerer Python 3.11 for gjeldande brukar …'; en = 'Installing Python 3.11 for the current user …' }
+    winget_failed = @{ nn = 'Klarte ikkje installere Python 3.11 med winget.'; en = 'Could not install Python 3.11 with winget.' }
+    reopen_powershell = @{ nn = 'Python blei installert, men er ikkje tilgjengeleg enno. Opne PowerShell på nytt.'; en = 'Python was installed but is not available yet. Reopen PowerShell.' }
+    fetch_manifest = @{ nn = 'Hentar og kontrollerer signert versjonsinformasjon …'; en = 'Downloading and checking signed version information …' }
+    signature_mismatch = @{ nn = 'Signaturen på versjonsmanifestet stemmer ikkje.'; en = 'The version manifest signature does not match.' }
+    invalid_version = @{ nn = 'Ugyldig versjon i version.json.'; en = 'Invalid version in version.json.' }
+    invalid_package = @{ nn = 'Ugyldig pakkenamn i version.json.'; en = 'Invalid package name in version.json.' }
+    invalid_sha = @{ nn = 'Ugyldig SHA-256 i version.json.'; en = 'Invalid SHA-256 in version.json.' }
+    invalid_lock_hash = @{ nn = 'Ugyldig låsefil-hash i version.json.'; en = 'Invalid lock-file hash in version.json.' }
+    download_release = @{ nn = 'Lastar ned MeshPi {0} og låste avhengigheiter …'; en = 'Downloading MeshPi {0} and locked dependencies …' }
+    check_hashes = @{ nn = 'Kontrollerer SHA-256 for alle nedlasta filer …'; en = 'Checking SHA-256 for all downloaded files …' }
+    sha_mismatch = @{ nn = 'SHA-256 stemmer ikkje. Installasjonen er avbroten.'; en = 'SHA-256 does not match. Installation aborted.' }
+    lock_mismatch = @{ nn = 'SHA-256 for låsefila stemmer ikkje. Installasjonen er avbroten.'; en = 'The lock-file SHA-256 does not match. Installation aborted.' }
+    create_environment = @{ nn = 'Opprettar programmiljø og installerer avhengigheiter. Dette kan ta nokre minutt …'; en = 'Creating the application environment and installing dependencies. This may take a few minutes …' }
+    venv_failed = @{ nn = 'Klarte ikkje opprette Python-miljøet.'; en = 'Could not create the Python environment.' }
+    deps_failed = @{ nn = 'Klarte ikkje installere låste avhengigheiter.'; en = 'Could not install locked dependencies.' }
+    package_failed = @{ nn = 'Klarte ikkje installere MeshPi-pakken.'; en = 'Could not install the MeshPi package.' }
+    already_installed = @{ nn = 'MeshPi {0} er alt installert; bruker programfilene på nytt …'; en = 'MeshPi {0} is already installed; reusing the application files …' }
+    selftest = @{ nn = 'Kontrollerer installert versjon og køyrer sjølvtest …'; en = 'Checking the installed version and running the self-test …' }
+    wrong_version = @{ nn = 'Pakken rapporterer «{0}», venta MeshPi {1}.'; en = 'The package reports “{0}”; expected MeshPi {1}.' }
+    selftest_failed = @{ nn = 'MeshPi-sjølvtesten feila.'; en = 'The MeshPi self-test failed.' }
+    activate = @{ nn = 'Aktiverer MeshPi og konfigurerer bakgrunnstenesta …'; en = 'Activating MeshPi and configuring the background service …' }
+    powershell_missing = @{ nn = 'Fann ikkje Windows PowerShell på den godkjende systemstien.'; en = 'Could not find Windows PowerShell at the approved system path.' }
+    service_description = @{ nn = 'MeshPi Meshtastic-bakgrunnsteneste'; en = 'MeshPi Meshtastic background service' }
+    rollback = @{ nn = 'Oppdateringa feila. Førre versjon er sett tilbake.'; en = 'The update failed. The previous version has been restored.' }
+    no_rollback = @{ nn = 'Oppdateringa feila, og ingen førre versjon finst.'; en = 'The update failed, and no previous version is available.' }
+    complete = @{ nn = 'Installasjonen er ferdig.'; en = 'Installation is complete.' }
+    installed = @{ nn = 'MeshPi {0} er installert i {1}-modus.'; en = 'MeshPi {0} is installed in {1} mode.' }
+    start = @{ nn = 'Opne eit nytt terminalvindauge og start med: meshpi'; en = 'Open a new terminal window and start with: meshpi' }
+}
+
+function Get-Message {
+    param([string]$Key, [object[]]$Values = @())
+    $template = [string]$Messages[$Key][$Language]
+    if ($Values.Count -eq 0) { return $template }
+    return [string]::Format($template, $Values)
+}
+
+if ($Language -notin @("nn", "en")) {
+    $Language = $detectedLanguage
+    throw (Get-Message invalid_language)
+}
+$env:MESHPI_LANGUAGE = $Language
 if (($env:PATHEXT -split ";") -notcontains ".EXE") {
     $env:PATHEXT = [Environment]::GetEnvironmentVariable("PATHEXT", "Machine")
     if (($env:PATHEXT -split ";") -notcontains ".EXE") {
@@ -23,7 +87,7 @@ if (-not $env:APPDATA) {
     $env:APPDATA = [Environment]::GetFolderPath("ApplicationData")
 }
 if (-not $env:LOCALAPPDATA -or -not $env:APPDATA) {
-    throw "Klarte ikkje finne Windows-mappene for gjeldande brukar."
+    throw (Get-Message windows_folders)
 }
 if ($SkipAutostart) {
     $Mode = "Session"
@@ -32,8 +96,9 @@ $modeValue = $Mode.ToLowerInvariant()
 $ipcPort = if ($env:MESHPI_IPC_PORT) { $env:MESHPI_IPC_PORT } else { "8765" }
 
 function Write-InstallStep {
-    param([int]$Number, [string]$Message)
-    Write-Host ("[{0}/8] {1}" -f $Number, $Message) -ForegroundColor Cyan
+    param([int]$Number, [string]$Key, [object[]]$Values = @())
+    Write-Host ("[{0}/8] {1}" -f $Number, (Get-Message $Key $Values)) `
+        -ForegroundColor Cyan
 }
 
 function Test-PythonCommand {
@@ -175,7 +240,7 @@ function Write-MeshPiLaunchers {
         "(?:(?:a|b|rc)(?:0|[1-9]\d*))?)$"
     )
     if ($releaseName -notmatch $versionPattern) {
-        throw "Ugyldig versjonsmappe for Windows-launcheren."
+        throw (Get-Message invalid_release)
     }
     $releaseScripts = Join-Path $Release "venv\Scripts"
     $releaseEnvPointer = Join-Path $releaseScripts "meshpi.env-path"
@@ -210,10 +275,7 @@ function Start-LegacyLauncherCleanup {
         return
     } catch {
         if ($UpdaterProcessId -le 0) {
-            throw (
-                "Den gamle MeshPi-launcheren er i bruk. " +
-                "Lukk andre MeshPi-terminalar og køyr installatøren på nytt."
-            )
+            throw (Get-Message legacy_locked)
         }
     }
     $cleanupFile = Join-Path $BinDir "meshpi-launcher-cleanup.ps1"
@@ -241,21 +303,22 @@ Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
     ) -WorkingDirectory $BinDir -WindowStyle Hidden
 }
 
-Write-InstallStep 1 "Kontrollerer Python 3.11 eller nyare …"
+# Write-InstallStep 1 "Kontrollerer Python 3.11 eller nyare …"
+Write-InstallStep 1 check_python
 $python = Find-MeshPiPython
 if (-not $python) {
     $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
     if (-not $winget) {
-        throw "MeshPi krev Python 3.11+. Installer frå https://python.org og køyr skriptet igjen."
+        throw (Get-Message python_required)
     }
-    Write-Host "Installerer Python 3.11 for gjeldande brukar …" -ForegroundColor Cyan
+    Write-Host (Get-Message install_python) -ForegroundColor Cyan
     Invoke-NativeChecked $winget.Source @(
         "install", "--id", "Python.Python.3.11", "--exact", "--scope", "user",
         "--accept-package-agreements", "--accept-source-agreements"
-    ) "Klarte ikkje installere Python 3.11 med winget."
+    ) (Get-Message winget_failed)
     $python = Find-MeshPiPython
     if (-not $python) {
-        throw "Python blei installert, men er ikkje tilgjengeleg enno. Opne PowerShell på nytt."
+        throw (Get-Message reopen_powershell)
     }
 }
 
@@ -275,6 +338,13 @@ $releasesDir = Join-Path $installRoot "releases"
 $currentFile = Join-Path $installRoot "current.txt"
 $previousFile = Join-Path $installRoot "previous.txt"
 $configFile = Join-Path $configRoot "meshpi.env"
+$languageFile = if ($env:MESHPI_LANGUAGE_FILE) {
+    $env:MESHPI_LANGUAGE_FILE
+} else {
+    Join-Path $installRoot "language.json"
+}
+$freshInstall = -not (Test-Path -LiteralPath $installRoot) -and `
+    -not (Test-Path -LiteralPath $configRoot)
 $tempDir = Join-Path ([IO.Path]::GetTempPath()) ("meshpi-" + [guid]::NewGuid())
 $manifestFile = Join-Path $tempDir "version.json"
 $verifierFile = Join-Path $tempDir "verify-manifest.py"
@@ -297,7 +367,7 @@ New-Item -ItemType Directory -Force -Path @(
 ) | Out-Null
 
 try {
-    Write-InstallStep 2 "Hentar og kontrollerer signert versjonsinformasjon …"
+    Write-InstallStep 2 fetch_manifest
     if ($env:MESHPI_MANIFEST_FILE) {
         Copy-Item -LiteralPath $env:MESHPI_MANIFEST_FILE -Destination $manifestFile
     } else {
@@ -305,6 +375,23 @@ try {
     }
     $verifier = @'
 import base64, hashlib, hmac, json, sys
+language = sys.argv[2]
+messages = {
+    "nn": {
+        "missing_signature": "Versjonsmanifestet manglar ein gyldig signatur",
+        "revoked_key": "Tilbakekalla signeringsnøkkel",
+        "unknown_key": "Ukjend signeringsnøkkel",
+        "invalid_signature": "Ugyldig manifestsignatur",
+        "signature_mismatch": "Signaturen på versjonsmanifestet stemmer ikkje",
+    },
+    "en": {
+        "missing_signature": "The version manifest is missing a valid signature",
+        "revoked_key": "Revoked signing key",
+        "unknown_key": "Unknown signing key",
+        "invalid_signature": "Invalid manifest signature",
+        "signature_mismatch": "The version manifest signature does not match",
+    },
+}[language]
 current_modulus = int("c1370fa9e2eb0d22e354c58594e369f9db44156f834522bf69a8da523a30ac0d4539e08a30d76e854b40ae693da388af11ca62ee24c1e6f43ec128be550e8b7655d86955ae858b9f30237ba02e2773e9ad2fcfe1644484e909a8805a6c8a289dda69cedbc973d7427278442d8acb1d00a0c5cd242c34404843ea684ece7ad40a59d902633624ae36ae3f4e8c9e401bb887ef650f1fe001f9fd7661841b98a95f67aea496c05054a4c41c287c09d1dd1e94e9c01cc997162a50e02df6d28645d268cceb35daf7ad1e4202b2b1714a71e2b18d0564f12a468c2bb4d7e678a1c4c493de0c945f0f2665efb658238dd4dd617b73acd8e20e4c5f440d2d4ee13617f2c2857c0457e0a3a73aac43d0e23f5c0f56f9042a6d1e6221383481a9bcc952576904895e013a5f12b6c0aa08b9ba911df7be42a4d0a3c31ca98111b4344d8079fdb55a43379fde9968edf9ce7b3554333d5819ad196935e928012d1b20b4aed5ee48d8851dd69458b15998712530b4d91228b06ae109741c0cf4ab723f092e49", 16)
 trusted_keys = {"meshpi-release-2026-01": (65537, current_modulus)}
 revoked_key_ids = set()
@@ -312,18 +399,18 @@ with open(sys.argv[1], encoding="utf-8") as handle:
     manifest = json.load(handle)
 signature = manifest.pop("signature", None)
 if not isinstance(signature, dict) or signature.get("algorithm") != "rsa-pkcs1v15-sha256":
-    raise SystemExit("Versjonsmanifestet manglar ein gyldig signatur")
+    raise SystemExit(messages["missing_signature"])
 key_id = str(signature.get("key_id", ""))
 if key_id in revoked_key_ids:
-    raise SystemExit("Tilbakekalla signeringsnøkkel")
+    raise SystemExit(messages["revoked_key"])
 key = trusted_keys.get(key_id)
 if key is None:
-    raise SystemExit("Ukjend signeringsnøkkel")
+    raise SystemExit(messages["unknown_key"])
 exponent, modulus = key
 try:
     raw = base64.b64decode(signature["value"], validate=True)
 except (KeyError, ValueError) as exc:
-    raise SystemExit("Ugyldig manifestsignatur") from exc
+    raise SystemExit(messages["invalid_signature"]) from exc
 canonical = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
 size = (modulus.bit_length() + 7) // 8
 actual = pow(int.from_bytes(raw, "big"), exponent, modulus).to_bytes(size, "big")
@@ -332,11 +419,12 @@ digest = hashlib.sha256(canonical).digest()
 pad = size - len(digest_info) - len(digest) - 3
 expected = b"\x00\x01" + b"\xff" * pad + b"\x00" + digest_info + digest
 if len(raw) != size or pad < 8 or not hmac.compare_digest(actual, expected):
-    raise SystemExit("Signaturen på versjonsmanifestet stemmer ikkje")
+    raise SystemExit(messages["signature_mismatch"])
 '@
     Write-Utf8NoBom $verifierFile $verifier
-    Invoke-NativeChecked $python.Exe (@($python.Prefix) + @($verifierFile, $manifestFile)) `
-        "Signaturen på versjonsmanifestet stemmer ikkje."
+    Invoke-NativeChecked $python.Exe `
+        (@($python.Prefix) + @($verifierFile, $manifestFile, $Language)) `
+        (Get-Message signature_mismatch)
     $manifest = Get-Content -Raw -Encoding UTF8 $manifestFile | ConvertFrom-Json
     $version = [string]$manifest.latest_version
     if (
@@ -345,24 +433,24 @@ if len(raw) != size or pad < 8 or not hmac.compare_digest(actual, expected):
             "(?:(?:a|b|rc)(0|[1-9]\d*))?$"
         )
     ) {
-        throw "Ugyldig versjon i version.json."
+        throw (Get-Message invalid_version)
     }
     $packageUrl = [string]$manifest.package.url
     $packageFilename = [string]$manifest.package.filename
     if ($packageFilename -cne "meshpi-$version-py3-none-any.whl") {
-        throw "Ugyldig pakkenamn i version.json."
+        throw (Get-Message invalid_package)
     }
     $expectedHash = ([string]$manifest.package.sha256).ToLowerInvariant()
     $lockUrl = [string]$manifest.locks.windows.url
     $expectedLockHash = ([string]$manifest.locks.windows.sha256).ToLowerInvariant()
     if ($expectedHash -notmatch "^[0-9a-f]{64}$") {
-        throw "Ugyldig SHA-256 i version.json."
+        throw (Get-Message invalid_sha)
     }
     if ($expectedLockHash -notmatch "^[0-9a-f]{64}$") {
-        throw "Ugyldig låsefil-hash i version.json."
+        throw (Get-Message invalid_lock_hash)
     }
     $wheelFile = Join-Path $tempDir $packageFilename
-    Write-InstallStep 3 "Lastar ned MeshPi $version og låste avhengigheiter …"
+    Write-InstallStep 3 download_release @($version)
     if ($env:MESHPI_PACKAGE_FILE) {
         Copy-Item -LiteralPath $env:MESHPI_PACKAGE_FILE -Destination $wheelFile
     } else {
@@ -373,14 +461,14 @@ if len(raw) != size or pad < 8 or not hmac.compare_digest(actual, expected):
     } else {
         Invoke-WebRequest $lockUrl -OutFile $lockFile
     }
-    Write-InstallStep 4 "Kontrollerer SHA-256 for alle nedlasta filer …"
+    Write-InstallStep 4 check_hashes
     $actualHash = (Get-FileHash -Algorithm SHA256 $wheelFile).Hash.ToLowerInvariant()
     if ($actualHash -ne $expectedHash) {
-        throw "SHA-256 stemmer ikkje. Installasjonen er avbroten."
+        throw (Get-Message sha_mismatch)
     }
     $actualLockHash = (Get-FileHash -Algorithm SHA256 $lockFile).Hash.ToLowerInvariant()
     if ($actualLockHash -ne $expectedLockHash) {
-        throw "SHA-256 for låsefila stemmer ikkje. Installasjonen er avbroten."
+        throw (Get-Message lock_mismatch)
     }
 
     if (-not (Test-Path -LiteralPath $configFile)) {
@@ -431,36 +519,33 @@ BACKGROUND_MODE=$modeValue
         ""
     }
     if ($release -ne $oldRelease) {
-        Write-InstallStep 5 (
-            "Opprettar programmiljø og installerer avhengigheiter. " +
-            "Dette kan ta nokre minutt …"
-        )
+        Write-InstallStep 5 create_environment
         if (Test-Path -LiteralPath $release) {
             Remove-Item -LiteralPath $release -Recurse -Force
         }
         $venvArguments = @($python.Prefix) + @("-m", "venv", (Join-Path $release "venv"))
-        Invoke-NativeChecked $python.Exe $venvArguments "Klarte ikkje opprette Python-miljøet."
+        Invoke-NativeChecked $python.Exe $venvArguments (Get-Message venv_failed)
         $venvPython = Join-Path $release "venv\Scripts\python.exe"
         Invoke-NativeChecked $venvPython @(
             "-m", "pip", "install", "-q", "--require-hashes", "-r", $lockFile
-        ) "Klarte ikkje installere låste avhengigheiter."
+        ) (Get-Message deps_failed)
         Invoke-NativeChecked $venvPython @(
             "-m", "pip", "install", "-q", "--no-deps", $wheelFile
-        ) "Klarte ikkje installere MeshPi-pakken."
+        ) (Get-Message package_failed)
     } else {
-        Write-InstallStep 5 "MeshPi $version er alt installert; bruker programfilene på nytt …"
+        Write-InstallStep 5 already_installed @($version)
     }
-    Write-InstallStep 6 "Kontrollerer installert versjon og køyrer sjølvtest …"
+    Write-InstallStep 6 selftest
     $releaseMeshPi = Join-Path $release "venv\Scripts\meshpi.exe"
     $installedVersion = (& $releaseMeshPi --version | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or $installedVersion -ne "MeshPi $version") {
-        throw "Pakken rapporterer «$installedVersion», venta MeshPi $version."
+        throw (Get-Message wrong_version @($installedVersion, $version))
     }
     Invoke-NativeChecked $releaseMeshPi @(
         "--env-file", $configFile, "doctor", "--offline"
-    ) "MeshPi-sjølvtesten feila."
+    ) (Get-Message selftest_failed)
 
-    Write-InstallStep 7 "Aktiverer MeshPi og konfigurerer bakgrunnstenesta …"
+    Write-InstallStep 7 activate
     Stop-MeshPiProcesses $installRoot $UpdaterProcessId
     $legacyVenv = Join-Path $installRoot "venv"
     if (-not $oldRelease -and (Test-Path -LiteralPath $legacyVenv)) {
@@ -497,7 +582,7 @@ BACKGROUND_MODE=$modeValue
     $powerShellExe = Join-Path ([Environment]::SystemDirectory) `
         "WindowsPowerShell\v1.0\powershell.exe"
     if (-not (Test-Path -LiteralPath $powerShellExe -PathType Leaf)) {
-        throw "Fann ikkje Windows PowerShell på den godkjende systemstien."
+        throw (Get-Message powershell_missing)
     }
     $startupDir = if ($env:MESHPI_STARTUP_DIR) {
         $env:MESHPI_STARTUP_DIR
@@ -529,7 +614,7 @@ if (`$Action -eq "enable") {
     `$shortcut.TargetPath = "$powerShellExe"
     `$shortcut.Arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "$supervisorFile"'
     `$shortcut.WorkingDirectory = "$dataDir"
-    `$shortcut.Description = "MeshPi Meshtastic-bakgrunnsteneste"
+    `$shortcut.Description = "$(Get-Message service_description)"
     `$shortcut.Save()
 } elseif (`$Action -eq "disable") {
     Remove-Item -LiteralPath `$shortcutFile -Force -ErrorAction SilentlyContinue
@@ -601,17 +686,25 @@ if (`$Action -eq "enable") {
                     -ErrorAction SilentlyContinue
                 & $powerShellExe -NoProfile -ExecutionPolicy Bypass `
                     -File $managerFile start
-                throw "Oppdateringa feila. Førre versjon er sett tilbake."
+                throw (Get-Message rollback)
             }
-            throw "Oppdateringa feila, og ingen førre versjon finst."
+            throw (Get-Message no_rollback)
         }
     }
 
     Start-LegacyLauncherCleanup `
         $nativeLauncher $binDir $powerShellExe $UpdaterProcessId
-    Write-InstallStep 8 "Installasjonen er ferdig."
-    Write-Host "MeshPi $version er installert i $modeValue-modus." -ForegroundColor Green
-    Write-Host "Opne eit nytt terminalvindauge og start med: meshpi"
+    if ($freshInstall -and -not (Test-Path -LiteralPath $languageFile)) {
+        $languageTemporary = "$languageFile.new"
+        Write-Utf8NoBom $languageTemporary `
+            ('{"language":"' + $Language + '"}' + "`n")
+        Move-Item -LiteralPath $languageTemporary `
+            -Destination $languageFile -Force
+    }
+    Write-InstallStep 8 complete
+    Write-Host (Get-Message installed @($version, $modeValue)) `
+        -ForegroundColor Green
+    Write-Host (Get-Message start)
 } finally {
     Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 }

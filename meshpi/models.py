@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from meshpi.i18n import tr
+
 MAX_MESSAGE_BYTES = 237
 BROADCAST_NUM = 0xFFFFFFFF
 BROADCAST_IDS = {"^all", "!ffffffff", "ffffffff"}
@@ -80,22 +82,22 @@ def normalize_node_id(value: str) -> str:
     if node_id.startswith("!"):
         node_id = node_id[1:]
     if len(node_id) != 8 or any(ch not in "0123456789abcdef" for ch in node_id):
-        raise ValueError("Node-ID må vere åtte heksadesimale teikn, til dømes !deadbeef")
+        raise ValueError(tr("error.node_id.invalid"))
     if node_id == "ffffffff":
-        raise ValueError("Broadcast-ID kan ikkje brukast som DM-mottakar")
+        raise ValueError(tr("error.node_id.broadcast"))
     return f"!{node_id}"
 
 
 def validate_message_text(text: str) -> str:
     clean = text.strip()
     if not clean:
-        raise ValueError("Meldinga kan ikkje vere tom")
+        raise ValueError(tr("error.message.empty"))
     if _contains_unsafe_control(clean):
-        raise ValueError("Meldinga kan ikkje innehalde kontrollteikn")
+        raise ValueError(tr("error.message.control"))
     length = len(clean.encode("utf-8"))
     if length > MAX_MESSAGE_BYTES:
         raise ValueError(
-            f"Meldinga er {length} byte; maksimum er {MAX_MESSAGE_BYTES} UTF-8-byte"
+            tr("error.message.too_long", length=length, maximum=MAX_MESSAGE_BYTES)
         )
     return clean
 

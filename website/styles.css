@@ -86,6 +86,7 @@ code {
   background: rgba(9, 13, 14, 0.86);
   backdrop-filter: blur(18px);
   border-bottom: 1px solid rgba(82, 96, 100, 0.35);
+  gap: 1.25rem;
 }
 
 .brand {
@@ -104,12 +105,48 @@ code {
 
 nav {
   display: flex;
+  flex: 1;
+  justify-content: center;
   gap: 1.6rem;
   font-size: 0.92rem;
 }
 
 nav a {
   color: var(--muted);
+}
+
+.language-switcher {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 0.2rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: #0b1011;
+}
+
+.language-switcher button {
+  min-height: 2.15rem;
+  padding: 0.35rem 0.65rem;
+  cursor: pointer;
+  color: var(--muted);
+  font: 0.78rem var(--sans);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.language-switcher button[aria-pressed="true"] {
+  color: #071108;
+  background: var(--green);
+  font-weight: 800;
+}
+
+.language-switcher button:focus-visible,
+.platform-tabs button:focus-visible,
+.command-box button:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
 }
 
 main,
@@ -164,6 +201,10 @@ h1 {
 
 h1 span {
   color: var(--green);
+}
+
+h1 .heading-line {
+  color: inherit;
 }
 
 h2 {
@@ -679,13 +720,15 @@ footer small {
   }
 }
 
+@media (max-width: 900px) {
+  nav {
+    display: none;
+  }
+}
+
 @media (max-width: 720px) {
   .site-header {
     position: static;
-  }
-
-  nav {
-    display: none;
   }
 
   .hero {

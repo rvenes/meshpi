@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from meshpi.config import Settings
+from meshpi.i18n import tr
 from meshpi.lifecycle import daemon_status, start_session_daemon, stop_daemon
 
 LAUNCHCTL = "/bin/launchctl"
@@ -16,8 +17,10 @@ SYSTEMCTL_PATHS = (Path("/usr/bin/systemctl"), Path("/bin/systemctl"))
 def _run(command: list[str], hint: str | None = None) -> None:
     result = subprocess.run(command, check=False)  # nosec B603
     if result.returncode != 0:
-        suffix = f" Prøv: {hint}" if hint else ""
-        raise RuntimeError(f"Kommandoen feila: {' '.join(command)}.{suffix}")
+        suffix = tr("service.command_hint", hint=hint) if hint else ""
+        raise RuntimeError(
+            tr("service.command_failed", command=" ".join(command), suffix=suffix)
+        )
 
 
 def _system() -> str:
@@ -28,12 +31,12 @@ def _systemctl_path() -> str:
     for path in SYSTEMCTL_PATHS:
         if path.is_file():
             return str(path)
-    raise RuntimeError("Fann ikkje systemctl på ein godkjend systemsti")
+    raise RuntimeError(tr("service.systemctl_missing"))
 
 
 def windows_powershell_path() -> str:
     if os.name != "nt":
-        raise RuntimeError("Windows PowerShell er berre tilgjengeleg på Windows")
+        raise RuntimeError(tr("service.powershell_windows_only"))
     import ctypes
 
     windows_directory = ctypes.create_unicode_buffer(32768)
@@ -41,7 +44,7 @@ def windows_powershell_path() -> str:
         windows_directory,
         len(windows_directory),
     ):
-        raise RuntimeError("Fann ikkje den godkjende Windows-systemmappa")
+        raise RuntimeError(tr("service.windows_directory_missing"))
     powershell = (
         Path(windows_directory.value)
         / "System32"
@@ -50,7 +53,7 @@ def windows_powershell_path() -> str:
         / "powershell.exe"
     )
     if not powershell.is_file():
-        raise RuntimeError(f"Fann ikkje Windows PowerShell: {powershell}")
+        raise RuntimeError(tr("service.powershell_missing", path=powershell))
     return str(powershell)
 
 
@@ -96,10 +99,10 @@ def _windows_action(action: str) -> None:
     try:
         install_root = Path(sys.executable).parents[4]
     except IndexError as exc:
-        raise RuntimeError("Fann ikkje MeshPi-installasjonsmappa") from exc
+        raise RuntimeError(tr("service.install_root_missing")) from exc
     manager = install_root / "bin" / "meshpi-service.ps1"
     if not manager.is_file():
-        raise RuntimeError(f"Fann ikkje Windows-tenestestyringa: {manager}")
+        raise RuntimeError(tr("service.manager_missing", path=manager))
     _run(
         [
             windows_powershell_path(),
@@ -149,5 +152,5 @@ def manage_service(
     elif system == "windows":
         _windows_action(action)
     else:
-        raise RuntimeError(f"Ustøtta operativsystem: {system}")
+        raise RuntimeError(tr("service.unsupported_system", system=system))
     return {"state": action, "changed": True}

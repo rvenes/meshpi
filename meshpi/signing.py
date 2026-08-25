@@ -6,6 +6,8 @@ import hmac
 import json
 from typing import Any
 
+from meshpi.i18n import tr
+
 SIGNATURE_ALGORITHM = "rsa-pkcs1v15-sha256"
 SIGNING_KEY_ID = "meshpi-release-2026-01"
 PUBLIC_EXPONENT = 65537
@@ -43,26 +45,26 @@ def verify_manifest_signature(
 ) -> None:
     signature = manifest.get("signature")
     if not isinstance(signature, dict):
-        raise SignatureError("Versjonsmanifestet manglar signatur")
+        raise SignatureError(tr("signing.missing"))
     if signature.get("algorithm") != SIGNATURE_ALGORITHM:
-        raise SignatureError("Versjonsmanifestet bruker ukjend signaturalgoritme")
+        raise SignatureError(tr("signing.unknown_algorithm"))
     key_id = str(signature.get("key_id", ""))
     revoked = REVOKED_KEY_IDS if revoked_key_ids is None else revoked_key_ids
     if key_id in revoked:
-        raise SignatureError("Versjonsmanifestet bruker ei tilbakekalla signeringsnøkkel")
+        raise SignatureError(tr("signing.revoked_key"))
     keys = TRUSTED_KEYS if trusted_keys is None else trusted_keys
     key = keys.get(key_id)
     if key is None:
-        raise SignatureError("Versjonsmanifestet bruker ukjend signeringsnøkkel")
+        raise SignatureError(tr("signing.unknown_key"))
     public_exponent, public_modulus = key
     try:
         raw_signature = base64.b64decode(str(signature["value"]), validate=True)
     except (KeyError, ValueError) as exc:
-        raise SignatureError("Versjonsmanifestet har ugyldig signatur") from exc
+        raise SignatureError(tr("signing.invalid")) from exc
 
     size = (public_modulus.bit_length() + 7) // 8
     if len(raw_signature) != size:
-        raise SignatureError("Versjonsmanifestet har feil signaturlengd")
+        raise SignatureError(tr("signing.invalid_length"))
     encoded = pow(int.from_bytes(raw_signature, "big"), public_exponent, public_modulus)
     actual = encoded.to_bytes(size, "big")
     digest = hashlib.sha256(canonical_manifest_bytes(manifest)).digest()
@@ -75,4 +77,4 @@ def verify_manifest_signature(
         + digest
     )
     if padding_size < 8 or not hmac.compare_digest(actual, expected):
-        raise SignatureError("Signaturen på versjonsmanifestet stemmer ikkje")
+        raise SignatureError(tr("signing.mismatch"))

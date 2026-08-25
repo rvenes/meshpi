@@ -1,0 +1,6 @@
+{
+  "doctor.background": "bakgrunn={mode}",
+  "doctor.configuration": "Konfigurasjon",
+  "doctor.storage": "Lokal lagring",
+  "doctor.storage_ok": "SQLite og profilar fungerer"
+}

@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from meshpi.i18n import tr
+
 SETTING_ENV_KEYS = frozenset(
     {
         "MESHTASTIC_HOST",
@@ -50,9 +52,9 @@ def _env_int(
     try:
         value = int(raw)
     except ValueError as exc:
-        raise ValueError(f"{name} må vere eit heiltal") from exc
+        raise ValueError(tr("config.integer", name=name)) from exc
     if not minimum <= value <= maximum:
-        raise ValueError(f"{name} må vere mellom {minimum} og {maximum}")
+        raise ValueError(tr("config.range", name=name, minimum=minimum, maximum=maximum))
     return value
 
 
@@ -63,9 +65,9 @@ def _env_float(
     try:
         value = float(raw)
     except ValueError as exc:
-        raise ValueError(f"{name} må vere eit tal") from exc
+        raise ValueError(tr("config.number", name=name)) from exc
     if not minimum <= value <= maximum:
-        raise ValueError(f"{name} må vere mellom {minimum} og {maximum}")
+        raise ValueError(tr("config.range", name=name, minimum=minimum, maximum=maximum))
     return value
 
 
@@ -103,18 +105,18 @@ class Settings:
         host = values.get("MESHTASTIC_HOST", "").strip()
         ipc_host = values.get("IPC_HOST", "127.0.0.1").strip()
         if ipc_host not in {"127.0.0.1", "::1", "localhost"}:
-            raise ValueError("IPC_HOST må vere ei lokal loopback-adresse")
+            raise ValueError(tr("config.ipc_host"))
         ipc_transport = values.get("IPC_TRANSPORT", "auto").strip().lower()
         if ipc_transport not in {"auto", "tcp", "unix"}:
-            raise ValueError("IPC_TRANSPORT må vere «auto», «tcp» eller «unix»")
+            raise ValueError(tr("config.ipc_transport"))
         if ipc_transport == "unix" and os.name == "nt":
-            raise ValueError("IPC_TRANSPORT=unix er ikkje støtta på Windows")
+            raise ValueError(tr("config.unix_windows"))
         level = values.get("LOG_LEVEL", "INFO").strip().upper()
         if level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
-            raise ValueError("Ugyldig LOG_LEVEL")
+            raise ValueError(tr("config.log_level"))
         background_mode = values.get("BACKGROUND_MODE", "always").strip().lower()
         if background_mode not in {"always", "session"}:
-            raise ValueError("BACKGROUND_MODE må vere «always» eller «session»")
+            raise ValueError(tr("config.background_mode"))
         database_path = Path(
             values.get("DATABASE_PATH", "./data/meshtastic.db")
         ).expanduser()

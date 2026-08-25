@@ -1,6 +1,40 @@
-param([switch]$PurgeData)
+﻿param(
+    [switch]$PurgeData,
+    [string]$Language = ""
+)
 
 $ErrorActionPreference = "Stop"
+$detectedLanguage = if (
+    [Globalization.CultureInfo]::CurrentUICulture.Name -match "^(nn|nb|no)(-|$)"
+) { "nn" } else { "en" }
+if (-not $Language) {
+    $Language = if ($env:MESHPI_LANGUAGE) {
+        $env:MESHPI_LANGUAGE
+    } else {
+        $detectedLanguage
+    }
+}
+$Language = $Language.ToLowerInvariant()
+$Messages = @{
+    invalid_language = @{ nn = 'Språket må vere «nn» eller «en».'; en = 'Language must be “nn” or “en”.' }
+    removed = @{ nn = 'Fjerna MeshPi-programmet og autostarten.'; en = 'Removed the MeshPi application and autostart.' }
+    purged = @{ nn = 'Sletta konfigurasjon og lokale data.'; en = 'Deleted configuration and local data.' }
+    kept_config = @{ nn = 'Bevarte konfigurasjon: {0}'; en = 'Preserved configuration: {0}' }
+    kept_data = @{ nn = 'Bevarte database og loggar: {0}'; en = 'Preserved database and logs: {0}' }
+    purge_hint = @{ nn = 'Bruk -PurgeData for å slette desse òg.'; en = 'Use -PurgeData to delete these as well.' }
+}
+
+function Get-Message {
+    param([string]$Key, [object[]]$Values = @())
+    $template = [string]$Messages[$Key][$Language]
+    if ($Values.Count -eq 0) { return $template }
+    return [string]::Format($template, $Values)
+}
+
+if ($Language -notin @("nn", "en")) {
+    $Language = $detectedLanguage
+    throw (Get-Message invalid_language)
+}
 $installRoot = if ($env:MESHPI_INSTALL_ROOT) {
     $env:MESHPI_INSTALL_ROOT
 } else {
@@ -63,12 +97,12 @@ if (Test-Path -LiteralPath $installRoot) {
     }
 }
 
-Write-Host "Fjerna MeshPi-programmet og autostarten." -ForegroundColor Green
+Write-Host (Get-Message removed) -ForegroundColor Green
 if ($PurgeData) {
     Remove-Item -LiteralPath $configRoot -Recurse -Force -ErrorAction SilentlyContinue
-    Write-Host "Sletta konfigurasjon og lokale data."
+    Write-Host (Get-Message purged)
 } else {
-    Write-Host "Bevarte konfigurasjon: $configRoot"
-    Write-Host "Bevarte database og loggar: $(Join-Path $installRoot 'data')"
-    Write-Host "Bruk -PurgeData for å slette desse òg."
+    Write-Host (Get-Message kept_config @($configRoot))
+    Write-Host (Get-Message kept_data @((Join-Path $installRoot 'data')))
+    Write-Host (Get-Message purge_hint)
 }

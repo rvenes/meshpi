@@ -10,6 +10,7 @@ from meshpi import __version__
 from meshpi.config import Settings
 from meshpi.connections import ConnectionProfile, ConnectionStore
 from meshpi.database import Database
+from meshpi.i18n import tr
 
 
 def offline_checks(settings: Settings) -> list[tuple[str, bool, str]]:
@@ -21,9 +22,9 @@ def offline_checks(settings: Settings) -> list[tuple[str, bool, str]]:
         ),
         ("MeshPi", True, __version__),
         (
-            "Konfigurasjon",
+            tr("doctor.configuration"),
             settings.background_mode in {"always", "session"},
-            f"bakgrunn={settings.background_mode}",
+            tr("doctor.background", mode=settings.background_mode),
         ),
     ]
     try:
@@ -38,7 +39,7 @@ def offline_checks(settings: Settings) -> list[tuple[str, bool, str]]:
             store.active_profile()
             del database, store
             gc.collect()
-        checks.append(("Lokal lagring", True, "SQLite og profilar fungerer"))
+        checks.append((tr("doctor.storage"), True, tr("doctor.storage_ok")))
     except Exception as exc:
-        checks.append(("Lokal lagring", False, str(exc)))
+        checks.append((tr("doctor.storage"), False, str(exc)))
     return checks

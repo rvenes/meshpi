@@ -43,12 +43,29 @@ from meshpi import __version__
 from meshpi.channels import dm_conversation_id, parse_dm_conversation_id
 from meshpi.client import CLIError, WatchStream, open_watch, request
 from meshpi.config import Settings
+from meshpi.i18n import get_language, set_language, tr
 from meshpi.models import normalize_node_id, sanitize_terminal_text, validate_message_text
 from meshpi.update import UpdateNotice, check_for_update
 
 Requester = Callable[[Settings, dict[str, Any]], dict[str, Any]]
 Watcher = Callable[[Settings, str], tuple[socket.socket, WatchStream]]
 UpdateChecker = Callable[[Settings], UpdateNotice | None]
+
+
+def _t(key: str, **values: Any) -> str:
+    return tr(f"tui.{key}", **values)
+
+
+def _localize_bindings(node: Any, bindings: tuple[tuple[str, str, str, bool], ...]) -> None:
+    """Rebind descriptions for the current language on this Textual instance."""
+    for key, action, description_key, priority in bindings:
+        node._bindings.bind(  # Textual has no public per-Screen rebinding API.
+            key,
+            action,
+            _t(description_key),
+            priority=priority,
+        )
+    node.refresh_bindings()
 
 
 class SelectableRichLog(RichLog):
@@ -189,49 +206,49 @@ def _battery(value: Any) -> str:
     if value in (None, ""):
         return "–"
     if value in (0, 101, "0", "101"):
-        return "Straum"
+        return _t("value.external_power")
     return f"{value}%"
 
 
 METRIC_PRESENTATION = {
-    "battery_level": ("Batteri", "%"),
-    "voltage": ("Spenning", "V"),
-    "channel_utilization": ("Kanalbruk", "%"),
-    "air_util_tx": ("Sendebruk av radiotid", "%"),
-    "uptime_seconds": ("Oppetid", "s"),
-    "temperature": ("Temperatur", "°C"),
-    "relative_humidity": ("Luftfukt", "%"),
-    "barometric_pressure": ("Lufttrykk", "hPa"),
-    "gas_resistance": ("Gassmotstand", "MΩ"),
-    "current": ("Straum", "A"),
-    "iaq": ("Luftkvalitetsindeks", ""),
-    "distance": ("Avstand", "mm"),
-    "lux": ("Lysstyrke", "lx"),
-    "white_lux": ("Kvitt lys", "lx"),
-    "ir_lux": ("Infraraudt lys", "lx"),
-    "uv_lux": ("UV-lys", "lx"),
-    "wind_direction": ("Vindretning", "°"),
-    "wind_speed": ("Vindfart", "m/s"),
-    "wind_gust": ("Vindkast", "m/s"),
-    "wind_lull": ("Lågaste vindfart", "m/s"),
-    "weight": ("Vekt", "kg"),
-    "rainfall_1h": ("Nedbør siste time", "mm"),
-    "rainfall_24h": ("Nedbør siste døgn", "mm"),
-    "soil_moisture": ("Jordfukt", "%"),
-    "soil_temperature": ("Jordtemperatur", "°C"),
-    "one_wire_temperature": ("Ekstern temperatur", "°C"),
+    "battery_level": ("metric.battery", "%"),
+    "voltage": ("metric.voltage", "V"),
+    "channel_utilization": ("metric.channel_utilization", "%"),
+    "air_util_tx": ("metric.air_util_tx", "%"),
+    "uptime_seconds": ("metric.uptime", "s"),
+    "temperature": ("metric.temperature", "°C"),
+    "relative_humidity": ("metric.humidity", "%"),
+    "barometric_pressure": ("metric.pressure", "hPa"),
+    "gas_resistance": ("metric.gas_resistance", "MΩ"),
+    "current": ("metric.current", "A"),
+    "iaq": ("metric.iaq", ""),
+    "distance": ("metric.distance", "mm"),
+    "lux": ("metric.lux", "lx"),
+    "white_lux": ("metric.white_lux", "lx"),
+    "ir_lux": ("metric.ir_lux", "lx"),
+    "uv_lux": ("metric.uv_lux", "lx"),
+    "wind_direction": ("metric.wind_direction", "°"),
+    "wind_speed": ("metric.wind_speed", "m/s"),
+    "wind_gust": ("metric.wind_gust", "m/s"),
+    "wind_lull": ("metric.wind_lull", "m/s"),
+    "weight": ("metric.weight", "kg"),
+    "rainfall_1h": ("metric.rainfall_1h", "mm"),
+    "rainfall_24h": ("metric.rainfall_24h", "mm"),
+    "soil_moisture": ("metric.soil_moisture", "%"),
+    "soil_temperature": ("metric.soil_temperature", "°C"),
+    "one_wire_temperature": ("metric.external_temperature", "°C"),
     "co2": ("CO₂", "ppm"),
 }
 
 TELEMETRY_KIND_LABELS = {
-    "device": "Eining",
-    "environment": "Miljø",
-    "air_quality": "Luftkvalitet",
-    "power": "Straum",
-    "local_stats": "Lokal statistikk",
-    "health": "Helse",
-    "host": "Vert",
-    "traffic_management": "Trafikkstyring",
+    "device": "telemetry.device",
+    "environment": "telemetry.environment",
+    "air_quality": "telemetry.air_quality",
+    "power": "telemetry.power",
+    "local_stats": "telemetry.local_stats",
+    "health": "telemetry.health",
+    "host": "telemetry.host",
+    "traffic_management": "telemetry.traffic_management",
 }
 
 METRIC_TABLE_ORDER = (
@@ -249,13 +266,28 @@ METRIC_TABLE_ORDER = (
 )
 
 METRIC_TABLE_LABELS = {
-    "air_util_tx": "Sendebruk",
-    "channel_utilization": "Kanalbruk",
-    "relative_humidity": "Luftfukt",
-    "barometric_pressure": "Lufttrykk",
-    "gas_resistance": "Gassmotst.",
-    "uptime_seconds": "Oppetid",
+    "air_util_tx": "metric.short.air_util_tx",
+    "channel_utilization": "metric.short.channel_utilization",
+    "relative_humidity": "metric.short.humidity",
+    "barometric_pressure": "metric.short.pressure",
+    "gas_resistance": "metric.short.gas_resistance",
+    "uptime_seconds": "metric.uptime",
 }
+
+
+def _telemetry_kind_label(kind: str) -> str:
+    key = TELEMETRY_KIND_LABELS.get(kind)
+    return _t(key) if key else kind.replace("_", " ").capitalize()
+
+
+def _metric_table_label(name: str) -> str:
+    key = METRIC_TABLE_LABELS.get(name)
+    if key:
+        return _t(key)
+    presentation = METRIC_PRESENTATION.get(name)
+    if presentation:
+        return _t(presentation[0])
+    return name.replace("_", " ").capitalize()
 
 
 def _canonical_metric_name(value: str) -> str:
@@ -264,10 +296,11 @@ def _canonical_metric_name(value: str) -> str:
 
 def _metric_label_and_value(name: str, value: Any) -> tuple[str, str]:
     canonical = _canonical_metric_name(name)
-    label, unit = METRIC_PRESENTATION.get(
+    label_key, unit = METRIC_PRESENTATION.get(
         canonical,
-        (canonical.replace("_", " ").capitalize(), ""),
+        ("", ""),
     )
+    label = _t(label_key) if label_key else canonical.replace("_", " ").capitalize()
     if canonical == "battery_level":
         return label, _battery(value)
     if canonical == "uptime_seconds":
@@ -280,10 +313,10 @@ def _metric_label_and_value(name: str, value: Any) -> tuple[str, str]:
         minutes = remainder // 60
         parts = []
         if days:
-            parts.append(f"{days} d")
+            parts.append(_t("duration.days", value=days))
         if hours or days:
-            parts.append(f"{hours} t")
-        parts.append(f"{minutes} min")
+            parts.append(_t("duration.hours", value=hours))
+        parts.append(_t("duration.minutes", value=minutes))
         return label, " ".join(parts)
     rendered = (
         f"{value:.3f}".rstrip("0").rstrip(".")
@@ -315,10 +348,10 @@ def _gateway_label(item: dict[str, Any]) -> str:
     transport = str(item.get("transport") or "Ukjend")
     parts = []
     if gateway:
-        parts.append(f"via [{gateway[-4:]}]")
+        parts.append(_t("value.via", gateway=gateway[-4:]))
     if transport != "Ukjend":
         parts.append(transport)
-    return " · ".join(parts) or "mottaksveg ukjend"
+    return " · ".join(parts) or _t("value.unknown_route")
 
 
 def _host_name() -> str:
@@ -326,7 +359,7 @@ def _host_name() -> str:
         value = sanitize_terminal_text(socket.gethostname().strip())
     except OSError:
         value = ""
-    return value[:32] or "ukjend"
+    return value[:32] or _t("value.unknown")
 
 
 def _fit_status_text(value: str, width: int) -> str:
@@ -361,14 +394,15 @@ def _conversation_title(item: dict[str, Any]) -> str:
         channel_key = str(item.get("channel_key") or "")
         if channel_key.startswith("legacy:"):
             scope = sanitize_terminal_text(channel_key.split(":", 2)[1], 40)
-            return (
-                f"Public (arkiv {scope}) – kanal "
-                f"{channel if channel is not None else '?'}"
+            return _t(
+                "conversation.public_archive",
+                scope=scope,
+                channel=channel if channel is not None else "?",
             )
         if channel_key.startswith("provisional:"):
-            return (
-                "Public (uavklart rute) – kanal "
-                f"{channel if channel is not None else '?'}"
+            return _t(
+                "conversation.public_provisional",
+                channel=channel if channel is not None else "?",
             )
         local_suffix = (
             f" [{str(item.get('local_node_id'))[-4:]}]"
@@ -377,10 +411,16 @@ def _conversation_title(item: dict[str, Any]) -> str:
             else ""
         )
         if name:
-            return f"{name} – kanal {channel}{local_suffix}"
-        return (
-            f"Public – kanal {channel if channel is not None else 0}"
-            f"{local_suffix}"
+            return _t(
+                "conversation.named_channel",
+                name=name,
+                channel=channel,
+                local_suffix=local_suffix,
+            )
+        return _t(
+            "conversation.public_channel",
+            channel=channel if channel is not None else 0,
+            local_suffix=local_suffix,
         )
     node_id = str(item.get("peer_node") or item.get("conversation", ""))
     name = sanitize_terminal_text(item.get("long_name") or item.get("short_name") or node_id)
@@ -389,11 +429,11 @@ def _conversation_title(item: dict[str, Any]) -> str:
     route_label = ""
     if channel is not None:
         route_label = (
-            f" · {channel_name} · kanal {channel}"
+            _t("conversation.route_named", name=channel_name, channel=channel)
             if channel_name
-            else f" · kanal {channel}"
+            else _t("conversation.route", channel=channel)
         )
-    return f"DM {name} [{node_id[-4:]}]{route_label}"
+    return _t("conversation.dm", name=name, node=node_id[-4:], route=route_label)
 
 
 def _conversation_sidebar_title(item: dict[str, Any]) -> str:
@@ -459,7 +499,7 @@ class ConversationItem(ListItem):
         text.append("\n")
         last_time = _time(self.conversation.get("last_timestamp"))
         last_text = sanitize_terminal_text(
-            self.conversation.get("last_text") or "Ingen meldingar"
+            self.conversation.get("last_text") or _t("conversation.no_messages")
         )
         if len(last_text) > 31:
             last_text = last_text[:30] + "…"
@@ -494,7 +534,9 @@ class NodePickerItem(ListItem):
 
     def _render_label(self) -> Text:
         name = sanitize_terminal_text(
-            self.node.get("long_name") or self.node.get("short_name") or "Ukjend node"
+            self.node.get("long_name")
+            or self.node.get("short_name")
+            or _t("node.unknown")
         )
         short_name = sanitize_terminal_text(self.node.get("short_name"))
         text = Text()
@@ -503,11 +545,11 @@ class NodePickerItem(ListItem):
             text.append(f"  {short_name}", style="dim")
         text.append(f"  {self.node_id}", style="cyan")
         text.append("\n")
-        details = [f"sist sett {_time(self.node.get('last_heard'))}"]
+        details = [_t("node.last_seen", time=_time(self.node.get("last_heard")))]
         if self.node.get("hops_away") is not None:
-            details.append(f"hopp {self.node['hops_away']}")
+            details.append(_t("node.hops", value=self.node["hops_away"]))
         if self.node.get("battery_level") is not None:
-            details.append(f"batteri {_battery(self.node['battery_level'])}")
+            details.append(_t("node.battery", value=_battery(self.node["battery_level"])))
         if self.node.get("transport") not in (None, "", "Ukjend"):
             details.append(str(self.node["transport"]))
         text.append("  " + "  •  ".join(details), style="dim")
@@ -533,16 +575,18 @@ class NodeSidebarItem(ListItem):
 
     def _render_label(self) -> Text:
         name = sanitize_terminal_text(
-            self.node.get("long_name") or self.node.get("short_name") or "Ukjend node"
+            self.node.get("long_name")
+            or self.node.get("short_name")
+            or _t("node.unknown")
         )
         text = Text()
         text.append("◆ " if self.node.get("is_local") else "● ", style="green")
         text.append(str(name), style="bold")
         text.append(f" [{self.node_id[-4:]}]", style="cyan")
         text.append("\n  ")
-        details = [f"sist {_time(self.node.get('last_heard'))}"]
+        details = [_t("node.last", time=_time(self.node.get("last_heard")))]
         if self.node.get("hops_away") is not None:
-            details.append(f"hopp {self.node['hops_away']}")
+            details.append(_t("node.hops", value=self.node["hops_away"]))
         if self.node.get("battery_level") is not None:
             details.append(_battery(self.node["battery_level"]))
         transport = self.node.get("transport")
@@ -560,9 +604,9 @@ class NodeSidebarItem(ListItem):
 
 class NewDMScreen(ModalScreen[tuple[str, str] | None]):
     BINDINGS = [
-        Binding("escape", "cancel", "Avbryt", priority=True),
-        Binding("down", "next_node", "Neste node", priority=True),
-        Binding("up", "previous_node", "Førre node", priority=True),
+        Binding("escape", "cancel", "", priority=True),
+        Binding("down", "next_node", "", priority=True),
+        Binding("up", "previous_node", "", priority=True),
     ]
 
     def __init__(
@@ -571,6 +615,14 @@ class NewDMScreen(ModalScreen[tuple[str, str] | None]):
         channels: list[dict[str, Any]],
     ):
         super().__init__()
+        _localize_bindings(
+            self,
+            (
+                ("escape", "cancel", "binding.cancel", True),
+                ("down", "next_node", "binding.next_node", True),
+                ("up", "previous_node", "binding.previous_node", True),
+            ),
+        )
         self.all_nodes = sorted(
             (node for node in nodes if not node.get("is_local")),
             key=_node_sort_key,
@@ -593,7 +645,7 @@ class NewDMScreen(ModalScreen[tuple[str, str] | None]):
                 (
                     f"{sanitize_terminal_text(channel.get('channel_name') or '')}"
                     f"{' · ' if channel.get('channel_name') else ''}"
-                    f"kanal {channel.get('channel', 0)}"
+                    + _t("conversation.channel", channel=channel.get("channel", 0))
                 ),
                 str(channel["channel_key"]),
             )
@@ -608,23 +660,23 @@ class NewDMScreen(ModalScreen[tuple[str, str] | None]):
             options[0][1] if options else "",
         )
         with Container(id="new-dm-dialog"):
-            yield Label("Ny direkte samtale", id="new-dm-title")
+            yield Label(_t("new_dm.title"), id="new-dm-title")
             yield Select(
                 options,
                 value=primary,
                 allow_blank=False,
                 id="new-dm-channel",
-                prompt="Vel kanal",
+                prompt=_t("new_dm.select_channel"),
             )
             yield Input(
-                placeholder="Søk på namn eller node-ID",
+                placeholder=_t("new_dm.search_placeholder"),
                 id="new-dm-input",
             )
             yield Static("", id="new-dm-count")
             with ListView(id="node-picker-list"):
                 yield from (NodePickerItem(node) for node in self.filtered_nodes)
             yield Static(
-                "Tab: vel kanal   Skriv: søk   ↑/↓: vel   Enter: opne   Esc: avbryt",
+                _t("new_dm.help"),
                 id="new-dm-help",
             )
 
@@ -638,9 +690,13 @@ class NewDMScreen(ModalScreen[tuple[str, str] | None]):
     def _update_count(self) -> None:
         total = len(self.all_nodes)
         shown = len(self.filtered_nodes)
-        label = f"{shown} av {total} nodar" if shown != total else f"{total} nodar"
+        label = (
+            _t("new_dm.count_filtered", shown=shown, total=total)
+            if shown != total
+            else _t("new_dm.count", total=total)
+        )
         if not shown:
-            label += " – skriv full node-ID for ein ukjend node"
+            label += _t("new_dm.unknown_hint")
         self.query_one("#new-dm-count", Static).update(label)
 
     @on(Input.Changed, "#new-dm-input")
@@ -673,7 +729,11 @@ class NewDMScreen(ModalScreen[tuple[str, str] | None]):
         try:
             self._dismiss_node(normalize_node_id(event.value))
         except ValueError as exc:
-            message = "Ingen nodar passar søket" if event.value.strip() else "Vel ein node"
+            message = (
+                _t("new_dm.no_match")
+                if event.value.strip()
+                else _t("new_dm.select_node")
+            )
             self.notify(f"{message}. {exc}", severity="error")
 
     @on(ListView.Selected, "#node-picker-list")
@@ -684,7 +744,7 @@ class NewDMScreen(ModalScreen[tuple[str, str] | None]):
     def _dismiss_node(self, node_id: str) -> None:
         channel_key = self.query_one("#new-dm-channel", Select).value
         if not isinstance(channel_key, str) or not channel_key:
-            self.notify("Vel ein kanal for samtalen", severity="error")
+            self.notify(_t("new_dm.select_channel_error"), severity="error")
             return
         self.dismiss((node_id, channel_key))
 
@@ -708,15 +768,25 @@ class NewDMScreen(ModalScreen[tuple[str, str] | None]):
 
 class NodeActionScreen(ModalScreen[str | None]):
     BINDINGS = [
-        Binding("up", "previous_choice", "Førre val", priority=True),
-        Binding("down", "next_choice", "Neste val", priority=True),
-        Binding("t", "traceroute", "Traceroute", priority=True),
-        Binding("i", "node_info", "Nodeinfo", priority=True),
-        Binding("escape", "cancel", "Avbryt", priority=True),
+        Binding("up", "previous_choice", "", priority=True),
+        Binding("down", "next_choice", "", priority=True),
+        Binding("t", "traceroute", "", priority=True),
+        Binding("i", "node_info", "", priority=True),
+        Binding("escape", "cancel", "", priority=True),
     ]
 
     def __init__(self, node: dict[str, Any], availability: dict[str, Any]):
         super().__init__()
+        _localize_bindings(
+            self,
+            (
+                ("up", "previous_choice", "binding.previous_choice", True),
+                ("down", "next_choice", "binding.next_choice", True),
+                ("t", "traceroute", "binding.traceroute", True),
+                ("i", "node_info", "binding.node_info", True),
+                ("escape", "cancel", "binding.cancel", True),
+            ),
+        )
         self.node = node
         self.availability = availability
         cooldown = int(availability.get("cooldown_seconds") or 0)
@@ -734,10 +804,10 @@ class NodeActionScreen(ModalScreen[str | None]):
         )
         local = bool(self.node.get("is_local"))
         with Container(id="node-action-dialog"):
-            yield Label("Handlingar for node", id="node-action-title")
+            yield Label(_t("node_action.title"), id="node-action-title")
             yield Static(Text(f"{name}  [{node_id[-4:]}]"), id="node-action-node")
             yield Button(
-                "Opne samtale",
+                _t("node_action.open_conversation"),
                 id="node-action-open-dm",
                 disabled=local,
             )
@@ -746,10 +816,10 @@ class NodeActionScreen(ModalScreen[str | None]):
                 id="node-action-traceroute",
                 disabled=local or not bool(self.availability.get("available")),
             )
-            yield Button("Nodeinfo og loggar  [I]", id="node-action-info")
-            yield Button("Lukk", id="node-action-cancel")
+            yield Button(_t("node_action.info"), id="node-action-info")
+            yield Button(_t("common.close"), id="node-action-cancel")
             yield Static(
-                "↑/↓: vel   Enter: køyr   T: traceroute   I: nodeinfo   Esc: lukk",
+                _t("node_action.help"),
                 id="node-action-help",
             )
 
@@ -770,8 +840,8 @@ class NodeActionScreen(ModalScreen[str | None]):
 
     def _traceroute_label(self) -> str:
         remaining = self._cooldown_remaining()
-        suffix = f"  ·  vent {remaining} s" if remaining else ""
-        return f"Traceroute  [T]{suffix}"
+        suffix = _t("node_action.wait_suffix", seconds=remaining) if remaining else ""
+        return _t("node_action.traceroute", suffix=suffix)
 
     def _update_traceroute_button(self) -> None:
         button = self.query_one("#node-action-traceroute", Button)
@@ -812,9 +882,9 @@ class NodeActionScreen(ModalScreen[str | None]):
     def action_traceroute(self) -> None:
         remaining = self._cooldown_remaining()
         if self.node.get("is_local"):
-            reason = "Kan ikkje køyre traceroute til den lokale noden"
+            reason = _t("node_action.local_traceroute_error")
         elif remaining:
-            reason = f"Traceroute kan sendast igjen om {remaining} sekund"
+            reason = _t("node_action.cooldown", seconds=remaining)
         else:
             reason = self._blocked_reason
         if reason:
@@ -832,15 +902,15 @@ class NodeActionScreen(ModalScreen[str | None]):
 class NodeInfoScreen(ModalScreen[None]):
     TABS = ("overview", "telemetry", "position", "traceroute")
     BINDINGS = [
-        Binding("left", "previous_tab", "Førre fane", priority=True),
-        Binding("right", "next_tab", "Neste fane", priority=True),
-        Binding("o", "overview", "Oversikt", priority=True),
-        Binding("m", "telemetry", "Telemetri", priority=True),
-        Binding("p", "position", "Posisjon", priority=True),
-        Binding("t", "traceroute", "Traceroute", priority=True),
-        Binding("r", "run_traceroute", "Køyr traceroute", priority=True),
-        Binding("x", "exchange_position", "Utveksle posisjon", priority=True),
-        Binding("escape", "close", "Lukk", priority=True),
+        Binding("left", "previous_tab", "", priority=True),
+        Binding("right", "next_tab", "", priority=True),
+        Binding("o", "overview", "", priority=True),
+        Binding("m", "telemetry", "", priority=True),
+        Binding("p", "position", "", priority=True),
+        Binding("t", "traceroute", "", priority=True),
+        Binding("r", "run_traceroute", "", priority=True),
+        Binding("x", "exchange_position", "", priority=True),
+        Binding("escape", "close", "", priority=True),
     ]
 
     def __init__(
@@ -857,6 +927,20 @@ class NodeInfoScreen(ModalScreen[None]):
         action_availability: dict[str, dict[str, Any]] | None = None,
     ):
         super().__init__()
+        _localize_bindings(
+            self,
+            (
+                ("left", "previous_tab", "binding.previous_tab", True),
+                ("right", "next_tab", "binding.next_tab", True),
+                ("o", "overview", "binding.overview", True),
+                ("m", "telemetry", "binding.telemetry", True),
+                ("p", "position", "binding.position", True),
+                ("t", "traceroute", "binding.traceroute", True),
+                ("r", "run_traceroute", "binding.run_traceroute", True),
+                ("x", "exchange_position", "binding.exchange_position", True),
+                ("escape", "close", "binding.close", True),
+            ),
+        )
         self.overview_data = overview
         self.telemetry = sorted(
             (dict(sample) for sample in telemetry),
@@ -917,14 +1001,14 @@ class NodeInfoScreen(ModalScreen[None]):
         )
         with Container(id="node-info-dialog"):
             yield Label(
-                Text(f"Nodeinfo – {name} [{node_id[-4:]}]"),
+                Text(_t("node_info.title", name=name, node=node_id[-4:])),
                 id="node-info-title",
             )
             with Horizontal(id="node-info-tabs"):
-                yield Button("Oversikt [O]", id="node-info-tab-overview")
-                yield Button("Telemetri [M]", id="node-info-tab-telemetry")
-                yield Button("Posisjon [P]", id="node-info-tab-position")
-                yield Button("Traceroute [T]", id="node-info-tab-traceroute")
+                yield Button(_t("node_info.tab.overview"), id="node-info-tab-overview")
+                yield Button(_t("node_info.tab.telemetry"), id="node-info-tab-telemetry")
+                yield Button(_t("node_info.tab.position"), id="node-info-tab-position")
+                yield Button(_t("node_info.tab.traceroute"), id="node-info-tab-traceroute")
             yield SelectableRichLog(
                 id="node-info-log",
                 wrap=True,
@@ -934,20 +1018,20 @@ class NodeInfoScreen(ModalScreen[None]):
             )
             with Horizontal(id="node-info-footer"):
                 yield Static(
-                    "←/→: fane   O/M/P/T: vel   Dra: merk   Esc: lukk",
+                    _t("node_info.help"),
                     id="node-info-help",
                 )
                 yield Button(
-                    "Utveksle [X]",
+                    _t("node_info.exchange"),
                     id="node-info-exchange-position",
                     variant="primary",
                 )
                 yield Button(
-                    "Køyr trace [R]",
+                    _t("node_info.run_trace"),
                     id="node-info-run-traceroute",
                     variant="primary",
                 )
-                yield Button("Lukk", id="node-info-close")
+                yield Button(_t("common.close"), id="node-info-close")
 
     def on_mount(self) -> None:
         self._show_tab("overview")
@@ -969,14 +1053,14 @@ class NodeInfoScreen(ModalScreen[None]):
         exchange_remaining = self._action_cooldown_remaining("position_exchange")
         traceroute_remaining = self._action_cooldown_remaining("traceroute")
         exchange.label = (
-            f"Vent {exchange_remaining} s"
+            _t("common.wait_seconds", seconds=exchange_remaining)
             if exchange_remaining
-            else "Utveksle [X]"
+            else _t("node_info.exchange")
         )
         run_trace.label = (
-            f"Vent {traceroute_remaining} s"
+            _t("common.wait_seconds", seconds=traceroute_remaining)
             if traceroute_remaining
-            else "Køyr trace [R]"
+            else _t("node_info.run_trace")
         )
         exchange.display = self.current_tab == "position"
         exchange.disabled = (
@@ -990,11 +1074,15 @@ class NodeInfoScreen(ModalScreen[None]):
             or self._action_blocked["traceroute"]
             or traceroute_remaining > 0
         )
-        help_text = "←/→: fane   O/M/P/T: vel   Dra: merk   Esc: lukk"
+        help_text = _t("node_info.help")
         if self.current_tab == "traceroute" and traceroute_remaining:
-            help_text += f"   Ny traceroute om {traceroute_remaining} sekund"
+            help_text += _t(
+                "node_info.next_traceroute", seconds=traceroute_remaining
+            )
         elif self.current_tab == "position" and exchange_remaining:
-            help_text += f"   Ny posisjonsutveksling om {exchange_remaining} sekund"
+            help_text += _t(
+                "node_info.next_position", seconds=exchange_remaining
+            )
         self.query_one("#node-info-help", Static).update(help_text)
 
     def _action_cooldown_remaining(self, action: str) -> int:
@@ -1044,13 +1132,13 @@ class NodeInfoScreen(ModalScreen[None]):
         node = self.overview_data.get("node", {})
         text = Text()
         fields = (
-            ("Node-ID", node.get("node_id")),
-            ("Kortnamn", node.get("short_name")),
-            ("Maskinvare", node.get("hw_model")),
-            ("Rolle", node.get("role")),
-            ("Sist høyrd", _time(node.get("last_heard"), seconds=True)),
-            ("Transport", node.get("transport")),
-            ("Hopp", node.get("hops_away")),
+            (_t("field.node_id"), node.get("node_id")),
+            (_t("field.short_name"), node.get("short_name")),
+            (_t("field.hardware"), node.get("hw_model")),
+            (_t("field.role"), node.get("role")),
+            (_t("field.last_heard"), _time(node.get("last_heard"), seconds=True)),
+            (_t("field.transport"), node.get("transport")),
+            (_t("field.hops"), node.get("hops_away")),
             ("SNR", f"{node['snr']:g} dB" if node.get("snr") is not None else None),
             ("RSSI", f"{node['rssi']} dBm" if node.get("rssi") is not None else None),
         )
@@ -1061,13 +1149,13 @@ class NodeInfoScreen(ModalScreen[None]):
 
         latest = self.overview_data.get("latest_telemetry", {})
         if isinstance(latest, dict) and latest:
-            text.append("\nSiste telemetri\n", style="bold green")
+            text.append("\n" + _t("node_info.latest_telemetry") + "\n", style="bold green")
             for kind, sample in latest.items():
                 metrics = sample.get("metrics") if isinstance(sample, dict) else None
                 if not isinstance(metrics, dict):
                     continue
                 text.append(
-                    f"{TELEMETRY_KIND_LABELS.get(str(kind), str(kind))}: ",
+                    f"{_telemetry_kind_label(str(kind))}: ",
                     style="bold",
                 )
                 rendered = [
@@ -1085,14 +1173,14 @@ class NodeInfoScreen(ModalScreen[None]):
         position = self.overview_data.get("latest_position")
         if isinstance(position, dict):
             text.append(
-                "\nNodens plassering (sist rapportert)\n",
+                "\n" + _t("node_info.latest_position") + "\n",
                 style="bold green",
             )
             text.append(
                 f"{position['latitude']:.7f}, {position['longitude']:.7f}"
             )
             if position.get("altitude_msl") is not None:
-                text.append(f" · {position['altitude_msl']} m over havet")
+                text.append(_t("node_info.altitude", value=position["altitude_msl"]))
             text.append(
                 f"\n  {_date_time(position.get('sample_time'), seconds=True)} · "
                 f"{_gateway_label(position)}\n",
@@ -1104,17 +1192,20 @@ class NodeInfoScreen(ModalScreen[None]):
             text.append("\n")
 
         counts = self.overview_data.get("counts", {})
-        text.append("\nLagra historikk\n", style="bold green")
+        text.append("\n" + _t("node_info.stored_history") + "\n", style="bold green")
         text.append(
-            f"Telemetri: {int(counts.get('telemetry') or 0)} · "
-            f"Posisjonar: {int(counts.get('positions') or 0)} · "
-            f"Traceroutar: {int(counts.get('traceroutes') or 0)}"
+            _t(
+                "node_info.history_counts",
+                telemetry=int(counts.get("telemetry") or 0),
+                positions=int(counts.get("positions") or 0),
+                traceroutes=int(counts.get("traceroutes") or 0),
+            )
         )
         log.write(Panel(text, border_style="cyan", box=box.SQUARE), scroll_end=False)
 
     def _render_telemetry(self, log: RichLog) -> None:
         if not self.telemetry:
-            log.write(Text("Ingen telemetri er logga for denne noden.", style="dim"))
+            log.write(Text(_t("node_info.no_telemetry"), style="dim"))
             return
         grouped: dict[str, list[dict[str, Any]]] = {}
         for sample in self.telemetry:
@@ -1143,7 +1234,7 @@ class NodeInfoScreen(ModalScreen[None]):
 
             table = Table(
                 title=Text(
-                    TELEMETRY_KIND_LABELS.get(kind, kind.capitalize()),
+                    _telemetry_kind_label(kind),
                     style="bold green",
                 ),
                 title_justify="left",
@@ -1152,16 +1243,10 @@ class NodeInfoScreen(ModalScreen[None]):
                 pad_edge=False,
                 collapse_padding=True,
             )
-            table.add_column("Dato/tid", style="dim", no_wrap=True)
-            table.add_column("Via", style="dim", no_wrap=True)
+            table.add_column(_t("field.date_time"), style="dim", no_wrap=True)
+            table.add_column(_t("field.via"), style="dim", no_wrap=True)
             for name in ordered_names:
-                label = METRIC_TABLE_LABELS.get(
-                    name,
-                    METRIC_PRESENTATION.get(
-                        name,
-                        (name.replace("_", " ").capitalize(), ""),
-                    )[0],
-                )
+                label = _metric_table_label(name)
                 table.add_column(
                     Text(str(label), style="bold cyan"),
                     no_wrap=True,
@@ -1191,11 +1276,11 @@ class NodeInfoScreen(ModalScreen[None]):
 
     def _render_positions(self, log: RichLog) -> None:
         if not self.positions:
-            log.write(Text("Ingen posisjonar er logga for denne noden.", style="dim"))
+            log.write(Text(_t("node_info.no_positions"), style="dim"))
             return
 
         table = Table(
-            title="Posisjonslogg",
+            title=_t("node_info.position_log"),
             title_justify="left",
             title_style="bold green",
             box=box.SIMPLE_HEAD,
@@ -1204,20 +1289,20 @@ class NodeInfoScreen(ModalScreen[None]):
             collapse_padding=True,
         )
         for label in (
-            "Dato/tid",
-            "Via",
-            "Breiddegrad",
-            "Lengdegrad",
-            "Høgd MSL",
+            _t("field.date_time"),
+            _t("field.via"),
+            _t("field.latitude"),
+            _t("field.longitude"),
+            _t("field.altitude_msl"),
             "HAE",
-            "Sat.",
-            "GPS-pres.",
+            _t("field.satellites"),
+            _t("field.gps_accuracy"),
             "PDOP",
         ):
             table.add_column(
                 label,
                 header_style="bold cyan",
-                no_wrap=label not in {"Via"},
+                no_wrap=label not in {_t("field.via")},
             )
 
         for position in self.positions:
@@ -1257,7 +1342,7 @@ class NodeInfoScreen(ModalScreen[None]):
         log.write(table, scroll_end=False)
 
         links = Table(
-            title="Kartlenkjer",
+            title=_t("node_info.map_links"),
             title_justify="left",
             title_style="bold green",
             box=box.SIMPLE_HEAD,
@@ -1265,7 +1350,7 @@ class NodeInfoScreen(ModalScreen[None]):
             pad_edge=False,
             collapse_padding=True,
         )
-        links.add_column("Dato/tid", style="dim", no_wrap=True)
+        links.add_column(_t("field.date_time"), style="dim", no_wrap=True)
         links.add_column("Google Maps", header_style="bold cyan", overflow="fold")
         for position in self.positions:
             url = _google_maps_url(position)
@@ -1283,11 +1368,11 @@ class NodeInfoScreen(ModalScreen[None]):
 
     def _render_traceroutes(self, log: RichLog) -> None:
         if not self.traceroutes:
-            log.write(Text("Ingen traceroutar er logga for denne noden.", style="dim"))
+            log.write(Text(_t("node_info.no_traceroutes"), style="dim"))
             return
 
         table = Table(
-            title="Traceroute-logg",
+            title=_t("node_info.traceroute_log"),
             title_justify="left",
             title_style="bold green",
             box=box.SIMPLE_HEAD,
@@ -1295,11 +1380,11 @@ class NodeInfoScreen(ModalScreen[None]):
             pad_edge=False,
             collapse_padding=True,
         )
-        table.add_column("Dato/tid", style="dim", no_wrap=True)
-        table.add_column("Status", no_wrap=True)
-        table.add_column("Hopp F/T", justify="right", no_wrap=True)
-        table.add_column("Fram", overflow="fold")
-        table.add_column("Tilbake / feil", overflow="fold")
+        table.add_column(_t("field.date_time"), style="dim", no_wrap=True)
+        table.add_column(_t("field.status"), no_wrap=True)
+        table.add_column(_t("field.hops_forward_return"), justify="right", no_wrap=True)
+        table.add_column(_t("field.forward"), overflow="fold")
+        table.add_column(_t("field.return_error"), overflow="fold")
         for action in self.traceroutes:
             table.add_row(
                 *(Text(str(cell)) for cell in self.traceroute_formatter(action))
@@ -1436,12 +1521,12 @@ class NodeInfoScreen(ModalScreen[None]):
 
     def action_open_map(self, url: str) -> None:
         if not url.startswith("https://www.google.com/maps/search/?"):
-            self.notify("Ugyldig kartlenkje", severity="error")
+            self.notify(_t("map.invalid"), severity="error")
             return
         if os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY"):
             self.notify(
-                "Bruk Ctrl+klikk for å opne lenkja på maskina di.",
-                title="Google Maps over SSH",
+                _t("map.ssh_hint"),
+                title=_t("map.ssh_title"),
             )
             return
         self.app.open_url(url)
@@ -1452,29 +1537,38 @@ class NodeInfoScreen(ModalScreen[None]):
 
 class QuitScreen(ModalScreen[str | None]):
     BINDINGS = [
-        Binding("up", "previous_choice", "Førre val", priority=True),
-        Binding("left", "previous_choice", "Førre val", priority=True),
-        Binding("down", "next_choice", "Neste val", priority=True),
-        Binding("right", "next_choice", "Neste val", priority=True),
-        Binding("escape", "cancel", "Avbryt", priority=True),
+        Binding("up", "previous_choice", "", priority=True),
+        Binding("left", "previous_choice", "", priority=True),
+        Binding("down", "next_choice", "", priority=True),
+        Binding("right", "next_choice", "", priority=True),
+        Binding("escape", "cancel", "", priority=True),
     ]
 
     def __init__(self, background_mode: str):
         super().__init__()
+        _localize_bindings(
+            self,
+            (
+                ("up", "previous_choice", "binding.previous_choice", True),
+                ("left", "previous_choice", "binding.previous_choice", True),
+                ("down", "next_choice", "binding.next_choice", True),
+                ("right", "next_choice", "binding.next_choice", True),
+                ("escape", "cancel", "binding.cancel", True),
+            ),
+        )
         self.background_mode = background_mode
 
     def compose(self) -> ComposeResult:
         with Container(id="quit-dialog"):
-            yield Label("Avslutt MeshPi", id="quit-title")
+            yield Label(_t("quit.title"), id="quit-title")
             yield Static(
-                "Vil du berre lukke terminalgrensesnittet, eller stoppe "
-                "bakgrunnstenesta òg?",
+                _t("quit.question"),
                 id="quit-text",
             )
-            yield Button("Lukk appen – tenesta held fram", id="quit-leave")
-            yield Button("Lukk appen og stopp tenesta", id="quit-stop")
-            yield Button("Avbryt", id="quit-cancel")
-            yield Static("↑/↓: vel   Enter: stadfest   Esc: avbryt", id="quit-help")
+            yield Button(_t("quit.leave"), id="quit-leave")
+            yield Button(_t("quit.stop"), id="quit-stop")
+            yield Button(_t("common.cancel"), id="quit-cancel")
+            yield Static(_t("quit.help"), id="quit-help")
 
     def on_mount(self) -> None:
         target = "#quit-stop" if self.background_mode == "session" else "#quit-leave"
@@ -1508,41 +1602,107 @@ class QuitScreen(ModalScreen[str | None]):
 
 class HelpScreen(ModalScreen[None]):
     BINDINGS = [
-        Binding("f1", "close_help", "Lukk hjelp", priority=True),
-        Binding("escape", "close_help", "Lukk hjelp", priority=True),
+        Binding("f1", "close_help", "", priority=True),
+        Binding("escape", "close_help", "", priority=True),
     ]
 
     SHORTCUTS = (
-        ("F1", "Vis eller lukk denne oversikta"),
-        ("Tab / Shift+Tab", "Flytt mellom samtalar, melding og nodar"),
-        ("Enter", "Opne vald samtale/node eller send melding"),
-        ("↑ / ↓", "Naviger i lista; i meldingsfeltet: eigne meldingar/utkast"),
-        ("Mus / Ctrl+C", "Marker og kopier tekst frå samtalevindauget"),
-        ("Ctrl+L", "Flytt markøren til meldingsfeltet"),
-        ("Ctrl+D", "Finn ein node og start ein ny DM"),
-        ("F2", "Flytt markøren til samtalelista"),
-        ("F3", "Flytt markøren til nodelista"),
-        ("F8", "Vis eller skjul DM-samtalane"),
-        ("F9", "Vis eller skjul sekundærkanalane; primærkanalen blir ståande"),
-        ("Shift+F10", "Opne handlingar for markert node"),
-        ("Delete", "Lukk vald DM utan å slette historikken"),
-        ("Ctrl+R", "Oppdater status, samtalar og nodar"),
-        ("Ctrl+U", "Kopier oppdateringskommandoen når ein ny versjon finst"),
-        ("Ctrl+Q", "Avslutt MeshPi og vel kva som skjer med daemonen"),
-        ("Esc", "Lukk dialogen som er open"),
+        ("F1", "help.f1"),
+        ("Tab / Shift+Tab", "help.tab"),
+        ("Enter", "help.enter"),
+        ("↑ / ↓", "help.arrows"),
+        ("Mouse / Ctrl+C", "help.copy"),
+        ("Ctrl+L", "help.input"),
+        ("Ctrl+D", "help.new_dm"),
+        ("F2", "help.conversations"),
+        ("F3", "help.nodes"),
+        ("F8", "help.toggle_dm"),
+        ("F9", "help.toggle_channels"),
+        ("F10", "help.settings"),
+        ("Shift+F10", "help.node_actions"),
+        ("Delete", "help.archive"),
+        ("Ctrl+R", "help.refresh"),
+        ("Ctrl+U", "help.update"),
+        ("Ctrl+Q", "help.quit"),
+        ("Esc", "help.escape"),
     )
+
+    def __init__(self) -> None:
+        super().__init__()
+        _localize_bindings(
+            self,
+            (
+                ("f1", "close_help", "binding.close_help", True),
+                ("escape", "close_help", "binding.close_help", True),
+            ),
+        )
 
     def compose(self) -> ComposeResult:
         with Container(id="help-dialog"):
-            yield Label("Tastatursnarvegar", id="help-title")
+            yield Label(_t("help.title"), id="help-title")
             help_text = Text()
-            for key, description in self.SHORTCUTS:
+            for key, description_key in self.SHORTCUTS:
                 help_text.append(f"{key:<18}", style="bold cyan")
-                help_text.append(description + "\n")
+                help_text.append(_t(description_key) + "\n")
             yield Static(help_text, id="help-shortcuts")
-            yield Static("Trykk F1 eller Esc for å lukke", id="help-close")
+            yield Static(_t("help.close"), id="help-close")
 
     def action_close_help(self) -> None:
+        self.dismiss(None)
+
+
+class SettingsScreen(ModalScreen[str | None]):
+    BINDINGS = [
+        Binding("up", "previous_choice", "", priority=True),
+        Binding("down", "next_choice", "", priority=True),
+        Binding("escape", "cancel", "", priority=True),
+    ]
+
+    def __init__(self, language: str):
+        super().__init__()
+        self.language = language
+        _localize_bindings(
+            self,
+            (
+                ("up", "previous_choice", "binding.previous_choice", True),
+                ("down", "next_choice", "binding.next_choice", True),
+                ("escape", "cancel", "binding.cancel", True),
+            ),
+        )
+
+    def compose(self) -> ComposeResult:
+        with Container(id="settings-dialog"):
+            yield Label(_t("settings.title"), id="settings-title")
+            yield Static(_t("settings.language"), id="settings-language-label")
+            yield Button("Nynorsk", id="settings-nn")
+            yield Button("English", id="settings-en")
+            yield Button(_t("common.cancel"), id="settings-cancel")
+            yield Static(_t("settings.help"), id="settings-help")
+
+    def on_mount(self) -> None:
+        self.query_one(f"#settings-{self.language}", Button).focus()
+
+    @on(Button.Pressed)
+    def choose(self, event: Button.Pressed) -> None:
+        result = {
+            "settings-nn": "nn",
+            "settings-en": "en",
+            "settings-cancel": None,
+        }.get(event.button.id)
+        self.dismiss(result)
+
+    def _move_choice(self, direction: int) -> None:
+        buttons = list(self.query("#settings-dialog Button"))
+        focused = next((index for index, button in enumerate(buttons) if button.has_focus), 0)
+        buttons[(focused + direction) % len(buttons)].focus()
+
+    def action_next_choice(self) -> None:
+        self._move_choice(1)
+
+    def action_previous_choice(self) -> None:
+        self._move_choice(-1)
+
+    def action_cancel(self) -> None:
         self.dismiss(None)
 
 
@@ -1921,6 +2081,42 @@ class MeshPiTUI(App[str | None]):
         content-align: center middle;
     }
 
+    SettingsScreen {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.72);
+    }
+
+    #settings-dialog {
+        width: 52;
+        max-width: 94%;
+        height: 23;
+        padding: 1 2;
+        border: round $accent;
+        background: $panel;
+    }
+
+    #settings-title {
+        height: 2;
+        color: $accent;
+        text-style: bold;
+    }
+
+    #settings-language-label {
+        height: 2;
+        color: #cbd0d2;
+    }
+
+    #settings-dialog Button {
+        width: 1fr;
+        margin: 0 0 1 0;
+    }
+
+    #settings-help {
+        height: 2;
+        color: #8d9699;
+        content-align: center middle;
+    }
+
     HelpScreen {
         align: center middle;
         background: rgba(0, 0, 0, 0.72);
@@ -1957,20 +2153,21 @@ class MeshPiTUI(App[str | None]):
     """
 
     BINDINGS = [
-        Binding("f1", "show_help", "Hjelp", priority=True),
-        Binding("tab", "focus_next_pane", "Neste felt", priority=True),
-        Binding("shift+tab", "focus_previous_pane", "Førre felt", priority=True),
-        Binding("ctrl+l", "focus_input", "Skriv melding"),
-        Binding("ctrl+d", "new_dm", "Ny DM"),
-        Binding("f2", "focus_conversations", "Samtalar"),
-        Binding("f3", "focus_nodes", "Nodar"),
-        Binding("f8", "toggle_direct_messages", "Vis/skjul DM", priority=True),
-        Binding("f9", "toggle_channels", "Vis/skjul kanalar", priority=True),
-        Binding("shift+f10", "node_actions", "Nodehandlingar", priority=True),
-        Binding("delete", "archive_conversation", "Lukk DM"),
-        Binding("ctrl+r", "refresh", "Oppdater"),
-        Binding("ctrl+u", "copy_update_command", "Kopier oppdatering", priority=True),
-        Binding("ctrl+q", "quit", "Avslutt", priority=True),
+        Binding("f1", "show_help", "", priority=True),
+        Binding("tab", "focus_next_pane", "", priority=True),
+        Binding("shift+tab", "focus_previous_pane", "", priority=True),
+        Binding("ctrl+l", "focus_input", ""),
+        Binding("ctrl+d", "new_dm", ""),
+        Binding("f2", "focus_conversations", ""),
+        Binding("f3", "focus_nodes", ""),
+        Binding("f8", "toggle_direct_messages", "", priority=True),
+        Binding("f9", "toggle_channels", "", priority=True),
+        Binding("f10", "settings", "", priority=True),
+        Binding("shift+f10", "node_actions", "", priority=True),
+        Binding("delete", "archive_conversation", ""),
+        Binding("ctrl+r", "refresh", ""),
+        Binding("ctrl+u", "copy_update_command", "", priority=True),
+        Binding("ctrl+q", "quit", "", priority=True),
     ]
 
     def __init__(
@@ -1981,6 +2178,9 @@ class MeshPiTUI(App[str | None]):
         update_checker: UpdateChecker | None = check_for_update,
     ):
         super().__init__()
+        self.title = _t("main.title")
+        self.sub_title = _t("main.subtitle")
+        self._localize_app_bindings()
         self.settings = settings
         self.requester = requester
         self.watcher = watcher
@@ -2014,15 +2214,46 @@ class MeshPiTUI(App[str | None]):
         self._message_history: dict[str, list[str]] = {}
         self._message_history_loaded: set[str] = set()
         self._pending_message_history: dict[str, list[str]] = {}
+        self._settings_snapshot: dict[str, Any] | None = None
+
+    def _localize_app_bindings(self) -> None:
+        _localize_bindings(
+            self,
+            (
+                ("f1", "show_help", "binding.help", True),
+                ("tab", "focus_next_pane", "binding.next_field", True),
+                ("shift+tab", "focus_previous_pane", "binding.previous_field", True),
+                ("ctrl+l", "focus_input", "binding.write_message", False),
+                ("ctrl+d", "new_dm", "binding.new_dm", False),
+                ("f2", "focus_conversations", "binding.conversations", False),
+                ("f3", "focus_nodes", "binding.nodes", False),
+                ("f8", "toggle_direct_messages", "binding.toggle_dm", True),
+                ("f9", "toggle_channels", "binding.toggle_channels", True),
+                ("f10", "settings", "binding.settings", True),
+                ("shift+f10", "node_actions", "binding.node_actions", True),
+                ("delete", "archive_conversation", "binding.archive_dm", False),
+                ("ctrl+r", "refresh", "binding.refresh", False),
+                ("ctrl+u", "copy_update_command", "binding.copy_update", True),
+                ("ctrl+q", "quit", "binding.quit", True),
+            ),
+        )
 
     def compose(self) -> ComposeResult:
         yield Static("", id="status-bar")
         with Horizontal(id="body"):
             with Vertical(id="conversation-panel"):
-                yield Static("Samtalar", classes="panel-title")
+                yield Static(
+                    _t("main.conversations"),
+                    id="conversation-panel-title",
+                    classes="panel-title",
+                )
                 yield ListView(id="conversation-list")
             with Vertical(id="message-panel"):
-                yield Static("Public – kanal 0", id="conversation-title", classes="panel-title")
+                yield Static(
+                    _t("conversation.public_channel", channel=0, local_suffix=""),
+                    id="conversation-title",
+                    classes="panel-title",
+                )
                 yield SelectableRichLog(
                     id="message-log",
                     wrap=True,
@@ -2031,24 +2262,20 @@ class MeshPiTUI(App[str | None]):
                     auto_scroll=True,
                 )
                 yield MessageInput(
-                    placeholder="Skriv melding og trykk Enter",
+                    placeholder=_t("main.message_placeholder"),
                     id="message-input",
                 )
                 yield Static(
-                    "Enter: send   ↑/↓: historikk   Marker: kopier   Ctrl+C: kopier",
+                    _t("main.input_help"),
                     id="input-help",
                 )
             with Vertical(id="node-panel"):
-                yield Static("Nodedetaljar", classes="panel-title")
-                yield Static("Ingen node vald", id="node-details")
-                yield Static("Nodar", id="node-list-title", classes="panel-title")
+                yield Static(_t("main.node_details"), id="node-panel-title", classes="panel-title")
+                yield Static(_t("main.no_node_selected"), id="node-details")
+                yield Static(_t("main.nodes"), id="node-list-title", classes="panel-title")
                 yield ListView(id="node-list")
         yield Static(
-            " F1 hjelp  Tab/Shift+Tab byter felt  Enter opnar  Del lukk DM  Ctrl+D ny DM  "
-            "F2 samtalar  F3 nodar  F8 DM  F9 kanalar  "
-            "Shift+F10 nodehandlingar  Ctrl+R oppdater  "
-            "Ctrl+U kopier oppdatering  "
-            "Ctrl+Q avslutt ",
+            _t("main.key_bar"),
             id="key-bar",
         )
 
@@ -2117,7 +2344,7 @@ class MeshPiTUI(App[str | None]):
         except Exception as exc:
             self.call_from_thread(
                 self.notify,
-                f"Klarte ikkje laste data: {exc}",
+                _t("error.load_data", error=exc),
                 severity="error",
                 timeout=8,
             )
@@ -2177,14 +2404,14 @@ class MeshPiTUI(App[str | None]):
     @staticmethod
     def _render_update_notice(notice: UpdateNotice) -> Text:
         text = Text()
-        text.append("⬆ MeshPi-oppdatering tilgjengeleg", style="bold yellow")
+        text.append(_t("update.available"), style="bold yellow")
         text.append(
             f"  {notice.current_version} → {notice.latest_version}\n",
             style="yellow",
         )
-        text.append("Køyr i terminalen – ikkje send som melding:\n", style="dim")
+        text.append(_t("update.terminal_hint") + "\n", style="dim")
         text.append(notice.command, style="bold cyan")
-        text.append("\nCtrl+U: kopier kommandoen", style="dim")
+        text.append("\n" + _t("update.copy_hint"), style="dim")
         text.append("\n" + "─" * 72, style="#725f24")
         return text
 
@@ -2198,6 +2425,12 @@ class MeshPiTUI(App[str | None]):
             return
         status = self.status_data
         state = str(status.get("state", "ukjend"))
+        state_display = {
+            "tilkopla": _t("state.connected"),
+            "fråkopla": _t("state.disconnected"),
+            "koplar til": _t("state.connecting"),
+            "ingen node": _t("state.no_node"),
+        }.get(state, state)
         state_style = "bold green" if state == "tilkopla" else "bold yellow"
         local_id = str(status.get("local_node_id") or "–")
         local_node = self.nodes.get(local_id, {})
@@ -2209,7 +2442,7 @@ class MeshPiTUI(App[str | None]):
         if width <= 0:
             width = max(1, self.size.width - 6)
 
-        state_label = f"● {state.capitalize()}"
+        state_label = f"● {state_display.capitalize()}"
         fixed: list[tuple[str, str | None]] = [
             (state_label, state_style),
             (clock, "cyan"),
@@ -2219,7 +2452,7 @@ class MeshPiTUI(App[str | None]):
         if width >= 125:
             version = (f"MeshPi {__version__}", "bold green")
             local_label = _fit_status_text(
-                f"Lokal: {local_name} [{local_id[-4:]}]",
+                _t("status.local", name=local_name, node=local_id[-4:]),
                 28,
             )
             local = (local_label, "green")
@@ -2235,7 +2468,7 @@ class MeshPiTUI(App[str | None]):
             fixed_width += len(local[0])
         dynamic_width = max(8, width - separator_width - fixed_width)
         host_source = (
-            f"Vert: {self.host_name}" if width >= 125 else self.host_name
+            _t("status.host", host=self.host_name) if width >= 125 else self.host_name
         )
         host_width = min(len(host_source), max(4, dynamic_width // 3))
         endpoint_width = max(4, dynamic_width - host_width)
@@ -2243,7 +2476,7 @@ class MeshPiTUI(App[str | None]):
         endpoint_label = (
             _fit_status_endpoint(transport, endpoint, endpoint_width)
             if endpoint
-            else _fit_status_text("Ingen node", endpoint_width)
+            else _fit_status_text(_t("state.no_node"), endpoint_width)
         )
 
         items: list[tuple[str, str | None]] = []
@@ -2384,11 +2617,11 @@ class MeshPiTUI(App[str | None]):
         for index, item in enumerate(channels):
             rendered = dict(item)
             if index == 0:
-                rendered["_section_label"] = "Kanalar"
+                rendered["_section_label"] = _t("sidebar.channels")
                 rendered["_section_hint"] = (
-                    "F9 skjul sekundære"
+                    _t("sidebar.hide_secondary")
                     if self.show_secondary_channels
-                    else "F9 vis sekundære"
+                    else _t("sidebar.show_secondary")
                 )
             visible.append(rendered)
 
@@ -2410,9 +2643,9 @@ class MeshPiTUI(App[str | None]):
                     rendered = dict(item)
                     if index == 0:
                         rendered["_section_label"] = (
-                            f"Direkte samtalar · kanal {channel}"
+                            _t("sidebar.direct_channel", channel=channel)
                             if channel is not None
-                            else "Direkte samtalar · ukjend kanal"
+                            else _t("sidebar.direct_unknown_channel")
                         )
                         if first_group:
                             rendered["_section_hint"] = "F8"
@@ -2488,7 +2721,7 @@ class MeshPiTUI(App[str | None]):
             if self.selected_node_id in self.nodes:
                 self._show_node(self.nodes[self.selected_node_id])
             self.query_one("#node-list-title", Static).update(
-                f"Nodar · {len(self.nodes)}"
+                _t("main.nodes_count", count=len(self.nodes))
             )
             return
 
@@ -2498,7 +2731,9 @@ class MeshPiTUI(App[str | None]):
         ids = [str(node["node_id"]) for node in ordered]
         node_list.index = ids.index(preferred) if preferred in ids else (0 if ids else None)
         self.selected_node_id = ids[node_list.index] if node_list.index is not None else None
-        self.query_one("#node-list-title", Static).update(f"Nodar · {len(ordered)}")
+        self.query_one("#node-list-title", Static).update(
+            _t("main.nodes_count", count=len(ordered))
+        )
         self._rebuilding_nodes = False
 
     @on(ListView.Highlighted, "#conversation-list")
@@ -2527,7 +2762,7 @@ class MeshPiTUI(App[str | None]):
         if isinstance(self.screen, NodeActionScreen):
             return
         if event.item.node.get("is_local"):
-            self.notify("Dette er den lokale noden", timeout=3)
+            self.notify(_t("notice.local_node"), timeout=3)
             return
         self._open_node_dm(event.item.node_id, focus_input=False)
 
@@ -2661,7 +2896,7 @@ class MeshPiTUI(App[str | None]):
         except Exception as exc:
             self.call_from_thread(
                 self.notify,
-                f"Klarte ikkje laste samtalen: {exc}",
+                _t("error.load_conversation", error=exc),
                 severity="error",
             )
 
@@ -2780,11 +3015,11 @@ class MeshPiTUI(App[str | None]):
             or node.get("long_name")
             or node.get("short_name")
             or node_id
-            or "Ukjend"
+            or _t("value.unknown")
         )
         outgoing = message.get("direction") == "ut"
         transport = str(message.get("transport") or "Ukjend")
-        transport_label = "transport ukjend" if transport == "Ukjend" else transport
+        transport_label = _t("value.unknown_transport") if transport == "Ukjend" else transport
         text = Text()
         date_label, time_label = _message_time_parts(message.get("timestamp"))
         if date_label:
@@ -2807,23 +3042,33 @@ class MeshPiTUI(App[str | None]):
             details.append(f"RSSI {message['rssi']}")
         if message.get("hop_start") is not None or message.get("hop_limit") is not None:
             details.append(
-                f"hopp {message.get('hop_start', '–')}/{message.get('hop_limit', '–')}"
+                _t(
+                    "message.hops",
+                    start=message.get("hop_start", "–"),
+                    limit=message.get("hop_limit", "–"),
+                )
             )
         if details:
             text.append("  " + "  ".join(details), style="dim")
         if outgoing:
-            status = str(message.get("status") or "sendt")
-            if status == "stadfesta":
-                status = "ACK"
+            raw_status = str(message.get("status") or "sendt")
+            status = {
+                "motteken": _t("message.status.received"),
+                "sendt": _t("message.status.sent"),
+                "stadfesta": _t("message.status.acknowledged"),
+                "ACK": _t("message.status.acknowledged"),
+                "levert": _t("message.status.delivered"),
+                "feila": _t("message.status.failed"),
+            }.get(raw_status, sanitize_terminal_text(raw_status))
             metadata = message.get("raw_metadata")
             failure_reason = (
                 sanitize_terminal_text(metadata.get("failure_reason"), 80)
-                if status == "feila" and isinstance(metadata, dict)
+                if raw_status == "feila" and isinstance(metadata, dict)
                 else ""
             )
             if failure_reason:
                 status = f"{status}: {failure_reason}"
-            status_style = "bold green" if status == "levert" else "dim"
+            status_style = "bold green" if raw_status == "levert" else "dim"
             text.append(f"  [{status}]", style=status_style)
         text.append("\n  ")
         text.append(sanitize_terminal_text(message.get("text") or ""))
@@ -2833,21 +3078,24 @@ class MeshPiTUI(App[str | None]):
     def _node_action_label(self, node_id: str) -> str:
         node = self.nodes.get(node_id, {})
         name = sanitize_terminal_text(
-            node.get("long_name") or node.get("short_name") or node_id or "Ukjend"
+            node.get("long_name")
+            or node.get("short_name")
+            or node_id
+            or _t("value.unknown")
         )
         return f"{name} [{node_id[-4:] if node_id else '????'}]"
 
     def _append_traceroute_path(self, text: Text, title: str, path: Any) -> None:
         text.append(f"{title}:\n", style="bold cyan")
         if not isinstance(path, list) or not path:
-            text.append("  Ikkje rapportert\n", style="dim")
+            text.append("  " + _t("node_action.not_reported") + "\n", style="dim")
             return
         for index, hop in enumerate(path):
             if not isinstance(hop, dict):
                 continue
             if index:
                 snr = hop.get("snr")
-                snr_text = "ukjend SNR" if snr is None else f"SNR {snr:g} dB"
+                snr_text = _t("node_action.unknown_snr") if snr is None else f"SNR {snr:g} dB"
                 text.append(f"  ↓ {snr_text}\n", style="dim")
             text.append(
                 f"  {self._node_action_label(str(hop.get('node_id') or ''))}\n"
@@ -2858,35 +3106,35 @@ class MeshPiTUI(App[str | None]):
         target = self._node_action_label(str(action.get("node_id") or ""))
         text = Text()
         date_label, time_label = _message_time_parts(action.get("started_at"))
-        text.append("Sendt: ", style="dim")
+        text.append(_t("node_action.sent") + ": ", style="dim")
         if date_label:
             text.append(f"{date_label} ", style="dim")
         text.append(f"{time_label}\n", style="cyan")
-        text.append(f"Mål: {target}\n")
+        text.append(_t("node_action.target", target=target) + "\n")
         if status == "started":
-            text.append("Førespurnaden er sendt. Ventar på svar.\n", style="yellow")
+            text.append(_t("node_action.request_waiting") + "\n", style="yellow")
             text.append(
-                "Du kan halda fram med å bruke MeshPi medan traceroute går.",
+                _t("node_action.background_hint"),
                 style="dim",
             )
-            title = "TRACEROUTE · VENTAR"
+            title = _t("node_action.panel_waiting")
             border_style = "yellow"
         elif status == "failed":
             text.append(
-                sanitize_terminal_text(action.get("error") or "Ukjend feil"),
+                sanitize_terminal_text(action.get("error") or _t("common.unknown_error")),
                 style="bold red",
             )
-            title = "TRACEROUTE · FEILA"
+            title = _t("node_action.panel_failed")
             border_style = "red"
         else:
             result = action.get("result")
             if isinstance(result, dict):
-                self._append_traceroute_path(text, "Fram", result.get("forward"))
+                self._append_traceroute_path(text, _t("field.forward"), result.get("forward"))
                 text.append("\n")
-                self._append_traceroute_path(text, "Tilbake", result.get("return"))
+                self._append_traceroute_path(text, _t("field.return"), result.get("return"))
             else:
-                text.append("Resultatet manglar rutedata.", style="yellow")
-            title = "TRACEROUTE · FERDIG"
+                text.append(_t("node_action.missing_route_data"), style="yellow")
+            title = _t("node_action.panel_complete")
             border_style = "cyan"
         return Panel(
             text,
@@ -2905,9 +3153,9 @@ class MeshPiTUI(App[str | None]):
         timestamp = _date_time(action.get("started_at"), multiline=True)
         status = str(action.get("status") or "started")
         status_label = {
-            "started": "Ventar",
-            "completed": "Ferdig",
-            "failed": "Feila",
+            "started": _t("state.waiting"),
+            "completed": _t("state.completed"),
+            "failed": _t("state.failed"),
         }.get(status, status)
         if status == "failed":
             return (
@@ -2915,11 +3163,11 @@ class MeshPiTUI(App[str | None]):
                 status_label,
                 "–",
                 "–",
-                sanitize_terminal_text(action.get("error") or "Ukjend feil"),
+                sanitize_terminal_text(action.get("error") or _t("common.unknown_error")),
             )
         result = action.get("result")
         if status != "completed" or not isinstance(result, dict):
-            return timestamp, status_label, "–", "Ventar på svar", "–"
+            return timestamp, status_label, "–", _t("node_action.waiting_for_reply"), "–"
         return (
             timestamp,
             status_label,
@@ -2937,7 +3185,7 @@ class MeshPiTUI(App[str | None]):
 
     def _traceroute_path_summary(self, path: Any) -> str:
         if not isinstance(path, list) or not path:
-            return "Ikkje rapportert"
+            return _t("node_action.not_reported")
         parts = []
         for hop in path:
             if not isinstance(hop, dict):
@@ -2948,12 +3196,12 @@ class MeshPiTUI(App[str | None]):
             if snr is not None:
                 label += f" ({snr:g} dB)"
             parts.append(label)
-        return " → ".join(parts) or "Ikkje rapportert"
+        return " → ".join(parts) or _t("node_action.not_reported")
 
     def _show_node(self, node: dict[str, Any] | None) -> None:
         panel = self.query_one("#node-details", Static)
         if not node:
-            panel.update("Ingen nodeinformasjon tilgjengeleg.")
+            panel.update(_t("main.no_node_information"))
             return
         battery = node.get("battery_level")
         bar = ""
@@ -2961,21 +3209,27 @@ class MeshPiTUI(App[str | None]):
             filled = round(battery / 20)
             bar = "  " + "█" * filled + "░" * (5 - filled)
         can_dm = node.get("can_receive_dm")
-        dm = "ja" if can_dm is True else "nei" if can_dm is False else "ukjend"
+        dm = (
+            _t("value.yes")
+            if can_dm is True
+            else _t("value.no")
+            if can_dm is False
+            else _t("value.unknown")
+        )
         rows = (
-            ("Langt namn", node.get("long_name")),
-            ("Kort namn", node.get("short_name")),
-            ("Node-ID", node.get("node_id")),
-            ("Maskinvare", node.get("hw_model")),
-            ("Rolle", node.get("role")),
-            ("Sist sett", _time(node.get("last_heard"), seconds=True)),
-            ("Batteri", _battery(battery) + bar),
-            ("Spenning", f"{node['voltage']} V" if node.get("voltage") else None),
+            (_t("field.long_name"), node.get("long_name")),
+            (_t("field.short_name"), node.get("short_name")),
+            (_t("field.node_id"), node.get("node_id")),
+            (_t("field.hardware"), node.get("hw_model")),
+            (_t("field.role"), node.get("role")),
+            (_t("field.last_seen"), _time(node.get("last_heard"), seconds=True)),
+            (_t("metric.battery"), _battery(battery) + bar),
+            (_t("metric.voltage"), f"{node['voltage']} V" if node.get("voltage") else None),
             ("SNR", node.get("snr")),
             ("RSSI", node.get("rssi")),
-            ("Hopp", node.get("hops_away")),
-            ("Transport", node.get("transport")),
-            ("Kan ta imot DM", dm),
+            (_t("field.hops"), node.get("hops_away")),
+            (_t("field.transport"), node.get("transport")),
+            (_t("field.can_receive_dm"), dm),
         )
         text = Text()
         for label, value in rows:
@@ -3030,14 +3284,14 @@ class MeshPiTUI(App[str | None]):
         if not selected_text:
             return
         self.copy_to_clipboard(selected_text)
-        self.notify("Markert tekst er kopiert.", timeout=2)
+        self.notify(_t("notice.selected_text_copied"), timeout=2)
 
     def _send_worker(self, conversation: str, text: str) -> None:
         selected_data = self._conversation_data(conversation)
         if not selected_data or selected_data.get("sendable") is not True:
             self.call_from_thread(
                 self.notify,
-                "Den valde samtaleruta er ikkje sendbar på den aktive noden",
+                _t("error.route_not_sendable"),
                 severity="error",
             )
             return
@@ -3056,7 +3310,7 @@ class MeshPiTUI(App[str | None]):
             if not peer_node:
                 self.call_from_thread(
                     self.notify,
-                    "Fann ikkje mottakarnoden for samtalen",
+                    _t("error.recipient_missing"),
                     severity="error",
                 )
                 return
@@ -3075,7 +3329,7 @@ class MeshPiTUI(App[str | None]):
         except Exception as exc:
             self.call_from_thread(
                 self.notify,
-                f"Sending feila: {exc}",
+                _t("error.send_failed", error=exc),
                 severity="error",
                 timeout=8,
             )
@@ -3200,7 +3454,10 @@ class MeshPiTUI(App[str | None]):
             node_id = str(data.get("from_node") or "")
             node = self.nodes.get(node_id, {})
             name = node.get("long_name") or node.get("short_name") or node_id
-            self.notify(f"Ny DM frå {name}: {data.get('text', '')}", timeout=6)
+            self.notify(
+                _t("notice.new_dm", name=name, text=data.get("text", "")),
+                timeout=6,
+            )
         self.run_worker(
             self._refresh_lists_worker,
             name="refresh-live",
@@ -3281,7 +3538,7 @@ class MeshPiTUI(App[str | None]):
     def action_focus_conversations(self) -> None:
         if not self.query_one("#conversation-panel", Vertical).display:
             self.query_one("#message-input", Input).focus()
-            self.notify("Samtalelista er skjult i denne vindaugsbreidda", timeout=3)
+            self.notify(_t("notice.conversation_list_hidden"), timeout=3)
             return
         self.query_one("#conversation-list", ListView).focus()
 
@@ -3295,33 +3552,44 @@ class MeshPiTUI(App[str | None]):
     async def action_toggle_direct_messages(self) -> None:
         self.show_direct_messages = not self.show_direct_messages
         await self._render_conversation_sidebar()
-        state = "viste" if self.show_direct_messages else "skjulte"
-        self.notify(f"DM-samtalane er {state}", timeout=2)
+        self.notify(
+            _t(
+                "notice.dm_visibility",
+                state=_t("value.shown") if self.show_direct_messages else _t("value.hidden"),
+            ),
+            timeout=2,
+        )
 
     async def action_toggle_channels(self) -> None:
         self.show_secondary_channels = not self.show_secondary_channels
         await self._render_conversation_sidebar()
-        state = "viste" if self.show_secondary_channels else "skjulte"
         self.notify(
-            f"Sekundærkanalane er {state}. Primærkanalen er alltid synleg.",
+            _t(
+                "notice.channel_visibility",
+                state=(
+                    _t("value.shown")
+                    if self.show_secondary_channels
+                    else _t("value.hidden")
+                ),
+            ),
             timeout=3,
         )
 
     def action_node_actions(self) -> None:
         node_list = self.query_one("#node-list", ListView)
         if not node_list.has_focus:
-            self.notify("Trykk F3 og marker ein node først", timeout=3)
+            self.notify(_t("notice.select_node_first"), timeout=3)
             return
         selected = node_list.highlighted_child
         if not isinstance(selected, NodeSidebarItem):
-            self.notify("Ingen node er markert", timeout=3)
+            self.notify(_t("notice.no_node_marked"), timeout=3)
             return
         self._open_node_actions(selected.node_id)
 
     def _open_node_actions(self, node_id: str) -> None:
         node = self.nodes.get(node_id)
         if node is None:
-            self.notify("Fann ikkje den markerte noden", severity="error")
+            self.notify(_t("error.marked_node_missing"), severity="error")
             return
         self.run_worker(
             lambda: self._node_action_availability_worker(node_id),
@@ -3345,7 +3613,7 @@ class MeshPiTUI(App[str | None]):
             availability = {
                 "available": False,
                 "cooldown_seconds": 0,
-                "reason": f"Klarte ikkje kontrollere traceroute: {exc}",
+                "reason": _t("error.check_traceroute", error=exc),
             }
         self.call_from_thread(
             self._show_node_action_screen,
@@ -3445,7 +3713,7 @@ class MeshPiTUI(App[str | None]):
         except Exception as exc:
             self.call_from_thread(
                 self.notify,
-                f"Klarte ikkje laste nodeinfo: {exc}",
+                _t("error.load_node_info", error=exc),
                 severity="error",
                 timeout=8,
             )
@@ -3484,13 +3752,13 @@ class MeshPiTUI(App[str | None]):
             )["data"]
         except Exception as exc:
             label = (
-                "traceroute"
+                _t("action.traceroute")
                 if action == "traceroute"
-                else "posisjonsutveksling"
+                else _t("action.position_exchange")
             )
             self.call_from_thread(
                 self.notify,
-                f"Klarte ikkje starte {label}: {exc}",
+                _t("error.start_action", action=label, error=exc),
                 severity="error",
                 timeout=8,
             )
@@ -3527,7 +3795,7 @@ class MeshPiTUI(App[str | None]):
             label = self._node_action_label(node_id)
             share_notice = self._position_share_notice(action)
             if status == "started":
-                message = f"Posisjonsførespurnad til {label} er sendt."
+                message = _t("notice.position_request_sent", target=label)
                 if share_notice:
                     message += f" {share_notice}"
                 self.notify(
@@ -3536,13 +3804,15 @@ class MeshPiTUI(App[str | None]):
                 )
             elif status == "failed":
                 self.notify(
-                    f"Posisjonsutveksling feila: "
-                    f"{action.get('error', 'ukjend feil')}",
+                    _t(
+                        "notice.position_failed",
+                        error=action.get("error", _t("common.unknown_error")),
+                    ),
                     severity="error",
                     timeout=10,
                 )
             else:
-                message = f"Posisjonssvar frå {label} er motteke."
+                message = _t("notice.position_reply", target=label)
                 if share_notice:
                     message += f" {share_notice}"
                 self.notify(
@@ -3570,20 +3840,23 @@ class MeshPiTUI(App[str | None]):
             self.select_conversation(self.current_conversation)
         if status == "started":
             self.notify(
-                f"Traceroute til {self._node_action_label(node_id)} er sendt",
+                _t("notice.traceroute_sent", target=self._node_action_label(node_id)),
                 timeout=5,
             )
             return
         if status == "failed":
             self.notify(
-                f"Traceroute feila: {action.get('error', 'ukjend feil')}",
+                _t(
+                    "notice.traceroute_failed",
+                    error=action.get("error", _t("common.unknown_error")),
+                ),
                 severity="error",
                 timeout=10,
             )
             return
         if node_id != self._conversation_peer(self.current_conversation):
             self.notify(
-                f"Traceroute til {self._node_action_label(node_id)} er ferdig",
+                _t("notice.traceroute_complete", target=self._node_action_label(node_id)),
                 timeout=7,
             )
 
@@ -3597,15 +3870,14 @@ class MeshPiTUI(App[str | None]):
             precision = details.get("local_position_precision_bits")
             if precision is not None:
                 return (
-                    "Eigen posisjon blei delt med "
-                    f"{precision} bits presisjon."
+                    _t("notice.position_shared_precision", precision=precision)
                 )
-            return "Eigen posisjon blei delt."
+            return _t("notice.position_shared")
         reason = sanitize_terminal_text(
             details.get("local_position_share_reason") or ""
         )
         suffix = f" ({reason})" if reason else ""
-        return f"Eigen posisjon blei ikkje delt{suffix}."
+        return _t("notice.position_not_shared", suffix=suffix)
 
     def action_new_dm(self) -> None:
         channels = [
@@ -3655,9 +3927,9 @@ class MeshPiTUI(App[str | None]):
         if route is None:
             self.notify(
                 (
-                    "Den valde kanalen er ikkje klar på den aktive noden"
+                    _t("error.selected_channel_unavailable")
                     if channel_key is not None
-                    else "Primærkanalen er ikkje klar på den aktive noden"
+                    else _t("error.primary_channel_unavailable")
                 ),
                 severity="error",
             )
@@ -3723,7 +3995,7 @@ class MeshPiTUI(App[str | None]):
         if not isinstance(selected, ConversationItem):
             return
         if selected.conversation.get("kind") == "public":
-            self.notify("Public-kanalen kan ikkje lukkast", timeout=3)
+            self.notify(_t("error.public_cannot_close"), timeout=3)
             return
         conversation = selected.conversation_id
         node_id = str(
@@ -3732,7 +4004,7 @@ class MeshPiTUI(App[str | None]):
             or ""
         )
         if not node_id:
-            self.notify("Fann ikkje mottakarnoden for samtalen", severity="error")
+            self.notify(_t("error.recipient_missing"), severity="error")
             return
         self.run_worker(
             lambda: self._archive_conversation_worker(node_id, conversation),
@@ -3765,7 +4037,7 @@ class MeshPiTUI(App[str | None]):
         except Exception as exc:
             self.call_from_thread(
                 self.notify,
-                f"Klarte ikkje lukke samtalen: {exc}",
+                _t("error.close_conversation", error=exc),
                 severity="error",
             )
 
@@ -3779,7 +4051,7 @@ class MeshPiTUI(App[str | None]):
         await self._apply_conversations(conversations)
         self.select_conversation(self.current_conversation)
         self.query_one("#conversation-list", ListView).focus()
-        self.notify("Samtalen er lukka. Ein ny DM opnar han att.", timeout=5)
+        self.notify(_t("notice.conversation_closed"), timeout=5)
 
     def action_refresh(self) -> None:
         self._schedule_status_refresh()
@@ -3795,10 +4067,89 @@ class MeshPiTUI(App[str | None]):
 
     def action_copy_update_command(self) -> None:
         if self.update_notice is None:
-            self.notify("Ingen oppdateringskommando er tilgjengeleg enno.")
+            self.notify(_t("notice.no_update_command"))
             return
         self.copy_to_clipboard(self.update_notice.command)
-        self.notify("Oppdateringskommandoen er kopiert.")
+        self.notify(_t("notice.update_command_copied"))
+
+    def action_settings(self) -> None:
+        if isinstance(self.screen, SettingsScreen):
+            return
+        focused = self.focused
+        message_input = self.query_one("#message-input", MessageInput)
+        self._settings_snapshot = {
+            "focused_id": focused.id if focused is not None else None,
+            "draft": message_input.value,
+            "cursor": message_input.cursor_position,
+            "selected_node": self.selected_node_id,
+            "current_conversation": self.current_conversation,
+        }
+        self.push_screen(SettingsScreen(get_language()), self._finish_settings)
+
+    def _finish_settings(self, language: str | None) -> None:
+        if language is None or language == get_language():
+            self._settings_snapshot = None
+            return
+        try:
+            set_language(language, persist=True)
+        except OSError as exc:
+            self.notify(_t("error.save_language", error=exc), severity="error")
+            return
+        self.run_worker(
+            self._refresh_language(),
+            name="language-refresh",
+            group="language-refresh",
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    async def _refresh_language(self) -> None:
+        message_input = self.query_one("#message-input", MessageInput)
+        snapshot = self._settings_snapshot or {}
+        self._settings_snapshot = None
+        focused_id = snapshot.get("focused_id")
+        draft = str(snapshot.get("draft", message_input.value))
+        cursor = int(snapshot.get("cursor", message_input.cursor_position))
+        selected_node = snapshot.get("selected_node", self.selected_node_id)
+        current_conversation = str(
+            snapshot.get("current_conversation", self.current_conversation)
+        )
+
+        self.title = _t("main.title")
+        self.sub_title = _t("main.subtitle")
+        self._localize_app_bindings()
+        self.query_one("#conversation-panel-title", Static).update(
+            _t("main.conversations")
+        )
+        self.query_one("#node-panel-title", Static).update(_t("main.node_details"))
+        self.query_one("#input-help", Static).update(_t("main.input_help"))
+        self.query_one("#key-bar", Static).update(_t("main.key_bar"))
+        message_input.placeholder = _t("main.message_placeholder")
+
+        await self._render_conversation_sidebar()
+        await self._apply_nodes(list(self.nodes.values()))
+        self.current_conversation = current_conversation
+        self.selected_node_id = selected_node
+        self.select_conversation(current_conversation)
+        if selected_node and selected_node in self.nodes:
+            self._select_sidebar_node(selected_node)
+            self._show_node(self.nodes[selected_node])
+        self._update_status_bar()
+
+        message_input.value = draft
+        if focused_id:
+            try:
+                self.query_one(f"#{focused_id}").focus()
+            except NoMatches:
+                message_input.focus()
+        message_input.cursor_position = min(cursor, len(draft))
+        self.notify(
+            _t(
+                "settings.saved",
+                language="Nynorsk" if get_language() == "nn" else "English",
+            ),
+            timeout=3,
+        )
 
     def action_show_help(self) -> None:
         if isinstance(self.screen, HelpScreen):

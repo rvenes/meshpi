@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from urllib.parse import quote
 
+from meshpi.i18n import tr
 from meshpi.models import normalize_node_id, sanitize_terminal_text
 
 
@@ -49,7 +50,7 @@ def dm_conversation_id(
 def parse_public_conversation_id(value: str) -> tuple[str | None, str]:
     conversation = value.strip()
     if not conversation.startswith("channel:"):
-        raise ValueError("Samtale-ID-en må starte med channel:")
+        raise ValueError(tr("error.channel.prefix"))
     payload = conversation.removeprefix("channel:")
     local_node_id: str | None = None
     channel_key = payload
@@ -57,7 +58,7 @@ def parse_public_conversation_id(value: str) -> tuple[str | None, str]:
         local_value, channel_key = payload.split(":", 1)
         local_node_id = normalize_node_id(local_value)
     if not _valid_channel_key(channel_key):
-        raise ValueError("Ugyldig samtale-ID for public-kanal")
+        raise ValueError(tr("error.channel.public_invalid"))
     return local_node_id, channel_key
 
 
@@ -65,13 +66,13 @@ def parse_dm_conversation_id(value: str) -> tuple[str, str, str]:
     conversation = value.strip()
     parts = conversation.split(":", 3)
     if len(parts) != 4 or parts[0] != "dm" or not parts[3]:
-        raise ValueError("Ugyldig samtale-ID for direkte melding")
+        raise ValueError(tr("error.channel.dm_invalid"))
     if (
         len(conversation) > 768
         or _has_control_characters(conversation)
         or not _valid_channel_key(parts[3])
     ):
-        raise ValueError("Ugyldig samtale-ID for direkte melding")
+        raise ValueError(tr("error.channel.dm_invalid"))
     return normalize_node_id(parts[1]), normalize_node_id(parts[2]), parts[3]
 
 
@@ -101,7 +102,7 @@ class ChannelBinding:
 
     @property
     def display_name(self) -> str:
-        return self.name or f"Kanal {self.channel_index}"
+        return self.name or tr("channel.default_name", index=self.channel_index)
 
     @property
     def conversation_id(self) -> str:

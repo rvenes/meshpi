@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from meshpi.ble import BLEConnectionError, connection_error_message
 from meshpi.connections import ConnectionProfile
+from meshpi.i18n import tr
 
 
 class Interface(Protocol):
@@ -154,5 +155,7 @@ def default_interface_factory(profile: ConnectionProfile) -> Interface:
     try:
         factory = TRANSPORT_FACTORIES[profile.transport]
     except KeyError as exc:
-        raise ValueError(f"Ustøtta transport: {profile.transport}") from exc
+        raise ValueError(
+            tr("transport.unsupported", transport=profile.transport)
+        ) from exc
     return factory(profile)

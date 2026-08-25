@@ -15,6 +15,7 @@ from meshpi.channels import (
     parse_dm_conversation_id,
     public_conversation_id,
 )
+from meshpi.i18n import tr
 from meshpi.models import Message, MessageStatus, Node, now_iso
 
 DATABASE_SCHEMA_VERSION = 5
@@ -568,7 +569,7 @@ class Database:
         try:
             source_table, query = UNSCOPED_ROW_QUERIES[query_name]
         except KeyError as exc:
-            raise ValueError("Ukjend migreringsspørjing") from exc
+            raise ValueError(tr("database.unknown_migration_query")) from exc
         rows = connection.execute(query).fetchall()
         for row in rows:
             Database._preserve_unscoped_payload(
@@ -585,7 +586,7 @@ class Database:
         try:
             query = SCOPE_TABLE_COUNT_QUERIES[table]
         except KeyError as exc:
-            raise ValueError("Ukjend migreringstabell") from exc
+            raise ValueError(tr("database.unknown_migration_table")) from exc
         return int(connection.execute(query).fetchone()[0])
 
     @staticmethod
@@ -837,7 +838,7 @@ class Database:
         elif table == "positions":
             table_info_query = "PRAGMA table_info(positions)"
         else:
-            raise ValueError("Ukjend observasjonstabell")
+            raise ValueError(tr("database.unknown_observation_table"))
         existing_columns = {
             str(row["name"])
             for row in connection.execute(table_info_query).fetchall()
@@ -1112,7 +1113,7 @@ class Database:
         ):
             local_node_id = str(message.to_node or "").strip().lower()
         if not local_node_id:
-            raise ValueError("Meldinga manglar lokal node-ID")
+            raise ValueError(tr("database.message_missing_local_node"))
         message.local_node_id = local_node_id
         conversation_id = message.conversation_id
         if str(message.kind) == "public" and message.channel_key:
@@ -1241,7 +1242,7 @@ class Database:
     def insert_telemetry(self, sample: dict[str, Any]) -> bool:
         metrics = sample.get("metrics")
         if not isinstance(metrics, dict) or not metrics:
-            raise ValueError("Telemetrimålinga manglar verdiar")
+            raise ValueError(tr("database.telemetry_missing_values"))
         values = (
             str(sample.get("dedupe_key") or ""),
             str(
@@ -1265,7 +1266,7 @@ class Database:
             sample.get("gateway_transport"),
         )
         if any(not values[index] for index in (0, 1, 3, 4, 5, 6)):
-            raise ValueError("Telemetrimålinga manglar identitet eller tidspunkt")
+            raise ValueError(tr("database.telemetry_missing_identity_or_time"))
         with self._connect() as connection:
             cursor = connection.execute(
                 """
@@ -1330,9 +1331,9 @@ class Database:
             position.get("gateway_transport"),
         )
         if any(not values[index] for index in (0, 1, 3, 4, 5)):
-            raise ValueError("Posisjonen manglar identitet eller tidspunkt")
+            raise ValueError(tr("database.position_missing_identity_or_time"))
         if values[6] is None or values[7] is None:
-            raise ValueError("Posisjonen manglar koordinatar")
+            raise ValueError(tr("database.position_missing_coordinates"))
         with self._connect() as connection:
             cursor = connection.execute(
                 """
@@ -1735,7 +1736,7 @@ class Database:
             "all": "kind IN ('public', 'dm')",
         }.get(scope)
         if where is None:
-            raise ValueError("Omfang må vere public, dm eller all")
+            raise ValueError(tr("database.invalid_scope"))
         with self._connect() as connection:
             cursor = connection.execute(
                 f"DELETE FROM messages WHERE local_node_id = ? AND {where}",  # nosec B608
@@ -1764,7 +1765,7 @@ class Database:
         node_id = str(action.get("node_id") or "")
         started_at = str(action.get("started_at") or "")
         if not action_id or not local_node_id or not node_id or not started_at:
-            raise ValueError("Nodehandlinga manglar ID, node eller starttid")
+            raise ValueError(tr("database.node_action_missing_fields"))
         result = action.get("result")
         with self._connect() as connection:
             connection.execute(
@@ -2037,7 +2038,7 @@ class Database:
     ) -> int:
         """Bind trygg, eldre DM-historikk til den stadfesta primærkanalen."""
         if channel_index != 0:
-            raise ValueError("Eldre DM-historikk kan berre bindast til primærkanalen")
+            raise ValueError(tr("database.legacy_dm_primary_only"))
         rebound = 0
         with self._connect() as connection:
             rows = connection.execute(
@@ -2414,7 +2415,7 @@ class Database:
             "seen": "COALESCE(last_heard, 0) DESC, node_id",
         }.get(sort)
         if order is None:
-            raise ValueError("Sortering må vere name, seen eller id")
+            raise ValueError(tr("database.invalid_sort"))
         term = search.strip()
         escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         pattern = f"%{escaped}%"

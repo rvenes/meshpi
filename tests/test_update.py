@@ -312,7 +312,7 @@ def test_windows_update_passes_updater_process_id(monkeypatch):
         Settings(background_mode="always"),
     )
 
-    assert command[-2:] == ["-UpdaterProcessId", "4321"]
+    assert command[-4:] == ["-UpdaterProcessId", "4321", "-Language", "nn"]
 
 
 def test_apply_update_rejects_tampered_download(monkeypatch):

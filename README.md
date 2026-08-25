@@ -1,5 +1,7 @@
 # MeshPi
 
+**Nynorsk** | [English](README.en.md)
+
 MeshPi er ein liten og stabil Meshtastic-klient for terminalen. Han held eitt
 samband til ein Meshtastic-node ope i bakgrunnen, lagrar meldingar i SQLite
 og gir eit nynorsk fullskjermsgrensesnitt og vanlege CLI-kommandoar over SSH.
@@ -59,6 +61,43 @@ Ei ny installering har ingen førehandsvald node. Første gong du køyrer
 `meshpi`, opnar nodeveljaren automatisk og viser oppdaga TCP-, USB- og
 BLE-einingar. Du kan òg skrive IP, vertsnamn, COM-port, seriellsti eller
 `ble://IDENTIFIKATOR` manuelt.
+
+## Språk
+
+MeshPi har komplette brukargrensesnitt på nynorsk og engelsk. Vis gjeldande
+språk eller lagre eit nytt val med:
+
+```bash
+meshpi language
+meshpi language nn
+meshpi language en
+```
+
+Trykk `F10` i fullskjermsgrensesnittet og vel **Nynorsk** eller **English**.
+Synleg tekst blir oppdatert med ein gong utan omstart av appen eller daemonen,
+og valet blir brukt neste gong MeshPi blir opna.
+
+Eksisterande installasjonar utan eit lagra språkval held fram på nynorsk. På
+ei fersk installering blir nynorsk valt når system-/nettlesarspråket er `nn`,
+`nb` eller `no`; andre språk får engelsk. Engelsk er trygg fallback dersom ein
+omsetjing manglar.
+
+Installatørane bruker same standard og kan overstyrast uttrykkeleg:
+
+```bash
+sh install-linux.sh --language=nn
+sh install-macos.sh --language=en
+```
+
+```powershell
+.\install-windows.ps1 -Language en
+```
+
+Avinstallatørane godtek dei same `--language=nn|en`- og
+`-Language nn|en`-vala. `MESHPI_LANGUAGE=nn|en` kan brukast for både appen og
+skripta. Berre ferske installasjonar lagrar det automatisk valde
+installatørspråket; ei oppgradering utan tidlegare språkfil blir ikkje merkt
+som fersk.
 
 ## Installere
 
@@ -430,6 +469,7 @@ F2                 flytt markøren til samtalelista
 F3                 flytt markøren til nodelista
 F8                 vis eller skjul DM-samtalane
 F9                 vis eller skjul sekundærkanalane; primærkanalen blir ståande
+F10                vel språk og andre appinnstillingar
 Shift+F10          opne handlingar for markert node
 Delete             lukk vald DM utan å slette historikken
 Ctrl+R             oppdater status, samtalar og nodar
@@ -470,6 +510,7 @@ Alle CLI-kommandoane:
 | `meshpi export [FIL] [--force]` | Eksporter heile databasen som UTF-8 JSON Lines. |
 | `meshpi service {status,start,stop,enable,disable}` | Vis eller styr bakgrunnstenesta og autostart. |
 | `meshpi update [--check] [--yes] [--beta]` | Sjekk eller installer ei signert oppdatering; `--beta` vel den opne betakanalen. |
+| `meshpi language [nn\|en]` | Vis eller lagre språkvalet for brukargrensesnittet. |
 | `meshpi status` | Vis sambands- og tilkoplingsstatus. |
 | `meshpi nodes [--search TEKST] [--sort name\|seen\|id]` | Vis, filtrer og sorter kjende nodar. |
 | `meshpi node NODE-ID` | Vis alle lagra detaljar om éin node. |

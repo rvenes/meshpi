@@ -2,16 +2,17 @@ from __future__ import annotations
 
 from typing import Any
 
+from meshpi.i18n import tr
 from meshpi.models import node_num_to_id
 
 UNKNOWN_SNR = -128
 
 ROUTING_ERRORS = {
-    "NO_ROUTE": "Noden har inga kjend rute til målet",
-    "NO_RESPONSE": "Målnoden svara ikkje",
-    "MAX_RETRANSMIT": "Sendinga nådde grensa for nye forsøk",
-    "NOT_AUTHORIZED": "Noden avviste førespurnaden",
-    "PKI_FAILED": "Krypteringa mot målnoden feila",
+    "NO_ROUTE": "backend.routing.no_route",
+    "NO_RESPONSE": "backend.routing.no_response",
+    "MAX_RETRANSMIT": "backend.routing.max_retransmit",
+    "NOT_AUTHORIZED": "backend.routing.not_authorized",
+    "PKI_FAILED": "backend.routing.pki_failed",
 }
 
 
@@ -70,7 +71,7 @@ def parse_traceroute_response(
     """Gjer eit Meshtastic traceroute-svar om til JSON-trygge rutedata."""
     decoded = packet.get("decoded")
     if not isinstance(decoded, dict):
-        raise NodeActionError("Traceroute-svaret manglar dekoda data")
+        raise NodeActionError(tr("backend.traceroute.missing_decoded"))
 
     portnum = decoded.get("portnum")
     if portnum in {"ROUTING_APP", 5}:
@@ -78,15 +79,17 @@ def parse_traceroute_response(
         reason = routing.get("errorReason") if isinstance(routing, dict) else None
         reason = str(reason or "UKJEND_FEIL")
         if reason == "NONE":
-            raise NodeActionError("Mottok stadfesting, men ikkje traceroute-resultat")
-        message = ROUTING_ERRORS.get(reason, "Traceroute feila")
-        raise NodeActionError(f"{message} ({reason})")
+            raise NodeActionError(tr("backend.traceroute.ack_without_result"))
+        message = tr(ROUTING_ERRORS.get(reason, "backend.traceroute.failed"))
+        raise NodeActionError(
+            tr("backend.error.with_reason", message=message, reason=reason)
+        )
 
     if portnum not in {"TRACEROUTE_APP", 70}:
-        raise NodeActionError("Mottok feil svartype for traceroute")
+        raise NodeActionError(tr("backend.traceroute.wrong_response"))
     route = decoded.get("traceroute")
     if not isinstance(route, dict):
-        raise NodeActionError("Traceroute-svaret manglar rutedata")
+        raise NodeActionError(tr("backend.traceroute.missing_route"))
 
     forward_hops = _node_ids(route.get("route"))
     result: dict[str, Any] = {

@@ -1,5 +1,7 @@
 # Tryggleik i MeshPi
 
+**Nynorsk** | [English](SECURITY.en.md)
+
 ## Rapportere sårbarheiter
 
 Ikkje publiser detaljar om ei utesta sårbarheit i ein offentleg issue. Kontakt

@@ -14,6 +14,8 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from meshpi.i18n import tr
+
 DEFAULT_MESHTASTIC_PORT = 4403
 CONNECTION_FILE_VERSION = 3
 SUPPORTED_TRANSPORTS = {"tcp", "serial", "ble"}
@@ -85,9 +87,9 @@ class ConnectionProfile:
     ) -> ConnectionProfile:
         host = host.strip()
         if not host:
-            raise ValueError("TCP-adressa kan ikkje vere tom")
+            raise ValueError(tr("connect.error.tcp_empty"))
         if not 1 <= port <= 65535:
-            raise ValueError("TCP-porten må vere mellom 1 og 65535")
+            raise ValueError(tr("connect.error.tcp_port"))
         endpoint = f"{host}:{port}"
         return cls(
             profile_id=_profile_id("tcp", endpoint.casefold()),
@@ -109,7 +111,7 @@ class ConnectionProfile:
     ) -> ConnectionProfile:
         device = device.strip()
         if not device:
-            raise ValueError("Seriellporten kan ikkje vere tom")
+            raise ValueError(tr("connect.error.serial_empty"))
         return cls(
             profile_id=_profile_id("serial", device.casefold()),
             name=(name or Path(device).name or device).strip(),
@@ -128,7 +130,7 @@ class ConnectionProfile:
     ) -> ConnectionProfile:
         identifier = canonical_ble_identifier(identifier)
         if not identifier:
-            raise ValueError("BLE-identifikatoren kan ikkje vere tom")
+            raise ValueError(tr("connect.error.ble_empty"))
         return cls(
             profile_id=_profile_id("ble", identifier),
             name=(name or identifier).strip(),
@@ -140,9 +142,13 @@ class ConnectionProfile:
     def from_dict(cls, data: dict[str, Any]) -> ConnectionProfile:
         transport = str(data.get("transport", "")).lower()
         if transport == "tcp":
+            try:
+                port = int(data.get("port", DEFAULT_MESHTASTIC_PORT))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(tr("connect.error.invalid_port")) from exc
             profile = cls.tcp(
                 str(data.get("host", "")),
-                int(data.get("port", DEFAULT_MESHTASTIC_PORT)),
+                port,
                 str(data.get("name", "") or data.get("host", "")),
             )
         elif transport == "serial":
@@ -162,7 +168,12 @@ class ConnectionProfile:
                 str(data.get("name", "") or identifier),
             )
         else:
-            raise ValueError(f"Ustøtta transport: {transport or 'tom'}")
+            raise ValueError(
+                tr(
+                    "connect.error.unsupported_transport",
+                    transport=transport or tr("connect.value.empty"),
+                )
+            )
         changes: dict[str, Any] = {}
         requested_id = str(data.get("profile_id", "")).strip()
         if requested_id and profile.transport != "ble":
@@ -172,7 +183,7 @@ class ConnectionProfile:
         ).strip()
         if last_local_node_id:
             if not re.fullmatch(r"![0-9A-Fa-f]{8}", last_local_node_id):
-                raise ValueError("Tilkoplingsprofilen har ugyldig lokal node-ID")
+                raise ValueError(tr("connect.error.profile_local_node"))
             changes["last_local_node_id"] = last_local_node_id.lower()
         return replace(profile, **changes) if changes else profile
 
@@ -189,7 +200,7 @@ def _optional_int(value: Any) -> int | None:
 def parse_connection_target(target: str, name: str | None = None) -> ConnectionProfile:
     target = target.strip()
     if not target:
-        raise ValueError("Tilkoplingsmålet kan ikkje vere tomt")
+        raise ValueError(tr("connect.error.target_empty"))
 
     if target.lower().startswith("serial://"):
         return ConnectionProfile.serial(target[9:], name=name)
@@ -208,8 +219,11 @@ def parse_connection_target(target: str, name: str | None = None) -> ConnectionP
         suffix = target[end + 1 :]
         if suffix:
             if not suffix.startswith(":"):
-                raise ValueError("Ugyldig IPv6-adresse")
-            port = int(suffix[1:])
+                raise ValueError(tr("connect.error.invalid_ipv6"))
+            try:
+                port = int(suffix[1:])
+            except ValueError as exc:
+                raise ValueError(tr("connect.error.invalid_port")) from exc
     elif target.count(":") == 1:
         candidate_host, candidate_port = target.rsplit(":", 1)
         if candidate_port.isdigit():
@@ -274,12 +288,12 @@ class ConnectionStore:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(f"Klarte ikkje lese tilkoplingsprofilar: {exc}") from exc
+            raise ValueError(tr("connect.error.read_profiles", error=exc)) from exc
         if not isinstance(data, dict) or not isinstance(data.get("profiles"), list):
-            raise ValueError("Tilkoplingsfila har ugyldig format")
+            raise ValueError(tr("connect.error.profile_format"))
         version = data.get("version", 1)
         if version not in {1, 2, CONNECTION_FILE_VERSION}:
-            raise ValueError(f"Ustøtta versjon av tilkoplingsfila: {version}")
+            raise ValueError(tr("connect.error.profile_version", version=version))
         data["version"] = version
         return data
 
@@ -335,7 +349,7 @@ class ConnectionStore:
         for profile in self.list_profiles():
             if profile.profile_id == profile_id:
                 return profile
-        raise ValueError(f"Fann ikkje tilkoplingsprofilen {profile_id}")
+        raise ValueError(tr("connect.error.profile_not_found", profile_id=profile_id))
 
     def save_and_activate(self, profile: ConnectionProfile) -> ConnectionProfile:
         with self._lock:
@@ -369,7 +383,7 @@ class ConnectionStore:
     ) -> ConnectionProfile:
         normalized = local_node_id.strip().lower()
         if not re.fullmatch(r"![0-9a-f]{8}", normalized):
-            raise ValueError("Ugyldig lokal node-ID")
+            raise ValueError(tr("connect.error.local_node"))
         with self._lock:
             data = self._read()
             profiles = [
@@ -384,7 +398,9 @@ class ConnectionStore:
                     profiles[index] = updated
                     break
             if updated is None:
-                raise ValueError(f"Fann ikkje tilkoplingsprofilen {profile_id}")
+                raise ValueError(
+                    tr("connect.error.profile_not_found", profile_id=profile_id)
+                )
             self._write(
                 {
                     "version": CONNECTION_FILE_VERSION,
@@ -492,8 +508,7 @@ def resolve_serial_profile(
     if len(matches) != 1:
         if current and not any(item in matches for item in current):
             raise SerialIdentityMismatchError(
-                f"Seriellporten {profile.device} høyrer ikkje lenger til "
-                "den lagra USB-eininga"
+                tr("connect.error.serial_identity", device=profile.device)
             )
         return profile
 
@@ -508,9 +523,12 @@ def resolve_serial_profile(
 
 
 def discover_tcp(subnet: str, port: int = DEFAULT_MESHTASTIC_PORT) -> list[dict[str, Any]]:
-    network = ipaddress.ip_network(subnet, strict=False)
+    try:
+        network = ipaddress.ip_network(subnet, strict=False)
+    except ValueError as exc:
+        raise ValueError(tr("connect.error.invalid_subnet", subnet=subnet)) from exc
     if network.num_addresses > 1024:
-        raise ValueError("Oppdagingsnettet kan ikkje vere større enn /22")
+        raise ValueError(tr("connect.error.subnet_too_large"))
 
     def is_open(address: str) -> str | None:
         try:
