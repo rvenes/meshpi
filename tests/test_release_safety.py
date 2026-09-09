@@ -13,6 +13,26 @@ from test_installers import _shell_function
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.skipif(os.name != "posix", reason="native POSIX permissions")
+@pytest.mark.parametrize("mode, expected", [("always", 0o755), ("session", 0o700)])
+def test_linux_application_creation_scopes_umask_without_exposing_data(tmp_path, mode, expected):
+    source = (ROOT / "installers/install-linux.sh").read_text()
+    block = source.split('    rm -rf "$RELEASE"\n', 1)[1].split('\nelse\n', 1)[0]
+    # Execute the real build block with a stand-in Python command. It creates
+    # synthetic program directories with the inherited effective umask.
+    python = tmp_path / "python"
+    python.write_text('#!/bin/sh\nmkdir -p "$RELEASE/.venv/bin"\n'
+                      'cp "$PYTHON" "$RELEASE/.venv/bin/python"\n')
+    python.chmod(0o755)
+    release = tmp_path / "release"
+    environment = dict(os.environ, PYTHON=str(python), RELEASE=str(release), MODE=mode,
+                       WHEEL="synthetic", LOCK_FILE="synthetic")
+    subprocess.run(["sh", "-c", 'set -eu; umask 077\n' + block + '\nmkdir "$RELEASE/data"'],
+                   env=environment, check=True, capture_output=True)
+    assert (release / ".venv").stat().st_mode & 0o777 == expected
+    assert (release / "data").stat().st_mode & 0o777 == 0o700
+
+
 @pytest.mark.skipif(os.name != "posix", reason="native POSIX symlinks")
 def test_native_installer_activation_automatically_rolls_back(tmp_path):
     platform = "macos" if sys.platform == "darwin" else "linux"

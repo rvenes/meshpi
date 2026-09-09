@@ -535,11 +535,18 @@ fi
 if [ "$RELEASE" != "$OLD_RELEASE" ]; then
     install_step 5 create_environment
     rm -rf "$RELEASE"
+    (
+    # Only public application files need to be readable by the service account.
+    # Keep the caller's umask for configuration, state and session installations.
+    if [ "$MODE" = "always" ]; then
+        umask 022
+    fi
     "$PYTHON" -m venv "$RELEASE/.venv"
     "$RELEASE/.venv/bin/python" -I -c \
         'import runpy,sys; sys.path.insert(0,sys.argv.pop(1)); runpy.run_module("meshpi.bootstrap",run_name="__main__")' \
         "$WHEEL" "$LOCK_FILE"
     "$RELEASE/.venv/bin/python" -m pip install -q --no-deps "$WHEEL"
+    )
 else
     install_step 5 already_installed "$VERSION"
 fi

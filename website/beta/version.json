@@ -2,7 +2,7 @@
   "schema_version": 1,
   "product": "MeshPi",
   "latest_version": "0.9.2",
-  "published_at": "2026-09-08T20:28:16Z",
+  "published_at": "2026-09-09T01:16:59Z",
   "minimum_python": "3.11",
   "release_notes_url": "https://venes.org/meshpi/beta/",
   "package": {
@@ -37,8 +37,8 @@
   "installers": {
     "linux": {
       "url": "https://venes.org/meshpi/install-linux.sh",
-      "sha256": "a5641ef75b4c28e1d0a79a0ec4c164e032441c07bef9ff7216eca9944fada14f",
-      "size": 24936,
+      "sha256": "9c5caf2bdf69ac710a25d7f97c72c8b1bffaf86de3ff714b2a7e925f6af73319",
+      "size": 25171,
       "update_command": "sudo meshpi update --beta"
     },
     "macos": {
@@ -64,6 +64,6 @@
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "GGniJz0Uvq/60ziL70HKVwQkyQ1V+TJUYJnOLkRLJXVQuVCpqnp6BQt1ypzRS9Tbd39TQ9NAksqjpB1MaAUYZpGCY3XDgPxuJOqBbu3Gh3oVJLIF/NewSKBEX4xlPL8yB/EW9DBEsurrzfQH59A6EIQjCGeAnecFtn5CWcLiPpx/63qpGwEsAb+MERp3gMTjIqo2wZIB1kJSOIxUPbf/yHAE4J72QgS9DU8EGEF0aNi1PQkmGbdk+n31WSig7RYZqJksOPNun1GOSFCLlMgqzqCdTUcxHvccP9cVdTPlGcKvRECM+KwEbL7OT8ptjDCLJlcqA4wxDIM802CUYqmOJAX2lF7HVbVQjhULueDeauBeMFXkb5+SoI4qzXvGDircgM19VK8vxxVNqjgPiZxY9II9SFBFFjS0voacnOQLtRdA95DDkIhJCK+953QCVT02+cSh7R7e12PfixshDby8oKpwroKFXvervdZ5KDd2QLOUSt+XmFUSeVzfwL1fggVm"
+    "value": "vzscbK/E9mg3XgDPHxLTm3fmsUOTPm5EESAQSHM5FkcXlRhRY1XYiKslARI7rKJ4qrGM+A5X0QFtl1zbrzyOawtmgqra1KQ+lxg3V0bvp8+RPGsQPVim0jdgFPurGQAhwRI4lC4Gsl5uZSZRDHWz0qzP4bRWI83JGgpyF3w3f+ynWh/cKvz04NQHBzVEhYGSeGcYxvPWXD6Ga4OnrqrsH1SZp23zdOZSrSMO3KXG8Dda8klf0FobQHirRDmTzoHSguibo9MseKBU2hph+/K4sbslKcdlKapFZtTXI+b3Tx+aAGmh5jWi8X3EjEOJCwA5Vvtyv9xuHEfYeo/FZkWLii1Xfybeb6YgKmWp5kHZRMjEWTrRVHD964KFeIn8rugRXdLLarusfVgjCdyxnDSYpj83iJ3g/fQsFdeQsgfmj89uBGGtYqRCZvZdUxrkj1IizSIFccC9n2TIqiqDVQCwFc+72IxmFxMrPlg/xPfM5g5ofcDIbY7k9qjbTv10wO1Q"
   }
 }
