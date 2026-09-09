@@ -20,6 +20,9 @@ SETTING_ENV_KEYS = frozenset(
         "IPC_TOKEN",
         "IPC_TRANSPORT",
         "LOG_LEVEL",
+        "LOG_FILE",
+        "LOG_MAX_BYTES",
+        "LOG_BACKUP_COUNT",
         "OBSERVATION_RETENTION_DAYS",
         "UPDATE_URL",
         "UPDATE_TIMEOUT",
@@ -85,6 +88,9 @@ class Settings:
     ipc_socket_gid: int | None = None
     ipc_token: str = ""
     log_level: str = "INFO"
+    log_file: Path | None = None
+    log_max_bytes: int = 5 * 1024 * 1024
+    log_backup_count: int = 3
     observation_retention_days: int = 365
     update_url: str = "https://venes.org/meshpi/version.json"
     update_timeout: float = 3.0
@@ -120,6 +126,7 @@ class Settings:
         database_path = Path(
             values.get("DATABASE_PATH", "./data/meshtastic.db")
         ).expanduser()
+        raw_log_file = values.get("LOG_FILE", "").strip()
         ipc_socket_gid = None
         raw_socket_gid = values.get("IPC_SOCKET_GID", "").strip()
         if raw_socket_gid:
@@ -153,6 +160,21 @@ class Settings:
             ipc_socket_gid=ipc_socket_gid,
             ipc_token=values.get("IPC_TOKEN", "").strip(),
             log_level=level,
+            log_file=Path(raw_log_file).expanduser() if raw_log_file else None,
+            log_max_bytes=_env_int(
+                values,
+                "LOG_MAX_BYTES",
+                5 * 1024 * 1024,
+                64 * 1024,
+                1024 * 1024 * 1024,
+            ),
+            log_backup_count=_env_int(
+                values,
+                "LOG_BACKUP_COUNT",
+                3,
+                1,
+                20,
+            ),
             observation_retention_days=_env_int(
                 values,
                 "OBSERVATION_RETENTION_DAYS",

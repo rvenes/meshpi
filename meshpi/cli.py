@@ -286,6 +286,8 @@ def _format_message(message: dict[str, Any]) -> str:
     context = f"CH{channel_label}" if message.get("kind") == "public" else f"DM{channel_label}"
     status_value = "ACK" if message.get("status") == "stadfesta" else message.get("status")
     status_value = status_value or "sendt"
+    if status_value == "uviss":
+        status_value = tr("message.status.uncertain")
     status = f" [{status_value}]" if message.get("direction") == "ut" else ""
     quality: list[str] = []
     if message.get("rssi") is not None:

@@ -3055,6 +3055,7 @@ class MeshPiTUI(App[str | None]):
             status = {
                 "motteken": _t("message.status.received"),
                 "sendt": _t("message.status.sent"),
+                "uviss": _t("message.status.uncertain"),
                 "stadfesta": _t("message.status.acknowledged"),
                 "ACK": _t("message.status.acknowledged"),
                 "levert": _t("message.status.delivered"),

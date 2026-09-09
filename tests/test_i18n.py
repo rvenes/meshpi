@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextvars import copy_context
 
 import pytest
 
@@ -9,6 +10,7 @@ from meshpi.i18n import (
     choose_language,
     detect_system_language,
     format_fields,
+    get_language,
     load_saved_language,
     save_language,
     set_language,
@@ -50,7 +52,7 @@ def test_existing_user_without_saved_choice_keeps_nynorsk(tmp_path, monkeypatch)
     ) == "nn"
 
 
-def test_fresh_user_uses_system_language(tmp_path, monkeypatch):
+def test_fresh_user_defaults_to_english_on_all_system_languages(tmp_path, monkeypatch):
     monkeypatch.delenv("MESHPI_LANGUAGE", raising=False)
     assert choose_language(
         path=tmp_path / "language.json",
@@ -59,7 +61,7 @@ def test_fresh_user_uses_system_language(tmp_path, monkeypatch):
     assert choose_language(
         path=tmp_path / "language.json",
         system_language="nb_NO",
-    ) == "nn"
+    ) == "en"
 
 
 def test_saved_language_is_atomic_and_reused(tmp_path):
@@ -78,6 +80,16 @@ def test_language_switch_is_immediate():
     assert tr("common.cancel") == "Avbryt"
     set_language("en")
     assert tr("common.cancel") == "Cancel"
+
+
+def test_language_switch_invalidates_context_captured_by_existing_timer():
+    set_language("nn")
+    timer_context = copy_context()
+
+    set_language("en")
+
+    assert timer_context.run(get_language) == "en"
+    assert timer_context.run(tr, "common.cancel") == "Cancel"
     with using_language("nn"):
         assert tr("common.cancel") == "Avbryt"
     assert tr("common.cancel") == "Cancel"

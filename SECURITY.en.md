@@ -30,6 +30,17 @@ code without the private release key.
 
 ## Key rotation and revocation
 
+First installation still trusts the downloaded installer and its distribution
+channel. A compromised first installer could replace its own trust checks;
+its embedded public key is not an independent trust root. Inspect or obtain
+the first installer through a separately authenticated route when needed.
+
+Since 0.9.2, the verified MeshPi wheel bootstraps pip from a wheel whose hash
+is in the signed platform lock. Only then are dependencies installed, using
+`--require-hashes` and `--only-binary=:all:`. The Python interpreter and OS
+remain trusted. The bootstrap does not use venv's older pip to download or
+install dependencies, and fails if compatible binary wheels are unavailable.
+
 The key registry is stored in `meshpi/signing.py` and in each installer. The
 normal rotation procedure is:
 
@@ -66,6 +77,33 @@ messages describe the same checks and operations; language values are limited
 to `nn` and `en`. A fresh installer writes only the per-user language file.
 Existing configuration, profiles, database content, IPC tokens, and service
 permissions are not changed by language selection.
+
+## Local identity
+
+Windows clients verify the server process's Windows-account SID against their
+own account before sending the IPC token. This covers the IPv4 loopback
+transport used by the installer and fails closed if identity inspection fails.
+The account is the trust boundary, not individual processes within it. Other
+processes running as that same account can already read its token and data.
+Use private Unix sockets on Linux/macOS; an explicitly configured TCP socket
+there does not provide this Windows OS-identity check. IPC is not a secure
+remote-network protocol and must never be exposed outside loopback.
+
+## Data and sending safety
+
+Outgoing requests are committed with a unique local request ID before radio
+handoff. Storage failure at this stage means nothing was sent. A crash, radio
+exception or failure after handoff leaves an explicitly uncertain outcome;
+MeshPi never automatically retries it. Check history before manually sending
+again. An internal request ID is not an end-to-end idempotency guarantee:
+radio delivery and SQLite cannot be committed atomically.
+
+An older daemon refuses a newer database schema before migration or retention
+work. Switching the application version does not roll a database schema back.
+Keep the newer version or obtain an explicitly approved recovery plan using a
+pre-upgrade export/backup; never edit `user_version` to bypass the guard. Version
+0.9.2 does not change the database schema. Linux uninstallation keeps data by
+default, including session data nested inside the installation directory.
 
 ## Website and dependencies
 

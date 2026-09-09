@@ -27,12 +27,7 @@ let activeLanguage = "en";
 let manifestState = { status: "loading" };
 
 function browserLanguage() {
-  const requested = navigator.languages?.length
-    ? navigator.languages
-    : [navigator.language || ""];
-  return requested.some((language) => /^(nn|nb|no)(-|$)/i.test(language))
-    ? "nn"
-    : "en";
+  return "en";
 }
 
 function savedLanguage() {

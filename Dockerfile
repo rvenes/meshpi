@@ -8,11 +8,12 @@ WORKDIR /app
 RUN useradd --system --home-dir /app --shell /usr/sbin/nologin meshpi
 
 COPY locks/linux.txt /tmp/requirements.txt
-RUN python -m pip install --no-cache-dir --require-hashes -r /tmp/requirements.txt
+COPY meshpi/bootstrap.py /tmp/meshpi-bootstrap.py
+RUN python -I /tmp/meshpi-bootstrap.py /tmp/requirements.txt
 
 COPY pyproject.toml README.md LICENSE /app/
 COPY meshpi /app/meshpi
-RUN python -m pip install --no-cache-dir --no-deps .
+RUN python -m pip install --no-cache-dir --no-deps --no-build-isolation .
 
 RUN mkdir -p /data && chown meshpi:meshpi /data
 

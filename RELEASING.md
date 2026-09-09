@@ -32,6 +32,9 @@ grensesnittendringar.
 
 1. Kontroller Git-status og heile diffen. Bevar eksisterande brukarendringar.
 2. Bruk Python 3.11 eller nyare i eit isolert utviklingsmiljø.
+   Installer den signerte plattformlåsen og dei nødvendige utviklingsverktøya
+   der. Bygging bruker `--no-isolation` og krev nøyaktig setuptools-versjonen
+   i `pyproject.toml`; byggjesteget lastar ikkje ned ei ny, ulåst byggjekjede.
 3. Køyr minst:
 
    ```text
@@ -80,6 +83,12 @@ Direkte køyretidsavhengigheiter skal samsvare mellom `pyproject.toml` og
 6. Commit dei regenererte plattformlåsene saman med avhengigheitsendringa når
    releaseendringa blir committa.
 7. Signer manifestet på nytt. Ei endra låsefil gjer førre signatur ugyldig.
+
+Installatørane køyrer bootstrap-modulen frå den verifiserte MeshPi-wheel-en.
+Han hentar pip-wheel-en som er pinna i den signerte låsen, kontrollerer SHA-256
+før køyring, og installerar berre wheels med `--require-hashes` frå PyPI.
+`venv` sin medfølgjande pip blir ikkje brukt til denne nettverksinstallasjonen.
+Ein plattform utan kompatible wheels skal stoppe, ikkje falle tilbake på sdists.
 
 ## Versjonsauke
 

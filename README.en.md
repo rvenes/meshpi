@@ -76,11 +76,11 @@ Visible TUI text changes immediately without restarting the application or
 daemon. The saved choice is reused on the next run.
 
 An existing installation that has no saved language choice continues to use
-Nynorsk. On a genuinely fresh installation, system/browser languages `nn`,
-`nb`, and `no` select Nynorsk; every other language selects English. English is
+Nynorsk. A genuinely fresh installation defaults to English regardless of
+the system/browser language. Saved and explicit choices take priority. English is
 the runtime fallback if an English translation is unexpectedly missing.
 
-The installers follow the same detection rule. Override it explicitly with
+The installers default to English. Override it explicitly with
 `--language=nn|en` on Linux and macOS, or `-Language nn|en` in PowerShell:
 
 ```bash

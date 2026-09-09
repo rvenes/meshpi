@@ -88,14 +88,14 @@ def test_repository_pins_platform_script_line_endings() -> None:
 def test_installers_use_locked_dependencies_and_offline_selftest() -> None:
     for name in ("install-linux.sh", "install-macos.sh"):
         source = _text(name)
-        assert "--require-hashes" in source
+        assert 'runpy.run_module("meshpi.bootstrap"' in source
         assert "--no-deps" in source
         assert "doctor --offline" in source
         assert "MESHPI_FORCE_HEALTH_FAILURE" in source
         assert "pip install -q --upgrade pip" not in source
 
     windows = _text("install-windows.ps1")
-    assert '"--require-hashes"' in windows
+    assert "runpy.run_module('meshpi.bootstrap'" in windows
     assert '"--no-deps"' in windows
     assert '"doctor", "--offline"' in windows
     assert "MESHPI_FORCE_HEALTH_FAILURE" in windows
@@ -247,6 +247,16 @@ def test_installers_select_safe_platform_ipc_transport() -> None:
     assert 'Set-EnvValue $configFile "IPC_TRANSPORT" "tcp"' in windows
 
 
+def test_macos_installer_configures_private_rotating_daemon_log() -> None:
+    source = _text("install-macos.sh")
+
+    assert "LOG_FILE=$DATA_DIR/meshpi.log" in source
+    assert "LOG_MAX_BYTES=5242880" in source
+    assert "LOG_BACKUP_COUNT=3" in source
+    assert "<key>Umask</key><integer>63</integer>" in source
+    assert "$DATA_DIR/meshpi-launchd-error.log" in source
+
+
 def test_linux_checks_venv_before_downloading_release_files() -> None:
     source = _text("install-linux.sh")
 
@@ -367,7 +377,7 @@ def test_windows_installer_reads_utf8_paths_and_environment() -> None:
     assert 'Write-Utf8NoBom $releaseEnvPointer ($ConfigFile + "`n")' in windows
     assert '"%~dp0$relativeMeshPi" %*' in windows
     assert "ValueFromRemainingArguments" not in windows
-    assert "Set-Content -Encoding ASCII $meshpiCmd" in windows
+    assert "Set-Content -Encoding ASCII -LiteralPath $meshpiCmd" in windows
     assert 'set /p MESHPI_CURRENT=<' not in windows
     assert "Remove-Item -LiteralPath $previousFile" in windows
     assert "Write-MeshPiLaunchers $binDir $oldRelease $configFile" in windows

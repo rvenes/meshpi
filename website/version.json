@@ -1,32 +1,32 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.9.0",
-  "published_at": "2026-08-25T03:08:24Z",
+  "latest_version": "0.9.2",
+  "published_at": "2026-09-08T20:28:16Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.9.0",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.9.2",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.9.0-py3-none-any.whl",
-    "filename": "meshpi-0.9.0-py3-none-any.whl",
-    "sha256": "a8d11a6eb2cf446d4fffcf285bd851c8c670def4abebb3626a6ad18aff4cc93b",
-    "size": 165457,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.9.2-py3-none-any.whl",
+    "filename": "meshpi-0.9.2-py3-none-any.whl",
+    "sha256": "2995806e765566a97e92e76bb1042b9941a903b96836e9730de1a5dce94caebe",
+    "size": 172164,
     "format": "wheel"
   },
   "locks": {
     "linux": {
       "url": "https://venes.org/meshpi/locks/linux.txt",
-      "sha256": "b136e5aed7655002e01ae5ac2d9ce5e5e51557c67a3f90bf10a99d7242f7e556",
-      "size": 26285
+      "sha256": "20ce5c54d650bce076cc577e9e2e2f118fb2da975dfbae8e62461fba0bf66d71",
+      "size": 26107
     },
     "macos": {
       "url": "https://venes.org/meshpi/locks/macos.txt",
-      "sha256": "7ab50eef5fdcb278903f9e0a9895c5cda638a8e3b1b30252eead3ab1fb62b2e7",
-      "size": 24142
+      "sha256": "9cda7e7e9fd6fca6552edc0d1afcae3f16d4213d6f9a6d9206f53cc0542dd2c4",
+      "size": 24069
     },
     "windows": {
       "url": "https://venes.org/meshpi/locks/windows.txt",
-      "sha256": "d691038a915b7d113936c547149a7159d3cdde854dc567bf49b8b639eae1b693",
-      "size": 35776
+      "sha256": "85993d411401d676019b9978f9f1f65f6f98c6ce0a6c8b33095937c7abc7a5e6",
+      "size": 35787
     }
   },
   "security": {
@@ -37,33 +37,33 @@
   "installers": {
     "linux": {
       "url": "https://venes.org/meshpi/install-linux.sh",
-      "sha256": "229cd0ad40a666d317e8893e573e41c4e847dbfc245d6684ee9305d133fc4f8a",
-      "size": 24844,
+      "sha256": "a5641ef75b4c28e1d0a79a0ec4c164e032441c07bef9ff7216eca9944fada14f",
+      "size": 24936,
       "update_command": "curl -fLO https://venes.org/meshpi/install-linux.sh && sudo sh install-linux.sh"
     },
     "macos": {
       "url": "https://venes.org/meshpi/install-macos.sh",
-      "sha256": "94442edb83b04884561979f1abef9527ab910959d64b8c71ebdf6e1643e94af2",
-      "size": 20336,
+      "sha256": "70f304ccbb4a9270036c842460a068f295ce494f2bef8ce42d1b4d9e99d8e22f",
+      "size": 20933,
       "update_command": "curl -fLO https://venes.org/meshpi/install-macos.sh && sh install-macos.sh"
     },
     "windows": {
       "url": "https://venes.org/meshpi/install-windows.ps1",
-      "sha256": "cb48100378f1ba77281a07fa75b2330c3e44f0634d1f7525e27fc523d6160822",
-      "size": 31267,
+      "sha256": "5790397f8bc5b30f8db632ce579fceb40028f4d3fa126a464018dd05d4919321",
+      "size": 33448,
       "update_command": "Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; .\\install-windows.ps1"
     }
   },
   "release_notes": [
-    "Komplett nynorsk og engelsk brukargrensesnitt",
-    "Språkbyte med F10 eller meshpi language utan daemonomstart",
-    "Atomisk lagring av språkval per brukar",
-    "Tospråklege installatørar, avinstallatørar og nettsider"
+    "Tryggare avinstallering, Windows-IPC og databaseskjema-vern.",
+    "Varig sendeførespurnad før radiooverlevering og tydeleg uvist utfall utan automatisk retry.",
+    "Hashverifisert pip-bootstrap, private roterande loggar og betre Windows-prosessvakt.",
+    "Engelsk standard for nye installasjonar; bevarte språkval og eksisterande 0.9.1-stabilitetsrettingar."
   ],
   "channel": "stable",
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "dNyd+BIqBFbNOOIAv5MDn5j6HywB2rVgMmGKGe76QNEcQxj6kXi4kyQ8qrmQ1Y5FVDvEV4qFGlo1CkcLhJS4UHOTfHYW0X7sLMgwb5xhfF/+frkjD1ege4BgowEqB02cxWxe0U+KboJTk5jDgNlqSkNgjlRhlNDQebnAbr7R7COVPtCYrnqHsNsZyJvbOlg2XUDRDh3au7EpC9bsKWWtj2MrgZOD35SrwQTFsM8D4Nx/PHE9eAQsWewDxtNz0nvyvkkR+VCx/5XsYpdBRyGw6H5aAQ+ODoa22MSx8ZUtxZrqTn5eDMbMFfQtdp/Loy7ndv6AAxZFjVO8yH7rgRbD6usz+KXAdvVFpGdfHJiR7L1kfVsVV2XOBnH1rp8edRL4M2+xZU9hPX+UOkoQ763uzLiLxaQtDJCon0Fu7WQf2K+4XLH1Cfge00t22vOOcUY7NHtOFZMSGDzAxXIFZByv5X/4cfr5llX4DF4e9BzyTfg/ELddXo9POicPtMHHNxwp"
+    "value": "mKgPAP0bKTkX4Id0mUV/FvJT3347sckwa/hJ/8bfpnn6PRDzMndTOepMSr1pRrEBQd5JtGUBEu/raIvmDoXywmkXHpbOHUOvBcrLg0Xpo+xA+oZxzspGo853b/h0E2eqWHt96R//WLvT0I07i1DwCK7HHPjoFGIFsS/ys/d9trizkuAgE+ykHy+heH/SCfQb6i2Df6qTTEFsr6d4fPvX6IcMI0if/jxJNcpr2lg36mTaSiALKiU0Dr7lih1MXwX/fAuQBjMlOqonAwXjnP0elj39GrfaPnb125Ll1zedmFSasoxAlyAx0oe+CSlYepc7fQATIPXXUpMvLOZj2Er3cF/he7nGKjwtBpnUa7IfHE2umhGgMbovlwWJor/yfRXYt0ka3jVzpuo2XA0ql+87P+VK52kK9bDwYAoGVhFp6toWhq2ZlFokSxMg7FvhgN8kz+XLLMrlG7xJXusOqZ8+rj//23X3j0y051PAzX9BkJRQli5Yh7Zn3GKdAElMhBgm"
   }
 }

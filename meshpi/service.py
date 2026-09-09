@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import sqlite3
 import threading
 import time
 import uuid
@@ -180,6 +181,7 @@ class MeshtasticService:
         self._lost = threading.Event()
         self._switch_requested = threading.Event()
         self._lock = threading.RLock()
+        self._deferred_receives: list[tuple[dict[str, Any], Interface | None]] | None = None
         self._ble_operation_lock = threading.Lock()
         self._ble_connect_active = threading.Event()
         self._channel_sync_lock = threading.Lock()
@@ -430,6 +432,7 @@ class MeshtasticService:
         pub.subscribe(self._on_connection, "meshtastic.connection.established")
         pub.subscribe(self._on_lost, "meshtastic.connection.lost")
         attempt = 0
+        last_connection_error: str | None = None
         try:
             while not self._stop.is_set():
                 self._lost.clear()
@@ -462,11 +465,12 @@ class MeshtasticService:
                             raise RuntimeError(tr("backend.connection.profile_changed"))
                         self._interface = interface
                     self._discover_local_node(interface)
-                    self._sync_channels(interface)
+                    self._sync_channels_safely(interface)
                     self._sync_nodes(interface)
                     self._set_status("tilkopla", attempt=0)
                     LOG.info("Tilkopla Meshtastic-noden")
                     attempt = 0
+                    last_connection_error = None
                     wall_checkpoint = time.time()
                     monotonic_checkpoint = time.monotonic()
                     while not self._stop.is_set() and not self._lost.wait(
@@ -496,7 +500,7 @@ class MeshtasticService:
                             LOG.warning("%s; koplar til på nytt", reconnect_reason)
                             self._lost.set()
                             break
-                        self._sync_channels(interface)
+                        self._sync_channels_safely(interface)
                         self._sync_nodes(interface)
                     if self._stop.is_set():
                         break
@@ -504,7 +508,12 @@ class MeshtasticService:
                         LOG.warning("Meshtastic-sambandet fall ut")
                 except Exception as exc:
                     if not self._switch_requested.is_set():
-                        LOG.error("Meshtastic-feil: %s", exc)
+                        error = str(exc)
+                        if attempt == 0 or error != last_connection_error:
+                            LOG.error("Meshtastic-feil: %s", exc)
+                        else:
+                            LOG.debug("Gjenteken Meshtastic-feil: %s", exc)
+                        last_connection_error = error
                         self._set_status("feil", error=str(exc), attempt=attempt + 1)
                 finally:
                     self._fail_pending_node_actions(tr("backend.connection.broken"))
@@ -543,7 +552,7 @@ class MeshtasticService:
             if interface is not self._interface:
                 return
         self._discover_local_node(interface)
-        self._sync_channels(interface)
+        self._sync_channels_safely(interface)
         self._sync_nodes(interface)
         self._set_status("tilkopla", attempt=0)
 
@@ -611,6 +620,19 @@ class MeshtasticService:
     def _sync_channels(self, interface: Interface) -> None:
         with self._channel_sync_lock:
             self._sync_channels_locked(interface)
+
+    def _sync_channels_safely(self, interface: Interface) -> bool:
+        try:
+            self._sync_channels(interface)
+        except sqlite3.OperationalError as exc:
+            detail = str(exc).lower()
+            if "locked" not in detail and "busy" not in detail:
+                raise
+            LOG.warning(
+                "Databasen er oppteken; utset kanalsynkronisering til neste runde"
+            )
+            return False
+        return True
 
     def _sync_channels_locked(self, interface: Interface) -> None:
         with self._lock:
@@ -725,6 +747,10 @@ class MeshtasticService:
         self, packet: dict[str, Any], interface: Interface | None = None, **_: Any
     ) -> None:
         try:
+            with self._lock:
+                if self._deferred_receives is not None:
+                    self._deferred_receives.append((packet, interface))
+                    return
             if interface is not None:
                 with self._lock:
                     if interface is not self._interface:
@@ -749,7 +775,7 @@ class MeshtasticService:
             with self._lock:
                 known_channel = channel_index in self._channel_bindings
             if not known_channel and interface is not None:
-                self._sync_channels(interface)
+                self._sync_channels_safely(interface)
             binding = self._channel_binding(channel_index)
             message.channel_key = binding.channel_key
             message.local_node_id = self._local_node_id
@@ -778,7 +804,7 @@ class MeshtasticService:
                 if message.kind == ConversationKind.PUBLIC
                 else f"DM/CH{channel_index}"
             )
-            LOG.info(
+            LOG.debug(
                 "Motteken %s via %s frå %s [%s]",
                 label,
                 message.transport,
@@ -803,7 +829,7 @@ class MeshtasticService:
             if not self.database.insert_telemetry(sample):
                 continue
             self.events.publish({"type": "telemetry", "data": sample})
-            LOG.info(
+            LOG.debug(
                 "Lagra %s-telemetri frå %s via %s",
                 sample["kind"],
                 sample["node_id"],
@@ -816,7 +842,7 @@ class MeshtasticService:
         position = parsed_position | gateway
         if self.database.insert_position(position):
             self.events.publish({"type": "position", "data": position})
-            LOG.info(
+            LOG.debug(
                 "Lagra posisjon frå %s via %s",
                 position["node_id"],
                 gateway_node_id or "ukjend gateway",
@@ -1361,6 +1387,23 @@ class MeshtasticService:
             self._node_actions.pop(completed.pop(0), None)
 
     def _send(
+        self, text: str, destination: str, public: bool, **options: Any
+    ) -> dict[str, Any]:
+        with self._lock:
+            # Some transports invoke receive callbacks synchronously in sendText.
+            # Finalize the durable request before deduplicating its radio echo.
+            self._deferred_receives = []
+            try:
+                return self._send_impl(text, destination, public, **options)
+            except sqlite3.Error as exc:
+                raise RuntimeError(tr("backend.send.uncertain")) from exc
+            finally:
+                deferred = self._deferred_receives
+                self._deferred_receives = None
+                for packet, interface in deferred:
+                    self._on_receive(packet, interface)
+
+    def _send_impl(
         self,
         text: str,
         destination: str,
@@ -1474,8 +1517,6 @@ class MeshtasticService:
             }
             if not public:
                 kwargs["onResponse"] = onAckNak
-            sent = interface.sendText(text, **kwargs)
-            pending_id = _sent_packet_id(sent)
 
         message = Message(
             packet_id=pending_id,
@@ -1489,9 +1530,11 @@ class MeshtasticService:
             direction=Direction.OUTGOING,
             transport=Transport.UNKNOWN,
             want_ack=not public,
-            status=MessageStatus.QUEUED,
+            status=MessageStatus.UNCERTAIN,
             raw_metadata={
                 "source": "meshpi",
+                "request_id": uuid.uuid4().hex,
+                "send_state": "uncertain",
                 "packet_id": pending_id,
                 "gateway_id": profile.profile_id,
                 "gateway_transport": profile.transport,
@@ -1512,8 +1555,31 @@ class MeshtasticService:
             gateway_profile_id=profile.profile_id,
             received_at=now_iso(),
         )
-        inserted, message_id = self.database.insert_message(message)
-        message.id = message_id
+        with self._lock:
+            if self._interface is not interface or self._profile != profile:
+                raise RuntimeError(tr("backend.connection.switched"))
+            try:
+                inserted, message_id = self.database.insert_message(message)
+                if not inserted or message_id is None:
+                    raise RuntimeError(tr("backend.send.not_sent"))
+            except sqlite3.Error as exc:
+                raise RuntimeError(tr("backend.send.not_sent")) from exc
+            message.id = message_id
+            try:
+                sent = interface.sendText(text, **kwargs)
+                pending_id = _sent_packet_id(sent)
+                message.packet_id = pending_id
+                message.status = MessageStatus.QUEUED
+                message.raw_metadata["packet_id"] = pending_id
+                message.raw_metadata["send_state"] = "handed_to_radio"
+                self.database.complete_outgoing_message(message)
+            except Exception as exc:
+                # The durable record remains explicitly uncertain on crash or
+                # failure. Never retry automatically after a radio side effect.
+                message.status = MessageStatus.UNCERTAIN
+                message.raw_metadata["send_state"] = "uncertain"
+                self.events.publish({"type": "message", "data": message.as_dict()})
+                raise RuntimeError(tr("backend.send.uncertain")) from exc
         with ack_lock:
             stored.set()
             early_result = early_status[0] if early_status else None

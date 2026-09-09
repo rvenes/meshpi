@@ -107,6 +107,27 @@ fi
 UNIT_FILE="${MESHPI_UNIT_FILE:-/etc/systemd/system/meshpi.service}"
 LANGUAGE_FILE="${MESHPI_LANGUAGE_FILE:-$USER_HOME/.config/MeshPi/language.json}"
 
+# Validate resolved paths before stopping anything or removing launchers.
+PYTHON="$(command -v python3 || true)"
+[ -n "$PYTHON" ] || { printf '%s\n' 'Python 3 is required for safe path validation.' >&2; exit 1; }
+"$PYTHON" -I - "$PREFIX" "$STATE_DIR" "$CONFIG_FILE" <<'PY'
+import sys
+from pathlib import Path
+
+prefix, state, config = (Path(value).expanduser().resolve() for value in sys.argv[1:])
+for path in (prefix, state):
+    if path == Path(path.anchor) or path == Path.home():
+        raise SystemExit("Refusing an unsafe installation/data root")
+for name in ("releases", "current", "previous", ".venv"):
+    target = (prefix / name).resolve()
+    for protected in (state, config):
+        if target == protected or target in protected.parents or protected in target.parents:
+            raise SystemExit("Refusing to remove an application path overlapping user data")
+PY
+
+if [ "$MODE" = "session" ] && [ -x "$BIN_FILE" ]; then
+    "$BIN_FILE" service stop
+fi
 if [ "$SKIP_SERVICE" != "1" ] && command -v systemctl >/dev/null 2>&1; then
     systemctl disable --now meshpi.service >/dev/null 2>&1 || true
 fi
@@ -118,9 +139,11 @@ if [ "$SKIP_SERVICE" != "1" ] && command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload
 fi
 
-if [ -d "$PREFIX" ]; then
-    rm -rf "$PREFIX"
-fi
+# Never remove the installation root: session data defaults to PREFIX/data.
+for artifact in releases current previous .venv; do
+    target="$PREFIX/$artifact"
+    rm -rf "$target"
+done
 if [ "$MODE" = "always" ]; then
     say removed_service
 else

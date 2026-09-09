@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#090d0e">
   <title>MeshPi – Meshtastic i terminalen</title>
   <link rel="stylesheet" href="styles.css">
-  <script src="script.js?v=0.9.0" defer></script>
+  <script src="script.js?v=0.9.2" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#installasjon" data-en="Skip to installation">Gå til installasjon</a>
@@ -34,7 +34,7 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> <span data-en="Version 0.9.0">Versjon 0.9.0</span></div>
+        <div class="eyebrow"><span class="status-dot"></span> <span data-en="Version 0.9.2">Versjon 0.9.2</span></div>
         <h1><span class="heading-line" data-en="Meshtastic chat.">Meshtastic-chat.</span><br><span data-en="Right in your terminal.">Rett i terminalen.</span></h1>
         <p class="lead" data-en="MeshPi keeps the radio connection open in the background, receives messages in real time, and gives you public chat, direct messages, history, and a node list in a fast terminal interface.">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
@@ -59,7 +59,7 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.9.0</b><i>●</i> <span data-en="Connected">Tilkopla</span>
+          <b>MeshPi 0.9.2</b><i>●</i> <span data-en="Connected">Tilkopla</span>
           <span>BLE Meshtastic</span>
         </div>
         <div class="terminal-grid">
@@ -393,21 +393,25 @@
       </div>
     </section>
 
-    <section id="release-0.9.0" class="section release-section">
+    <section id="release-0.9.2" class="section release-section">
       <div class="section-heading">
         <span data-en="Latest version">Siste versjon</span>
-        <h2>MeshPi 0.9.0</h2>
+        <h2>MeshPi 0.9.2</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li data-en="Complete Nynorsk and English interfaces for the TUI, connection picker, CLI, errors, installers, and website">Komplett nynorsk og engelsk grensesnitt for TUI, tilkoplingsveljar, CLI, feil, installatørar og nettside</li>
-          <li data-en="Switch language immediately from F10 without restarting the daemon or losing your current work">Byt språk straks frå F10 utan daemonomstart eller tap av det du arbeider med</li>
-          <li data-en="Use meshpi language nn or meshpi language en to choose language from the command line">Bruk meshpi language nn eller meshpi language en for å velje språk frå kommandolinja</li>
-          <li data-en="The language choice is stored per user; existing users without a choice keep Nynorsk">Språkvalet blir lagra per brukar; eksisterande brukarar utan val held fram med nynorsk</li>
+          <li data-en="Language changes remain active in existing TUI timer tasks">Språkbyte held seg aktivt i eksisterande timeroppgåver i TUI-en</li>
+          <li data-en="English is the default for new installations; existing language choices are preserved">Engelsk er standard for nye installasjonar; eksisterande språkval blir bevarte</li>
+          <li data-en="Safer Linux uninstallation, Windows IPC identity checks, and refusal of newer database schemas">Tryggare Linux-avinstallering, identitetskontroll av Windows-IPC og avvising av nyare databaseskjema</li>
+          <li data-en="Outgoing requests are saved before radio handoff; uncertain outcomes are clearly marked and never retried automatically">Sendeførespurnader blir lagra før radiooverlevering; uvist utfall blir tydeleg merkt og aldri prøvd automatisk om att</li>
+          <li data-en="Updated, hash-verified pip bootstrap and private rotating logs">Oppdatert, hashverifisert pip-bootstrap og private roterande loggar</li>
+          <li data-en="Temporary SQLite contention no longer disconnects the Meshtastic radio">Mellombels SQLite-lås koplar ikkje lenger frå Meshtastic-radioen</li>
+          <li data-en="macOS daemon logs rotate automatically and routine telemetry is quieter">Daemonloggar på macOS roterer automatisk, og rutinemessig telemetrilogging er dempa</li>
+          <li data-en="Repeated connection errors are rate-limited while the live status still shows every retry">Gjentekne tilkoplingsfeil er rate-avgrensa, medan live-status framleis viser kvart forsøk</li>
           <li data-en="No database schema or release-manifest format changes">Ingen endring i databaseskjema eller release-manifestformat</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.9.0-py3-none-any.whl" data-en="Download the Python package">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.9.2-py3-none-any.whl" data-en="Download the Python package">Last ned Python-pakken</a>
           <a href="https://github.com/rvenes/meshpi" data-en="Source code on GitHub">Kjeldekode på GitHub</a>
         </div>
       </div>

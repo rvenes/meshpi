@@ -12,9 +12,7 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$detectedLanguage = if (
-    [Globalization.CultureInfo]::CurrentUICulture.Name -match "^(nn|nb|no)(-|$)"
-) { "nn" } else { "en" }
+$detectedLanguage = "en"
 if (-not $Language) {
     $Language = if ($env:MESHPI_LANGUAGE) {
         $env:MESHPI_LANGUAGE
@@ -252,12 +250,12 @@ function Write-MeshPiLaunchers {
 @echo off
 "%~dp0$relativeMeshPi" %*
 exit /b %errorlevel%
-"@ | Set-Content -Encoding ASCII $meshpiCmd
+"@ | Set-Content -Encoding ASCII -LiteralPath $meshpiCmd
     @"
 @echo off
 "%~dp0$relativeMeshPi" daemon
 exit /b %errorlevel%
-"@ | Set-Content -Encoding ASCII $daemonCmd
+"@ | Set-Content -Encoding ASCII -LiteralPath $daemonCmd
 }
 
 function Start-LegacyLauncherCleanup {
@@ -294,13 +292,17 @@ for ($attempt = 0; $attempt -lt 40; $attempt++) {
     Start-Sleep -Milliseconds 250
 }
 Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
-'@ | Set-Content -Encoding UTF8 $cleanupFile
-    Start-Process -FilePath $PowerShellExe -ArgumentList @(
-        "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass",
-        "-File", ('"' + $cleanupFile + '"'),
-        "-UpdaterProcessId", [string]$UpdaterProcessId,
-        "-LegacyLauncher", ('"' + $LegacyLauncher + '"')
-    ) -WorkingDirectory $BinDir -WindowStyle Hidden
+'@ | Set-Content -Encoding UTF8 -LiteralPath $cleanupFile
+    $cleanupStart = New-Object Diagnostics.ProcessStartInfo
+    $cleanupStart.FileName = $PowerShellExe
+    $cleanupStart.Arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' +
+        $cleanupFile + '" -UpdaterProcessId ' + $UpdaterProcessId + ' -LegacyLauncher "' +
+        $LegacyLauncher + '"'
+    $cleanupStart.WorkingDirectory = $BinDir
+    $cleanupStart.UseShellExecute = $false
+    $cleanupStart.CreateNoWindow = $true
+    $cleanupStart.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
+    [Diagnostics.Process]::Start($cleanupStart).Dispose()
 }
 
 # Write-InstallStep 1 "Kontrollerer Python 3.11 eller nyare …"
@@ -342,6 +344,11 @@ $languageFile = if ($env:MESHPI_LANGUAGE_FILE) {
     $env:MESHPI_LANGUAGE_FILE
 } else {
     Join-Path $installRoot "language.json"
+}
+
+function ConvertTo-PowerShellLiteral {
+    param([string]$Value)
+    return "'" + $Value.Replace("'", "''") + "'"
 }
 $freshInstall = -not (Test-Path -LiteralPath $installRoot) -and `
     -not (Test-Path -LiteralPath $configRoot)
@@ -489,6 +496,9 @@ IPC_SOCKET_PATH=
 IPC_SOCKET_GID=
 IPC_TOKEN=$ipcToken
 LOG_LEVEL=INFO
+LOG_FILE=$dataDir\meshpi.log
+LOG_MAX_BYTES=5242880
+LOG_BACKUP_COUNT=3
 UPDATE_URL=$BaseUrl/version.json
 UPDATE_TIMEOUT=3
 BACKGROUND_MODE=$modeValue
@@ -496,6 +506,9 @@ BACKGROUND_MODE=$modeValue
         Write-Utf8NoBom $configFile $configText
     } else {
         Set-EnvValue $configFile "BACKGROUND_MODE" $modeValue
+        if (-not (Get-EnvValue $configFile "LOG_FILE")) {
+            Set-EnvValue $configFile "LOG_FILE" (Join-Path $dataDir "meshpi.log")
+        }
         Set-EnvValue $configFile "IPC_TRANSPORT" "tcp"
         Set-EnvValue $configFile "IPC_SOCKET_PATH" ""
         Set-EnvValue $configFile "IPC_SOCKET_GID" ""
@@ -527,7 +540,9 @@ BACKGROUND_MODE=$modeValue
         Invoke-NativeChecked $python.Exe $venvArguments (Get-Message venv_failed)
         $venvPython = Join-Path $release "venv\Scripts\python.exe"
         Invoke-NativeChecked $venvPython @(
-            "-m", "pip", "install", "-q", "--require-hashes", "-r", $lockFile
+            "-I", "-c",
+            "import runpy,sys; sys.path.insert(0,sys.argv.pop(1)); runpy.run_module('meshpi.bootstrap',run_name='__main__')",
+            $wheelFile, $lockFile
         ) (Get-Message deps_failed)
         Invoke-NativeChecked $venvPython @(
             "-m", "pip", "install", "-q", "--no-deps", $wheelFile
@@ -590,41 +605,63 @@ BACKGROUND_MODE=$modeValue
         [Environment]::GetFolderPath("Startup")
     }
     New-Item -ItemType Directory -Force -Path $startupDir | Out-Null
+    $currentLiteral = ConvertTo-PowerShellLiteral $currentFile
+    $configLiteral = ConvertTo-PowerShellLiteral $configFile
+    $startupLiteral = ConvertTo-PowerShellLiteral $startupDir
+    $powershellLiteral = ConvertTo-PowerShellLiteral $powerShellExe
+    $dataLiteral = ConvertTo-PowerShellLiteral $dataDir
+    $supervisorLiteral = ConvertTo-PowerShellLiteral $supervisorFile
+    $descriptionLiteral = ConvertTo-PowerShellLiteral (Get-Message service_description)
     @"
-`$ErrorActionPreference = "Continue"
+`$ErrorActionPreference = "Stop"
+`$log = Join-Path $dataLiteral "meshpi-supervisor.log"
+function Write-SupervisorEvent([string]`$message) {
+    try {
+        if ((Test-Path -LiteralPath `$log) -and (Get-Item -LiteralPath `$log).Length -gt 524288) {
+            Move-Item -LiteralPath `$log -Destination (`$log + '.1') -Force
+        }
+        Add-Content -LiteralPath `$log -Encoding UTF8 -Value ((Get-Date -Format o) + ' ' + `$message)
+    } catch { }
+}
+Write-SupervisorEvent "Supervisor started"
 while (`$true) {
-    `$current = ([IO.File]::ReadAllText(
-        "$currentFile",
-        [Text.Encoding]::UTF8
-    )).Trim()
-    & (Join-Path `$current "venv\Scripts\meshpi.exe") --env-file "$configFile" daemon
-    if (`$LASTEXITCODE -eq 0) {
-        break
+    try {
+        `$current = ([IO.File]::ReadAllText($currentLiteral, [Text.Encoding]::UTF8)).Trim()
+        & (Join-Path `$current "venv\Scripts\meshpi.exe") --env-file $configLiteral daemon
+        Write-SupervisorEvent ("Daemon exited: " + `$LASTEXITCODE)
+        if (`$LASTEXITCODE -eq 0) { break }
+    } catch {
+        Write-SupervisorEvent "Daemon launch failed; retrying"
     }
     Start-Sleep -Seconds 5
 }
-"@ | Set-Content -Encoding UTF8 $supervisorFile
+"@ | Set-Content -Encoding UTF8 -LiteralPath $supervisorFile
     @"
 param([ValidateSet("start", "enable", "disable")][string]`$Action)
-`$startup = "$startupDir"
+`$startup = $startupLiteral
+`$supervisor = $supervisorLiteral
 `$shortcutFile = Join-Path `$startup "MeshPi Daemon.lnk"
 if (`$Action -eq "enable") {
     `$shell = New-Object -ComObject WScript.Shell
     `$shortcut = `$shell.CreateShortcut(`$shortcutFile)
-    `$shortcut.TargetPath = "$powerShellExe"
-    `$shortcut.Arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "$supervisorFile"'
-    `$shortcut.WorkingDirectory = "$dataDir"
-    `$shortcut.Description = "$(Get-Message service_description)"
+    `$shortcut.TargetPath = $powershellLiteral
+    `$shortcut.Arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + `$supervisor + '"'
+    `$shortcut.WorkingDirectory = $dataLiteral
+    `$shortcut.Description = $descriptionLiteral
     `$shortcut.Save()
 } elseif (`$Action -eq "disable") {
     Remove-Item -LiteralPath `$shortcutFile -Force -ErrorAction SilentlyContinue
 } elseif (`$Action -eq "start") {
-    Start-Process -FilePath "$powerShellExe" -ArgumentList @(
-        "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass",
-        "-File", '"$supervisorFile"'
-    ) -WorkingDirectory "$dataDir" -WindowStyle Hidden
+    `$startInfo = New-Object Diagnostics.ProcessStartInfo
+    `$startInfo.FileName = $powershellLiteral
+    `$startInfo.Arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + `$supervisor + '"'
+    `$startInfo.WorkingDirectory = $dataLiteral
+    `$startInfo.UseShellExecute = `$false
+    `$startInfo.CreateNoWindow = `$true
+    `$startInfo.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
+    [Diagnostics.Process]::Start(`$startInfo).Dispose()
 }
-"@ | Set-Content -Encoding UTF8 $managerFile
+"@ | Set-Content -Encoding UTF8 -LiteralPath $managerFile
 
     if ($env:MESHPI_SKIP_PATH -ne "1") {
         $userPath = [Environment]::GetEnvironmentVariable("Path", "User")

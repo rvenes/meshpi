@@ -1,0 +1,7 @@
+{
+  "message.status.uncertain": "Uncertain send – check receipt before retrying",
+  "database.schema_too_new": "The database belongs to a newer MeshPi version. Upgrade the application; the database has not been changed.",
+  "client.untrusted_peer": "The IPC peer could not be verified as a process running under your Windows account. No token or message was sent.",
+  "backend.send.uncertain": "The message may have been sent, but the outcome could not be saved. Check receipt before trying again.",
+  "backend.send.not_sent": "The message could not be saved before sending. Nothing was sent."
+}

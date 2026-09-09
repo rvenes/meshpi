@@ -8,6 +8,7 @@ from typing import Any, Protocol
 
 from meshpi.config import Settings
 from meshpi.i18n import get_language, tr
+from meshpi.ipc_identity import verify_windows_peer
 
 MAX_RESPONSE_BYTES = 2_000_000
 
@@ -78,10 +79,17 @@ def _connect(settings: Settings, timeout: float) -> socket.socket:
             sock.close()
             raise
         return sock
-    return socket.create_connection(
+    sock = socket.create_connection(
         (settings.ipc_host, settings.ipc_port),
         timeout=timeout,
     )
+    if os.name == "nt":
+        try:
+            verify_windows_peer(sock)
+        except OSError as exc:
+            sock.close()
+            raise CLIError(tr("client.untrusted_peer")) from exc
+    return sock
 
 
 def request(

@@ -146,6 +146,7 @@ def test_client_does_not_report_reset_connection_as_stopped_service(monkeypatch)
         lambda *_args, **_kwargs: ConnectedSocket(),
     )
 
+    monkeypatch.setattr("meshpi.client.verify_windows_peer", lambda _sock: None)
     with pytest.raises(CLIError, match="ikkje starta på nytt") as error:
         request(Settings(ipc_transport="tcp"), {"command": "status"})
     assert not isinstance(error.value, CLIUnavailableError)
@@ -180,6 +181,9 @@ def test_settings_load_env_file(tmp_path, monkeypatch):
         "IPC_TOKEN",
         "IPC_TRANSPORT",
         "LOG_LEVEL",
+        "LOG_FILE",
+        "LOG_MAX_BYTES",
+        "LOG_BACKUP_COUNT",
         "OBSERVATION_RETENTION_DAYS",
         "UPDATE_URL",
         "UPDATE_TIMEOUT",
@@ -200,9 +204,25 @@ def test_settings_load_env_file(tmp_path, monkeypatch):
     assert settings.update_timeout == 3
     assert settings.background_mode == "always"
     assert settings.observation_retention_days == 730
+    assert settings.log_file is None
+    assert settings.log_max_bytes == 5 * 1024 * 1024
+    assert settings.log_backup_count == 3
     assert settings.ipc_transport == "auto"
     assert settings.ipc_socket_path == settings.database_path.with_name("meshpi.sock")
     assert "PYTHONPATH" not in settings.__dataclass_fields__
+
+
+def test_settings_load_rotating_log_configuration(tmp_path, monkeypatch):
+    log_file = tmp_path / "logs" / "meshpi.log"
+    monkeypatch.setenv("LOG_FILE", str(log_file))
+    monkeypatch.setenv("LOG_MAX_BYTES", "65536")
+    monkeypatch.setenv("LOG_BACKUP_COUNT", "2")
+
+    settings = Settings.load(tmp_path / "missing.env")
+
+    assert settings.log_file == log_file
+    assert settings.log_max_bytes == 65536
+    assert settings.log_backup_count == 2
 
 
 def test_settings_reject_non_loopback_ipc(monkeypatch):

@@ -170,6 +170,7 @@ def main() -> None:
                 "-m",
                 "build",
                 "--wheel",
+                "--no-isolation",
                 "--outdir",
                 str(release_dir),
             ],

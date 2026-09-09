@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="index, follow">
-  <meta name="description" content="MeshPi-betakanalen gir ein signert veg til den stabile 0.9.0-utgivinga.">
+  <meta name="description" content="MeshPi-betakanalen gir ein signert veg til den stabile 0.9.2-utgivinga.">
   <title>MeshPi betakanal</title>
   <style>
     body { max-width: 48rem; margin: 4rem auto; padding: 0 1.5rem; color: #e8edf2; background: #0d141b; font: 1rem/1.6 system-ui, sans-serif; }
@@ -18,24 +18,24 @@
     .language-switcher button[aria-pressed="true"] { color: #0d141b; background: #9fe7c4; }
     a { color: #8bc7ff; }
   </style>
-  <script src="../script.js?v=0.9.0" defer></script>
+  <script src="../script.js?v=0.9.2" defer></script>
 </head>
-<body data-page="beta" data-title-nn="MeshPi betakanal" data-title-en="MeshPi beta channel" data-description-nn="MeshPi-betakanalen gir ein signert veg til den stabile 0.9.0-utgivinga." data-description-en="The MeshPi beta channel provides a signed path to the stable 0.9.0 release.">
+<body data-page="beta" data-title-nn="MeshPi betakanal" data-title-en="MeshPi beta channel" data-description-nn="MeshPi-betakanalen gir ein signert veg til den stabile 0.9.2-utgivinga." data-description-en="The MeshPi beta channel provides a signed path to the stable 0.9.2 release.">
   <div class="language-switcher" role="group" aria-label="Språk" data-aria-en="Language">
     <button type="button" data-language="nn" aria-pressed="true">Nynorsk</button>
     <button type="button" data-language="en" aria-pressed="false">English</button>
   </div>
   <main>
     <h1 data-en="MeshPi beta channel">MeshPi betakanal</h1>
-    <p data-en="The beta channel now points to the same signed MeshPi 0.9.0 release as the stable channel. Existing beta users can safely continue to the stable release.">
-      Betakanalen peikar no på den same signerte MeshPi 0.9.0-utgivinga som stabilkanalen. Eksisterande betabrukarar kan trygt gå vidare til den stabile utgivinga.
+    <p data-en="The beta channel now points to the same signed MeshPi 0.9.2 release as the stable channel. Existing beta users can safely continue to the stable release.">
+      Betakanalen peikar no på den same signerte MeshPi 0.9.2-utgivinga som stabilkanalen. Eksisterande betabrukarar kan trygt gå vidare til den stabile utgivinga.
     </p>
     <p class="warning" data-en-html="Normal &lt;code&gt;meshpi update&lt;/code&gt; uses the stable channel. The beta channel remains a compatible path for existing beta users. Installation and updates preserve configuration, profiles, the SQLite database, and message history.">
       Vanleg <code>meshpi update</code> bruker stabilkanalen. Betakanalen blir ståande som ein kompatibel veg vidare for eksisterande betabrukarar. Installasjon og oppdatering bevarer konfigurasjon, profilar, SQLite-database og meldingshistorikk.
     </p>
     <section>
       <h2 data-en="Update from MeshPi 0.8.6 or newer">Oppdater frå MeshPi 0.8.6 eller nyare</h2>
-      <p data-en="MeshPi 0.8.6 and newer can install the signed stable 0.9.0 release through the beta channel with:">MeshPi 0.8.6 og nyare kan installere den signerte stabile 0.9.0-utgivinga gjennom betakanalen med:</p>
+      <p data-en="MeshPi 0.8.6 and newer can install the signed stable 0.9.2 release through the beta channel with:">MeshPi 0.8.6 og nyare kan installere den signerte stabile 0.9.2-utgivinga gjennom betakanalen med:</p>
       <pre><code>meshpi update --beta</code></pre>
       <p data-en-html="On Linux in &lt;code&gt;always&lt;/code&gt; mode, use &lt;code&gt;sudo meshpi update --beta&lt;/code&gt;. &lt;code&gt;--beta&lt;/code&gt; only applies to this update; normal &lt;code&gt;meshpi update&lt;/code&gt; continues to use the stable channel.">På Linux i <code>always</code>-modus bruker du <code>sudo meshpi update --beta</code>. <code>--beta</code> gjeld berre denne oppdateringa; vanleg <code>meshpi update</code> held fram med å bruke stabilkanalen.</p>
     </section>
@@ -57,8 +57,8 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\install-windows.ps1 -BaseUrl https://venes.org/meshpi/beta</code></pre>
     </section>
     <section>
-      <h2>MeshPi 0.9.0</h2>
-      <p data-en="MeshPi 0.9.0 keeps the complete Nynorsk interface and adds English throughout the app and release website.">MeshPi 0.9.0 beheld heile det nynorske grensesnittet og legg til engelsk i appen og på utgjevingssida.</p>
+      <h2>MeshPi 0.9.2</h2>
+      <p data-en="MeshPi 0.9.2 improves language switching, database resilience, and long-running daemon logging.">MeshPi 0.9.2 forbetrar språkbyte, databaserobustheit og logging ved langtidskøyring.</p>
       <ul>
         <li data-en="Switch language immediately from F10 or the command line.">Byt språk straks frå F10 eller kommandolinja.</li>
         <li data-en="The per-user language choice is saved atomically.">Språkvalet per brukar blir lagra atomisk.</li>

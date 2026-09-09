@@ -1,3 +1,4 @@
+import sqlite3
 import threading
 import time
 from types import SimpleNamespace
@@ -598,6 +599,63 @@ def test_send_requires_connection(service):
         value.send_public("hei")
 
 
+def test_synchronous_radio_echo_preserves_one_durable_request(service):
+    value, interface, database = service
+
+    def send_with_echo(text, **kwargs):
+        interface.calls.append((text, kwargs))
+        value._on_receive({
+            "id": 991, "fromId": "!710365c8", "toId": "!11112222", "channel": 0,
+            "decoded": {"portnum": "TEXT_MESSAGE_APP", "text": text},
+        }, interface)
+        return SentPacket()
+
+    interface.sendText = send_with_echo
+    result = value.send_dm("!11112222", "synthetic echo")
+    rows = database.list_messages("dm", "!11112222")
+    assert len(interface.calls) == 1
+    assert len(rows) == 1
+    assert rows[0]["id"] == result["id"]
+    assert rows[0]["raw_metadata"]["request_id"]
+    assert rows[0]["status"] == str(MessageStatus.QUEUED)
+
+
+def test_database_failure_before_send_sends_nothing(service, monkeypatch):
+    value, interface, database = service
+    def fail(_message):
+        raise sqlite3.OperationalError("database is locked")
+    monkeypatch.setattr(database, "insert_message", fail)
+    with pytest.raises(RuntimeError, match="Ingenting vart sendt"):
+        value.send_dm("!11112222", "synthetic")
+    assert not interface.calls
+
+
+def test_database_failure_after_send_leaves_durable_uncertain_record(service, monkeypatch):
+    value, interface, database = service
+    def fail(_message):
+        raise sqlite3.OperationalError("disk full")
+    monkeypatch.setattr(database, "complete_outgoing_message", fail)
+    with pytest.raises(RuntimeError, match="kan vere send"):
+        value.send_dm("!11112222", "synthetic")
+    assert len(interface.calls) == 1
+    rows = database.list_messages("dm", "!11112222")
+    assert len(rows) == 1
+    assert rows[0]["status"] == "uviss"
+    assert rows[0]["raw_metadata"]["request_id"]
+
+
+def test_radio_failure_does_not_retry_and_preserves_uncertainty(service):
+    value, interface, database = service
+    def fail(text, **options):
+        interface.calls.append((text, options))
+        raise OSError("connection lost after write")
+    interface.sendText = fail
+    with pytest.raises(RuntimeError, match="kan vere send"):
+        value.send_dm("!11112222", "synthetic")
+    assert len(interface.calls) == 1
+    assert database.list_messages("dm", "!11112222")[0]["status"] == "uviss"
+
+
 def test_traceroute_is_started_asynchronously_and_publishes_result(service):
     value, interface, database = service
     with value.events.subscribe() as events:
@@ -1064,6 +1122,82 @@ def test_service_retries_after_connection_failure(tmp_path, monkeypatch):
     assert len(attempts) == 2
     assert attempts[0].transport == "tcp"
     assert attempts[0].endpoint == "192.0.2.42:4403"
+
+
+def test_service_keeps_radio_connected_when_channel_sync_database_is_locked(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr("meshpi.service.HEALTH_CHECK_INTERVAL_SECONDS", 0.01)
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    interface = FakeInterface()
+    interface._rxThread = SimpleNamespace(is_alive=lambda: True)
+    sync_calls = []
+
+    def locked_sync(_interface):
+        sync_calls.append(True)
+        raise sqlite3.OperationalError("database is locked")
+
+    value = MeshtasticService(
+        Settings(meshtastic_host="192.0.2.42", database_path=database.path),
+        database,
+        EventHub(),
+        interface_factory=lambda _profile: interface,
+    )
+    monkeypatch.setattr(value, "_sync_channels", locked_sync)
+    value.start()
+    deadline = time.monotonic() + 2
+    while len(sync_calls) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert len(sync_calls) >= 2
+    assert value.status()["state"] == "tilkopla"
+    assert value._interface is interface
+    assert interface.closed is False
+    value.stop()
+
+
+def test_service_rate_limits_identical_connection_errors(
+    tmp_path, monkeypatch, caplog
+):
+    monkeypatch.setattr("meshpi.service.RECONNECT_DELAYS", (0, 0, 0, 0))
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    attempts = []
+    holder = {}
+
+    def factory(_profile):
+        attempts.append(True)
+        if len(attempts) >= 3:
+            holder["service"]._stop.set()
+        raise OSError("noden er fråkopla")
+
+    value = MeshtasticService(
+        Settings(meshtastic_host="192.0.2.42", database_path=database.path),
+        database,
+        EventHub(),
+        interface_factory=factory,
+    )
+    holder["service"] = value
+    caplog.set_level("DEBUG", logger="meshpi.service")
+    value.start()
+    deadline = time.monotonic() + 2
+    while value._thread and value._thread.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    value.stop()
+
+    errors = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "Meshtastic-feil: noden er fråkopla"
+    ]
+    repeated = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "Gjenteken Meshtastic-feil: noden er fråkopla"
+    ]
+    assert len(errors) == 1
+    assert len(repeated) == 2
 
 
 def test_ble_service_retries_with_searching_status(tmp_path, monkeypatch):

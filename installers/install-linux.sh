@@ -15,7 +15,7 @@ detect_language() {
     esac
 }
 
-DETECTED_LANGUAGE="$(detect_language)"
+DETECTED_LANGUAGE=en
 LANGUAGE="${MESHPI_LANGUAGE:-$DETECTED_LANGUAGE}"
 
 message() {
@@ -536,7 +536,9 @@ if [ "$RELEASE" != "$OLD_RELEASE" ]; then
     install_step 5 create_environment
     rm -rf "$RELEASE"
     "$PYTHON" -m venv "$RELEASE/.venv"
-    "$RELEASE/.venv/bin/python" -m pip install -q --require-hashes -r "$LOCK_FILE"
+    "$RELEASE/.venv/bin/python" -I -c \
+        'import runpy,sys; sys.path.insert(0,sys.argv.pop(1)); runpy.run_module("meshpi.bootstrap",run_name="__main__")' \
+        "$WHEEL" "$LOCK_FILE"
     "$RELEASE/.venv/bin/python" -m pip install -q --no-deps "$WHEEL"
 else
     install_step 5 already_installed "$VERSION"

@@ -78,8 +78,8 @@ Synleg tekst blir oppdatert med ein gong utan omstart av appen eller daemonen,
 og valet blir brukt neste gong MeshPi blir opna.
 
 Eksisterande installasjonar utan eit lagra språkval held fram på nynorsk. På
-ei fersk installering blir nynorsk valt når system-/nettlesarspråket er `nn`,
-`nb` eller `no`; andre språk får engelsk. Engelsk er trygg fallback dersom ein
+ei fersk installering er engelsk standard uavhengig av system-/nettlesarspråk.
+Lagra og uttrykkelege språkval har prioritet. Engelsk er trygg fallback dersom ei
 omsetjing manglar.
 
 Installatørane bruker same standard og kan overstyrast uttrykkeleg:

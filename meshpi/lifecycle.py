@@ -10,6 +10,7 @@ from pathlib import Path
 from meshpi.client import CLIError, CLIUnavailableError, request
 from meshpi.config import Settings
 from meshpi.i18n import tr
+from meshpi.private_logging import open_private_log
 
 
 @dataclass(slots=True)
@@ -75,9 +76,16 @@ def start_session_daemon(
         if not key.upper().startswith("PYTHON")
     }
     child_env["PYTHONDONTWRITEBYTECODE"] = "1"
+    # Runtime logs rotate in the daemon. The private bootstrap log only captures
+    # startup errors before logging is configured.
+    if settings.log_file is None:
+        child_env["LOG_FILE"] = str(log_path.resolve())
     working_directory = settings.database_path.parent.resolve()
     working_directory.mkdir(parents=True, exist_ok=True)
-    with log_path.open("ab") as log:
+    bootstrap_log = log_path.with_name("meshpi-session-bootstrap.log")
+    if bootstrap_log.is_file() and bootstrap_log.stat().st_size >= 512 * 1024:
+        bootstrap_log.replace(bootstrap_log.with_name(bootstrap_log.name + ".1"))
+    with open_private_log(bootstrap_log) as log:
         process = subprocess.Popen(  # nosec B603
             command,
             stdin=subprocess.DEVNULL,

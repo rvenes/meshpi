@@ -96,11 +96,7 @@ def test_language_runtime_detects_persists_and_applies_language() -> None:
     script = (WEBSITE / "script.js").read_text(encoding="utf-8")
 
     assert 'LANGUAGE_STORAGE_KEY = "meshpi-language"' in script
-    assert "navigator.languages" in script
-    assert "/^(nn|nb|no)(-|$)/i" in script
-    assert 'return requested.some' in script
-    assert '? "nn"' in script
-    assert ': "en"' in script
+    assert 'function browserLanguage() {\n  return "en";\n}' in script
     assert "localStorage.getItem(LANGUAGE_STORAGE_KEY)" in script
     assert "localStorage.setItem(LANGUAGE_STORAGE_KEY, language)" in script
     assert "applyLanguage(savedLanguage() || browserLanguage())" in script
@@ -123,9 +119,9 @@ def test_language_picker_is_responsive_and_stable_release_copy_is_unchanged() ->
     assert "@media (max-width: 900px)" in styles
     assert "@media (max-width: 720px)" in styles
 
-    assert "Versjon 0.9.0" in html
-    assert "Version 0.9.0" in html
-    assert "downloads/meshpi-0.9.0-py3-none-any.whl" in html
+    assert "Versjon 0.9.2" in html
+    assert "Version 0.9.2" in html
+    assert "downloads/meshpi-0.9.2-py3-none-any.whl" in html
     assert "0.8.9" not in html
 
 
@@ -142,5 +138,5 @@ def test_beta_page_is_bilingual_and_uses_the_shared_language_choice() -> None:
     assert language_buttons == {"nn", "en"}
     assert 'data-title-nn="MeshPi betakanal"' in html
     assert 'data-title-en="MeshPi beta channel"' in html
-    assert '<script src="../script.js?v=0.9.0" defer></script>' in html
-    assert "MeshPi 0.9.0" in html
+    assert '<script src="../script.js?v=0.9.2" defer></script>' in html
+    assert "MeshPi 0.9.2" in html

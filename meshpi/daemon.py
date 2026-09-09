@@ -5,22 +5,42 @@ import os
 import signal
 import threading
 from contextlib import suppress
+from pathlib import Path
 
 from meshpi.config import Settings
 from meshpi.connections import ConnectionProfile, ConnectionStore
 from meshpi.database import Database
 from meshpi.events import EventHub
 from meshpi.ipc import IPCApplication, IPCServer
+from meshpi.private_logging import PrivateRotatingFileHandler
 from meshpi.service import MeshtasticService
 
 LOG = logging.getLogger(__name__)
 
 
-def configure_logging(level: str) -> None:
+def configure_logging(
+    level: str,
+    *,
+    log_file: Path | None = None,
+    log_max_bytes: int = 5 * 1024 * 1024,
+    log_backup_count: int = 3,
+) -> None:
+    handlers: list[logging.Handler] | None = None
+    if log_file is not None:
+        handlers = [
+            PrivateRotatingFileHandler(
+                log_file,
+                maxBytes=log_max_bytes,
+                backupCount=log_backup_count,
+                encoding="utf-8",
+            )
+        ]
     logging.basicConfig(
         level=getattr(logging, level),
         format="%(asctime)s  %(levelname)s  %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=handlers,
+        force=True,
     )
     if level != "DEBUG":
         logging.getLogger("meshtastic").setLevel(logging.WARNING)
@@ -44,7 +64,12 @@ def _pid_exists(pid: int) -> bool:
 
 
 def run_daemon(settings: Settings, parent_pid: int | None = None) -> None:
-    configure_logging(settings.log_level)
+    configure_logging(
+        settings.log_level,
+        log_file=settings.log_file,
+        log_max_bytes=settings.log_max_bytes,
+        log_backup_count=settings.log_backup_count,
+    )
     database = Database(
         settings.database_path,
         observation_retention_days=settings.observation_retention_days,

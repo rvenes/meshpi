@@ -29,6 +29,17 @@ utan den private utgjevingsnøkkelen.
 
 ## Nøkkelrotasjon og tilbakekalling
 
+Førstegongsinstallasjon stolar framleis på den nedlasta installatøren og
+distribusjonskanalen. Ein kompromittert installatør kan byte sine eigne
+kontrollar; den innebygde offentlege nøkkelen er ikkje ei uavhengig tillitsrot.
+Kontroller eller hent første installatør via ei separat autentisert rute ved behov.
+
+Frå 0.9.2 hentar den verifiserte MeshPi-wheel-en ein pip-wheel med hash frå den
+signerte plattformlåsen. Deretter blir berre wheels installerte frå PyPI med
+`--require-hashes` og `--only-binary=:all:`. Python og operativsystemet er framleis
+tiltrudde. Bootstrap bruker ikkje den eldre pip-utgåva frå venv til nedlasting
+eller installasjon, og stoppar dersom kompatible wheels manglar.
+
 Nøkkelregisteret ligg i `meshpi/signing.py` og i kvar installatør. Normal
 rotasjon skjer slik:
 
@@ -61,6 +72,31 @@ Linux always-modus gir sockettilgang gjennom operatøren si primærgruppe berre
 når gruppa er privat for éin konto. Ei delt primærgruppe blir avvist under
 installasjon, slik at andre lokale brukarar ikkje kan opne IPC-socketen eller
 tømme tilkoplingskvoten.
+
+## Lokal identitet
+
+Windows-klienten kontrollerer Windows-kontoen (SID) til tenarprosessen før
+IPC-tokenet blir sendt. Dette vernar IPv4-loopback-transporten installatøren
+bruker, og avviser sambandet dersom identiteten ikkje kan kontrollerast.
+Kontoen er tillitsgrensa; andre prosessar under same konto kan allereie lese
+token og data. Bruk privat Unix-socket på Linux/macOS. Uttrykkeleg vald TCP
+der har ikkje denne Windows-identitetskontrollen. IPC skal aldri eksponerast
+utanfor loopback og er ikkje ein trygg fjernprotokoll.
+
+## Datavern og sending
+
+Sendeførespurnader blir lagra med ein unik lokal ID før radiooverlevering.
+Lagringsfeil før overlevering betyr at ingenting vart sendt. Krasj, radiofeil
+eller feil etter overlevering gir uttrykkeleg uvist utfall og aldri automatisk
+retry. Kontroller historikken før ei eventuell ny manuell sending. ID-en er
+ikkje ein ende-til-ende-idempotensgaranti: radio og SQLite er ikkje éin transaksjon.
+
+Ein eldre daemon avviser eit nyare databaseskjema før migrasjon og vedlikehald.
+Byte av programversjon rullar ikkje tilbake skjemaet. Behald den nyare versjonen
+eller avtal gjenoppretting frå eksport/backup teken før oppgraderinga; ikkje
+endre `user_version` for å omgå vernet. 0.9.2 endrar ikkje databaseskjemaet.
+Linux-avinstallering bevarer data som standard, også session-data under
+installasjonsmappa.
 
 ## Nettstad og avhengigheiter
 

@@ -66,8 +66,8 @@ def test_posix_scripts_detect_norwegian_locales(name: str) -> None:
     for locale in ("nn_NO.UTF-8", "nb_NO.UTF-8", "no_NO.UTF-8"):
         result = _run_posix_argument_error(name, locale=locale)
         assert result.returncode == 2
-        assert "Ukjent argument" in result.stderr
-        assert "Unknown argument" not in result.stderr
+        expected = "Ukjent argument" if name.startswith("uninstall-") else "Unknown argument"
+        assert expected in result.stderr
 
 
 @pytest.mark.skipif(POSIX_SHELL is None, reason="krev POSIX-shell")
@@ -123,7 +123,10 @@ def test_powershell_message_catalogues_are_parallel(name: str) -> None:
     assert len(rows) == len(set(rows))
     assert '[string]$Language = ""' in source
     assert "$env:MESHPI_LANGUAGE" in source
-    assert '"^(nn|nb|no)(-|$)"' in source
+    if name.startswith("install-"):
+        assert '$detectedLanguage = "en"' in source
+    else:
+        assert '"^(nn|nb|no)(-|$)"' in source
 
 
 @pytest.mark.skipif(

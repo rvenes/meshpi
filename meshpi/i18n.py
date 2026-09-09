@@ -18,10 +18,11 @@ FALLBACK_LANGUAGE = "en"
 NORWEGIAN_LANGUAGE_PREFIXES = frozenset({"nn", "nb", "no"})
 LANGUAGE_NAMES = {"nn": "Nynorsk", "en": "English"}
 
-_active_language: ContextVar[str | None] = ContextVar(
+_active_language: ContextVar[tuple[str, int] | None] = ContextVar(
     "meshpi_active_language", default=None
 )
 _process_language = "nn"
+_language_generation = 0
 _catalogs: dict[str, dict[str, str]] | None = None
 
 
@@ -131,7 +132,7 @@ def choose_language(
         return saved
     if _has_legacy_data(legacy_paths):
         return "nn"
-    return detect_system_language(system_language)
+    return FALLBACK_LANGUAGE
 
 
 def initialize_language(
@@ -140,29 +141,35 @@ def initialize_language(
     legacy_paths: tuple[Path, ...] = (),
     system_language: str | None = None,
 ) -> str:
-    global _process_language
+    global _language_generation, _process_language
     language = choose_language(
         path=path,
         legacy_paths=legacy_paths,
         system_language=system_language,
     )
+    _language_generation += 1
     _process_language = language
-    _active_language.set(language)
+    _active_language.set((language, _language_generation))
     return language
 
 
 def get_language() -> str:
-    language = _active_language.get()
-    return language or _process_language
+    active = _active_language.get()
+    if active is not None:
+        language, generation = active
+        if generation == _language_generation:
+            return language
+    return _process_language
 
 
 def set_language(language: str, *, persist: bool = False, path: Path | None = None) -> str:
-    global _process_language
+    global _language_generation, _process_language
     selected = normalize_language(language)
     if persist:
         save_language(selected, path=path)
+    _language_generation += 1
     _process_language = selected
-    _active_language.set(selected)
+    _active_language.set((selected, _language_generation))
     return selected
 
 
@@ -197,7 +204,9 @@ def save_language(language: str, *, path: Path | None = None) -> Path:
 
 @contextmanager
 def using_language(language: str) -> Iterator[None]:
-    token = _active_language.set(normalize_language(language))
+    token = _active_language.set(
+        (normalize_language(language), _language_generation)
+    )
     try:
         yield
     finally:

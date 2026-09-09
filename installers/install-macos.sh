@@ -15,7 +15,7 @@ detect_language() {
     esac
 }
 
-DETECTED_LANGUAGE="$(detect_language)"
+DETECTED_LANGUAGE=en
 LANGUAGE="${MESHPI_LANGUAGE:-$DETECTED_LANGUAGE}"
 
 message() {
@@ -190,6 +190,7 @@ if [ -z "$PYTHON" ]; then
 fi
 
 APP_ROOT="${MESHPI_APP_ROOT:-$HOME/Library/Application Support/MeshPi}"
+APP_ROOT="$("$PYTHON" -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).expanduser().resolve())' "$APP_ROOT")"
 DATA_DIR="${MESHPI_DATA_DIR:-$APP_ROOT/data}"
 CONFIG_FILE="${MESHPI_CONFIG_FILE:-$APP_ROOT/meshpi.env}"
 BIN_DIR="${MESHPI_BIN_DIR:-$HOME/.local/bin}"
@@ -359,6 +360,9 @@ IPC_SOCKET_PATH=$DATA_DIR/meshpi.sock
 IPC_SOCKET_GID=
 IPC_TOKEN=$IPC_TOKEN
 LOG_LEVEL=INFO
+LOG_FILE=$DATA_DIR/meshpi.log
+LOG_MAX_BYTES=5242880
+LOG_BACKUP_COUNT=3
 UPDATE_URL=$BASE_URL/version.json
 UPDATE_TIMEOUT=3
 BACKGROUND_MODE=$MODE
@@ -368,6 +372,9 @@ else
     set_env_value IPC_TRANSPORT unix
     set_env_value IPC_SOCKET_PATH "$DATA_DIR/meshpi.sock"
     set_env_value IPC_SOCKET_GID ""
+    grep -q '^LOG_FILE=.' "$CONFIG_FILE" || set_env_value LOG_FILE "$DATA_DIR/meshpi.log"
+    grep -q '^LOG_MAX_BYTES=' "$CONFIG_FILE" || set_env_value LOG_MAX_BYTES 5242880
+    grep -q '^LOG_BACKUP_COUNT=' "$CONFIG_FILE" || set_env_value LOG_BACKUP_COUNT 3
     if grep -Eq '^IPC_TOKEN=[0-9a-fA-F]{64}$' "$CONFIG_FILE"; then
         :
     elif grep -q '^IPC_TOKEN=' "$CONFIG_FILE"; then
@@ -388,7 +395,9 @@ if [ "$RELEASE" != "$OLD_RELEASE" ]; then
     install_step 5 create_environment
     rm -rf "$RELEASE"
     "$PYTHON" -m venv "$RELEASE/venv"
-    "$RELEASE/venv/bin/python" -m pip install -q --require-hashes -r "$LOCK_FILE"
+    "$RELEASE/venv/bin/python" -I -c \
+        'import runpy,sys; sys.path.insert(0,sys.argv.pop(1)); runpy.run_module("meshpi.bootstrap",run_name="__main__")' \
+        "$WHEEL" "$LOCK_FILE"
     "$RELEASE/venv/bin/python" -m pip install -q --no-deps "$WHEEL"
 else
     install_step 5 already_installed "$VERSION"
@@ -493,8 +502,9 @@ elif [ "$MODE" = "always" ]; then
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
     <key>ThrottleInterval</key><integer>5</integer>
-    <key>StandardOutPath</key><string>$DATA_DIR/meshpi.log</string>
-    <key>StandardErrorPath</key><string>$DATA_DIR/meshpi-error.log</string>
+    <key>Umask</key><integer>63</integer>
+    <key>StandardOutPath</key><string>$DATA_DIR/meshpi-launchd.log</string>
+    <key>StandardErrorPath</key><string>$DATA_DIR/meshpi-launchd-error.log</string>
 </dict>
 </plist>
 EOF

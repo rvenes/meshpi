@@ -4,7 +4,7 @@ import json
 import os
 import sqlite3
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -375,6 +375,13 @@ class Database:
         self._observations_since_prune = 0
 
     def initialize(self) -> None:
+        # Check before chmod, WAL changes, DDL or retention maintenance.
+        if self.path.exists():
+            uri = self.path.resolve().as_uri() + "?mode=ro"
+            with closing(sqlite3.connect(uri, uri=True)) as existing:
+                current_version = int(existing.execute("PRAGMA user_version").fetchone()[0])
+            if current_version > DATABASE_SCHEMA_VERSION:
+                raise ValueError(tr("database.schema_too_new"))
         self.path.parent.mkdir(parents=True, exist_ok=True)
         descriptor = os.open(self.path, os.O_CREAT | os.O_APPEND, 0o600)
         os.close(descriptor)
@@ -1101,6 +1108,18 @@ class Database:
                 "tables": counts,
                 "rows": sum(counts.values()),
             }
+
+    def complete_outgoing_message(self, message: Message) -> None:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "UPDATE messages SET packet_id=?, status=?, raw_metadata=? "
+                "WHERE id=? AND local_node_id=? AND direction='ut'",
+                (message.packet_id, str(message.status),
+                 json.dumps(message.raw_metadata, ensure_ascii=False),
+                 message.id, message.local_node_id),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError(tr("backend.send.uncertain"))
 
     def insert_message(self, message: Message) -> tuple[bool, int | None]:
         local_node_id = str(message.local_node_id or "").strip().lower()

@@ -163,7 +163,7 @@ def test_live_language_switch_persists_and_preserves_tui_state(tmp_path, monkeyp
                 watcher=None,
                 update_checker=None,
             )
-            async with app.run_test(size=(130, 42)) as pilot:
+            async with app.run_test(size=(170, 42)) as pilot:
                 await pilot.pause(0.4)
                 app.current_conversation = DM
                 app.select_conversation(DM)
@@ -208,5 +208,15 @@ def test_live_language_switch_persists_and_preserves_tui_state(tmp_path, monkeyp
                 assert sum(call["command"] == "status" for call in backend.calls) == (
                     status_calls
                 )
+
+                # Textual sine eksisterande timeroppgåver har konteksten frå
+                # før språkbytet. Statuslinja skal likevel halde seg engelsk
+                # når eittsekundstimeren teiknar henne på nytt.
+                await pilot.pause(1.2)
+                status_bar = _text(app.query_one("#status-bar", Static))
+                assert "Host:" in status_bar
+                assert "Connected" in status_bar
+                assert "Vert:" not in status_bar
+                assert "Tilkopla" not in status_bar
 
     asyncio.run(scenario())

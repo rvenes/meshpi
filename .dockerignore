@@ -1,6 +1,12 @@
 .git
 .gitignore
 .env
+LOCAL_TESTING.md
+LOCAL_LIVE_TEST.md
+AGENTS.md
+*.pem
+*.key
+*.log
 .venv
 __pycache__
 *.pyc
