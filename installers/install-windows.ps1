@@ -608,6 +608,7 @@ BACKGROUND_MODE=$modeValue
     $currentLiteral = ConvertTo-PowerShellLiteral $currentFile
     $configLiteral = ConvertTo-PowerShellLiteral $configFile
     $startupLiteral = ConvertTo-PowerShellLiteral $startupDir
+    $pythonwLiteral = ConvertTo-PowerShellLiteral (Join-Path $release "venv\Scripts\pythonw.exe")
     $powershellLiteral = ConvertTo-PowerShellLiteral $powerShellExe
     $dataLiteral = ConvertTo-PowerShellLiteral $dataDir
     $supervisorLiteral = ConvertTo-PowerShellLiteral $supervisorFile
@@ -627,9 +628,18 @@ Write-SupervisorEvent "Supervisor started"
 while (`$true) {
     try {
         `$current = ([IO.File]::ReadAllText($currentLiteral, [Text.Encoding]::UTF8)).Trim()
-        & (Join-Path `$current "venv\Scripts\meshpi.exe") --env-file $configLiteral daemon
-        Write-SupervisorEvent ("Daemon exited: " + `$LASTEXITCODE)
-        if (`$LASTEXITCODE -eq 0) { break }
+        `$daemonStart = New-Object Diagnostics.ProcessStartInfo
+        `$daemonStart.FileName = Join-Path `$current "venv\Scripts\pythonw.exe"
+        `$daemonStart.Arguments = '-I -c "import os,sys; sys.stdin=open(os.devnull); sys.stdout=sys.stderr=open(os.devnull,''w''); from meshpi.cli import main; main()" --env-file "' + $configLiteral + '" daemon'
+        `$daemonStart.UseShellExecute = `$false
+        `$daemonStart.CreateNoWindow = `$true
+        `$daemon = [Diagnostics.Process]::Start(`$daemonStart)
+        try {
+            `$daemon.WaitForExit()
+            `$exitCode = `$daemon.ExitCode
+        } finally { `$daemon.Dispose() }
+        Write-SupervisorEvent ("Daemon exited: " + `$exitCode)
+        if (`$exitCode -eq 0) { break }
     } catch {
         Write-SupervisorEvent "Daemon launch failed; retrying"
     }
@@ -644,8 +654,8 @@ param([ValidateSet("start", "enable", "disable")][string]`$Action)
 if (`$Action -eq "enable") {
     `$shell = New-Object -ComObject WScript.Shell
     `$shortcut = `$shell.CreateShortcut(`$shortcutFile)
-    `$shortcut.TargetPath = $powershellLiteral
-    `$shortcut.Arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + `$supervisor + '"'
+    `$shortcut.TargetPath = $pythonwLiteral
+    `$shortcut.Arguments = '-I -m meshpi.windows_background "' + `$supervisor + '"'
     `$shortcut.WorkingDirectory = $dataLiteral
     `$shortcut.Description = $descriptionLiteral
     `$shortcut.Save()
@@ -653,8 +663,8 @@ if (`$Action -eq "enable") {
     Remove-Item -LiteralPath `$shortcutFile -Force -ErrorAction SilentlyContinue
 } elseif (`$Action -eq "start") {
     `$startInfo = New-Object Diagnostics.ProcessStartInfo
-    `$startInfo.FileName = $powershellLiteral
-    `$startInfo.Arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + `$supervisor + '"'
+    `$startInfo.FileName = $pythonwLiteral
+    `$startInfo.Arguments = '-I -m meshpi.windows_background "' + `$supervisor + '"'
     `$startInfo.WorkingDirectory = $dataLiteral
     `$startInfo.UseShellExecute = `$false
     `$startInfo.CreateNoWindow = `$true

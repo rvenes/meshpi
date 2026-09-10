@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.9.2",
-  "published_at": "2026-09-09T01:16:59Z",
+  "latest_version": "0.9.3",
+  "published_at": "2026-09-10T16:41:48Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.9.2",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.9.3",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.9.2-py3-none-any.whl",
-    "filename": "meshpi-0.9.2-py3-none-any.whl",
-    "sha256": "2995806e765566a97e92e76bb1042b9941a903b96836e9730de1a5dce94caebe",
-    "size": 172164,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.9.3-py3-none-any.whl",
+    "filename": "meshpi-0.9.3-py3-none-any.whl",
+    "sha256": "18be27501c36e268fafa8ffc0169649d7a84e1f97c0a08539576572dcc6fcbcd",
+    "size": 172702,
     "format": "wheel"
   },
   "locks": {
@@ -49,21 +49,18 @@
     },
     "windows": {
       "url": "https://venes.org/meshpi/install-windows.ps1",
-      "sha256": "5790397f8bc5b30f8db632ce579fceb40028f4d3fa126a464018dd05d4919321",
-      "size": 33448,
+      "sha256": "2798e5146a39fd53ad6e57e43184239f5f77cedfe615b63de56180d54b0337bd",
+      "size": 34039,
       "update_command": "Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; .\\install-windows.ps1"
     }
   },
   "release_notes": [
-    "Tryggare avinstallering, Windows-IPC og databaseskjema-vern.",
-    "Varig sendeførespurnad før radiooverlevering og tydeleg uvist utfall utan automatisk retry.",
-    "Hashverifisert pip-bootstrap, private roterande loggar og betre Windows-prosessvakt.",
-    "Engelsk standard for nye installasjonar; bevarte språkval og eksisterande 0.9.1-stabilitetsrettingar."
+    "Windows startar MeshPi og prosessvakta utan eit synleg terminalvindauge. Eksisterande profilar, historikk og innstillingar blir bevarte."
   ],
   "channel": "stable",
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "kr6SBA70lDov7d0k2yKBmx5lg8imHUeNxZNK4vMdeOZgUVei4SzN9UD0qdNn/MbLNCa4BDuARVJlsmhbzpImb03M1QcwNrYcqWNzlEJB3dIerC+gjpzBiMC9So4c+l4f+k5z9W81hz9Qcrkv17UbBEvX9LB1GP6vQYDXqp6R6Sfkt74HDSFlINRd4lTyknQBrMva8IOo5DAgyWVMUu/n+lwY+mEVPs53P/4vqUCPi6uV2UEEPHVM11Gc5qtk2y0WMi0qCpnHQXA2z9VDv0PgMNLXBkmUCFtn2NHMOuKGHfGLzE+fTOak9G6aeYw590hOIP3v/llwKg/kIilMBzVftpnitNGBuIylPVi7B1UzHAbIFN1Eb4Ca0M+IVX+EiqgZAhqvmZTDLu0FhE4GNS5vs2TcBklf6+SyA1zXOtqNRo+9LDt9zyUugI/zpovDdQP/Go8+8iJCn3HgUFRDeij5IkUCzKPjYf5+/daZmxmhUnfxls0GZvkRXFXQuGg7g6s+"
+    "value": "aPZMVpsUqb8pB/djHhvqccKtd2FwvqPVVQhwXe8rth51XAcSCnVuMCCnlc4kVflElJpEi3ExS1Y11BDfh9PMzu/k2s/ai8N5YSH5aq9KfS1dYrPrO+coZB1UxEDH64opo5pZLqbVK3cmpPCQ92VuGrnpLRKBauGTW9fhQUIZ3/nsZYFKOyOuehAqsgIU/G3T+R/3XAAaZWdT9KORXe54ma8S8GgnsMZ8SOfl8N9vqcI2G9CLWLF0mg0J868OjLVqyZN4vhEYv0OoJhkIcGVIEYovvPXBGuq82CCVgwmw0XtsepZqlP9LvBnVxvPmBjFvN8rqDNK0AgG4TtWwTtOojFDArGv3L4mXvu75QTBLtEC7+m958ASOC/c7q3n1z3R3dWg8QD/Fh0y5FvkgABm4++t0WyA/xHWQc4MPN1dAvHs9ILYs2JTI/9tYnRsYCBuR/zf+rDvoB4xUacLU0uR2GygeHAifWxXqbG1F2xB7DHRRxKRBIPWNs/Ghs9b+Phbp"
   }
 }
