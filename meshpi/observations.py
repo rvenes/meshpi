@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
 
-from meshpi.models import Transport, node_num_to_id, now_iso
+from meshpi.models import Node, Transport, node_num_to_id, now_iso
 
 TELEMETRY_PORTS = {"TELEMETRY_APP", 67}
 POSITION_PORTS = {"POSITION_APP", 3}
@@ -76,6 +76,25 @@ def _transport(packet: dict[str, Any]) -> Transport:
     }:
         return Transport.RF
     return Transport.UNKNOWN
+
+
+def parse_node_observation(packet: dict[str, Any], local_node_id: str) -> Node | None:
+    node_id = _source_node(packet)
+    if node_id is None or node_id == '!ffffffff':
+        return None
+    try:
+        if len(node_id) != 9:
+            return None
+        int(node_id[1:], 16)
+    except ValueError:
+        return None
+    timestamp = _iso_timestamp(packet.get('rxTime')) or now_iso()
+    return Node(
+        node_id=node_id,
+        last_heard=int(datetime.fromisoformat(timestamp).timestamp()),
+        transport=_transport(packet),
+        is_local=node_id == local_node_id.lower(),
+    )
 
 
 def _iso_timestamp(value: Any) -> str | None:

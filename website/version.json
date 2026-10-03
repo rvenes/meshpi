@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.9.3",
-  "published_at": "2026-09-10T16:41:48Z",
+  "latest_version": "0.9.4",
+  "published_at": "2026-10-03T01:24:49Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.9.3",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.9.4",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.9.3-py3-none-any.whl",
-    "filename": "meshpi-0.9.3-py3-none-any.whl",
-    "sha256": "18be27501c36e268fafa8ffc0169649d7a84e1f97c0a08539576572dcc6fcbcd",
-    "size": 172702,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.9.4-py3-none-any.whl",
+    "filename": "meshpi-0.9.4-py3-none-any.whl",
+    "sha256": "5f5710e097d15f9ba116be759fa8378d7e295c25393b7326a4905550a40ea0c2",
+    "size": 175269,
     "format": "wheel"
   },
   "locks": {
@@ -55,12 +55,14 @@
     }
   },
   "release_notes": [
-    "Windows startar MeshPi og prosessvakta utan eit synleg terminalvindauge. Eksisterande profilar, historikk og innstillingar blir bevarte."
+    "Transportfilter for nodar: Alle, Berre RF, Berre MQTT og Begge, med lagra mottaksvegar per gateway.",
+    "Nye meldingar og sist sett viser minutt og timar sidan; frå seks timar blir klokkeslett vist, og frå 24 timar både dato og klokkeslett.",
+    "Nodedetaljane viser full dato og klokkeslett. Eksisterande profilar, historikk og innstillingar blir bevarte."
   ],
   "channel": "stable",
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "aPZMVpsUqb8pB/djHhvqccKtd2FwvqPVVQhwXe8rth51XAcSCnVuMCCnlc4kVflElJpEi3ExS1Y11BDfh9PMzu/k2s/ai8N5YSH5aq9KfS1dYrPrO+coZB1UxEDH64opo5pZLqbVK3cmpPCQ92VuGrnpLRKBauGTW9fhQUIZ3/nsZYFKOyOuehAqsgIU/G3T+R/3XAAaZWdT9KORXe54ma8S8GgnsMZ8SOfl8N9vqcI2G9CLWLF0mg0J868OjLVqyZN4vhEYv0OoJhkIcGVIEYovvPXBGuq82CCVgwmw0XtsepZqlP9LvBnVxvPmBjFvN8rqDNK0AgG4TtWwTtOojFDArGv3L4mXvu75QTBLtEC7+m958ASOC/c7q3n1z3R3dWg8QD/Fh0y5FvkgABm4++t0WyA/xHWQc4MPN1dAvHs9ILYs2JTI/9tYnRsYCBuR/zf+rDvoB4xUacLU0uR2GygeHAifWxXqbG1F2xB7DHRRxKRBIPWNs/Ghs9b+Phbp"
+    "value": "Yw0pOAdGAMaQFhQFbDbpEvSnejr6/GQG848Aut7bN57/Xz6YhOyYJdvCoZGUYNAjV0a+J88r+IAPjZT3YDvg10WcVo/zU/bqt5QpTXSRbTc9rmH7+ANNCalp7XBuFUR/1dybogPJNpIF8LX6zq0GzgAg7jiC0X6hQNjbqdXWqEJS1fdRMPnQaCNYi6jpUqLvd569hdiPtfzbUNRaO2QtxLrzxhNciW7Em87/cZDijgz7chzOgwj8jeB/qn4D3sqDH+5KEt0q/jeYaWcB+7LmAxs48h9FxWFWuFN+C770ZnBiYTD0CO8UXxjaI7fthwG9QqcidpGl/7OJDjZ7HQw8zOHd4bCrs4cQ7YeHdyp5c7HaX9IsBpgUb2L5a2Lc2qedE71x+zh3LKtHDy0wBrt/tGKGfe4gxqvsyY0t6QEYRLK8d5eq5VzvTEedFOhpn3FVht73Y1eazsarCchp/9/76Ibgu7+WWGTJnBQT4miMSqXpKiO3YDOYIvrS5yOxOiQ8"
   }
 }

@@ -372,6 +372,12 @@ Select a node in the right panel to inspect it and press Enter to open its DM.
 node or press `Shift+F10` for node actions. The conversation list shows one DM
 entry per peer even when older data has several channel routes. Hidden legacy
 public routes remain in the database.
+The filter below **Nodes** offers **All**, **RF only**, **MQTT only**, and
+**Both**. Press `F4` or click it to choose. **Both** means receptions have
+been recorded through both RF and MQTT by the active local gateway; the two
+**only** choices exclude these nodes. Unknown transport appears under **All**.
+Reception paths are remembered after restart and filled from existing node
+data and reception history during upgrade. Missing history is not guessed.
 
 Node actions include traceroute and **Node info and logs**, which combines the
 overview, telemetry, positions, and traceroute history. Position rows include
@@ -383,8 +389,11 @@ both cases. No node action is sent automatically.
 Traceroute output includes forward/return paths and per-hop SNR when reported.
 Attempts and results are stored and shown in both the DM and node log. Firmware
 allows one traceroute every 30 seconds; MeshPi disables the action and displays
-a countdown. Older messages show a date such as `21.07.26`; today's messages
-show only the time.
+a countdown. Messages and last-seen times show **just now** for the first
+minute, then minutes until one hour and whole hours until six hours. Entries
+between six and 24 hours old show the clock time; older entries show date and
+time, such as `21.07.26 14:32`. This uses elapsed age across midnight. Labels
+update every minute. Node details always show the full date and time.
 
 When message input has focus, `↑`/`↓` recalls messages you sent in that exact
 public or DM conversation and restores the draft after the newest entry. A
@@ -407,6 +416,7 @@ Ctrl+L             move focus to the message field
 Ctrl+D             find a node and start a new DM
 F2                 move focus to the conversation list
 F3                 move focus to the node list
+F4                 select the RF, MQTT or both filter for nodes
 F8                 show or hide DM conversations
 F9                 show or hide secondary channels; the primary remains visible
 F10                choose language and other app settings

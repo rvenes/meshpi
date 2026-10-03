@@ -2,8 +2,9 @@ import asyncio
 import io
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+import pytest
 from textual.widgets import Button, Input, ListView, RichLog, Select, Static
 
 from meshpi.config import Settings
@@ -25,6 +26,8 @@ from meshpi.tui import (
     _map_link,
     _message_time_parts,
     _metric_label_and_value,
+    _node_matches_transport,
+    _node_transport_label,
 )
 from meshpi.update import UpdateNotice
 
@@ -447,6 +450,117 @@ def test_old_messages_show_a_dim_date_before_the_time():
     assert rendered.spans[0].style == "dim"
 
 
+@pytest.mark.parametrize(('seconds', 'expected'), [
+    (0, 'nettopp'), (59, 'nettopp'), (60, '1 min sidan'),
+    (900, '15 min sidan'), (3599, '59 min sidan'),
+    (3600, '1 time sidan'), (7200, '2 timar sidan'), (21599, '5 timar sidan'),
+])
+def test_recent_times_use_relative_labels(seconds, expected):
+    now = datetime(2026, 10, 3, 12, tzinfo=timezone.utc)
+    assert _message_time_parts((now - timedelta(seconds=seconds)).isoformat(), now) == (
+        None, expected,
+    )
+
+
+def test_time_boundaries_use_elapsed_hours_including_across_midnight():
+    now = datetime(2026, 10, 3, 2, tzinfo=timezone.utc)
+    for hours in (6, 23.999):
+        date, label = _message_time_parts((now - timedelta(hours=hours)).isoformat(), now)
+        assert date is None
+        assert label.startswith('kl. ')
+    old = now - timedelta(hours=24)
+    date, label = _message_time_parts(old.isoformat(), now)
+    assert date == old.astimezone().strftime('%d.%m.%y')
+    assert label == old.astimezone().strftime('%H:%M')
+    assert _message_time_parts(None, now) == (None, '–')
+    assert _message_time_parts('invalid', now) == (None, 'invalid')
+
+
+def test_node_transport_filters_are_exclusive_and_include_unknown_in_all():
+    both = {'transport': 'RF', 'seen_mqtt': True}
+    assert _node_transport_label(both) == 'RF + MQTT'
+    for mode in ('rf', 'mqtt'):
+        assert not _node_matches_transport(both, mode)
+    assert _node_matches_transport(both, 'both')
+    assert _node_matches_transport({'transport': 'RF'}, 'rf')
+    assert _node_matches_transport({'transport': 'MQTT'}, 'mqtt')
+    assert _node_matches_transport({'transport': 'Ukjend'}, 'all')
+    assert not _node_matches_transport({'transport': 'Ukjend'}, 'rf')
+
+
+def test_sidebar_filter_keyboard_empty_result_and_incoming_updates():
+    async def scenario():
+        backend = FakeBackend()
+        app = MeshPiTUI(Settings(), requester=backend.request, watcher=None, update_checker=None)
+        async with app.run_test(size=(150, 42)) as pilot:
+            await pilot.pause()
+            nodes = [
+                {'node_id': '!00000001', 'long_name': 'RF', 'transport': 'RF'},
+                {'node_id': '!00000002', 'long_name': 'MQTT', 'transport': 'MQTT'},
+                {'node_id': '!00000003', 'long_name': 'Both', 'seen_rf': 1, 'seen_mqtt': 1},
+                {'node_id': '!00000004', 'long_name': 'Unknown'},
+            ]
+            await app.workers.wait_for_complete()
+            await app._apply_nodes(nodes)
+            selector = app.query_one('#node-transport-filter', Select)
+            await pilot.press('f4')
+            assert selector.has_focus
+            for mode, expected in [('rf', '!00000001'), ('mqtt', '!00000002'),
+                                   ('both', '!00000003')]:
+                selector.value = mode
+                await pilot.pause(0.1)
+                assert [item.node_id for item in app.query(NodeSidebarItem)] == [expected]
+                assert '1 av 4' in str(app.query_one('#node-list-title', Static).render())
+            await app._apply_nodes(nodes[:2])
+            assert not list(app.query(NodeSidebarItem))
+            assert app.query_one('#node-filter-empty', Static).display
+            assert app.selected_node_id is None
+            nodes[0]['seen_mqtt'] = 1
+            await app._apply_nodes(nodes[:2])
+            assert app.node_transport_filter == 'both'
+            assert [item.node_id for item in app.query(NodeSidebarItem)] == ['!00000001']
+            selector.value = 'all'
+            await pilot.pause(0.1)
+            assert len(list(app.query(NodeSidebarItem))) == 2
+
+    asyncio.run(scenario())
+
+
+def test_relative_time_refresh_keeps_loaded_and_live_messages(monkeypatch):
+    class Clock(datetime):
+        current = datetime(2026, 10, 3, 12, tzinfo=timezone.utc)
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.current.astimezone(tz)
+
+    monkeypatch.setattr('meshpi.tui.datetime', Clock)
+
+    async def scenario():
+        app = MeshPiTUI(Settings(), requester=FakeBackend().request,
+                        watcher=None, update_checker=None)
+        async with app.run_test(size=(150, 42)) as pilot:
+            await pilot.pause()
+            msg = {'timestamp': Clock.current.isoformat(), 'from_node': '!00000001',
+                   'kind': 'public', 'transport': 'RF', 'text': 'Test refresh'}
+            await app.workers.wait_for_complete()
+            app._show_conversation(app.current_conversation, [msg], None, [])
+            log = app.query_one('#message-log', RichLog)
+            assert 'nettopp' in '\n'.join(line.text for line in log.lines)
+            app.live_event(LiveEvent({'type': 'message', 'data': msg | {
+                'text': 'Live refresh', 'conversation_id': app.current_conversation,
+            }}))
+            Clock.current += timedelta(minutes=2)
+            await app._refresh_time_labels()
+            await pilot.pause()
+            assert '2 min sidan' in '\n'.join(line.text for line in log.lines)
+            assert 'Test refresh' in '\n'.join(line.text for line in log.lines)
+            assert 'Live refresh' in '\n'.join(line.text for line in log.lines)
+            assert len(app._visible_timeline) == 2
+
+    asyncio.run(scenario())
+
+
 def test_tui_uses_enter_to_activate_and_tab_to_move_between_panes():
     async def scenario():
         backend = FakeBackend()
@@ -631,7 +745,7 @@ def test_status_bar_shows_current_meshpi_version_and_host(monkeypatch):
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.9.3" in text
+            assert "MeshPi 0.9.4" in text
             assert "Vert: testvert" in text
 
     run_scenario(scenario)

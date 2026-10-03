@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#090d0e">
   <title>MeshPi – Meshtastic i terminalen</title>
   <link rel="stylesheet" href="styles.css">
-  <script src="script.js?v=0.9.3" defer></script>
+  <script src="script.js?v=0.9.4" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#installasjon" data-en="Skip to installation">Gå til installasjon</a>
@@ -34,7 +34,7 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> <span data-en="Version 0.9.3">Versjon 0.9.3</span></div>
+        <div class="eyebrow"><span class="status-dot"></span> <span data-en="Version 0.9.4">Versjon 0.9.4</span></div>
         <h1><span class="heading-line" data-en="Meshtastic chat.">Meshtastic-chat.</span><br><span data-en="Right in your terminal.">Rett i terminalen.</span></h1>
         <p class="lead" data-en="MeshPi keeps the radio connection open in the background, receives messages in real time, and gives you public chat, direct messages, history, and a node list in a fast terminal interface.">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
@@ -59,7 +59,7 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.9.3</b><i>●</i> <span data-en="Connected">Tilkopla</span>
+          <b>MeshPi 0.9.4</b><i>●</i> <span data-en="Connected">Tilkopla</span>
           <span>BLE Meshtastic</span>
         </div>
         <div class="terminal-grid">
@@ -381,6 +381,7 @@
         <div><kbd>Ctrl+D</kbd><span data-en="Find a node and start a new DM">Finn ein node og start ein ny DM</span></div>
         <div><kbd>F2</kbd><span data-en="Move focus to the conversation list">Flytt markøren til samtalelista</span></div>
         <div><kbd>F3</kbd><span data-en="Move focus to the node list">Flytt markøren til nodelista</span></div>
+        <div><kbd>F4</kbd><span data-en="Select the RF, MQTT or both filter for nodes">Vel RF-, MQTT- eller begge-filter for nodar</span></div>
         <div><kbd>F8</kbd><span data-en="Show or hide DM conversations">Vis eller skjul DM-samtalane</span></div>
         <div><kbd>F9</kbd><span data-en="Show or hide secondary channels; the primary remains visible">Vis eller skjul sekundærkanalane; primærkanalen blir ståande</span></div>
         <div><kbd>F10</kbd><span data-en="Choose language and other app settings">Vel språk og andre appinnstillingar</span></div>
@@ -393,19 +394,20 @@
       </div>
     </section>
 
-    <section id="release-0.9.3" class="section release-section">
+    <section id="release-0.9.4" class="section release-section">
       <div class="section-heading">
         <span data-en="Latest version">Siste versjon</span>
-        <h2>MeshPi 0.9.3</h2>
+        <h2>MeshPi 0.9.4</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li data-en="Windows starts MeshPi in the background without leaving a terminal window open">Windows startar MeshPi i bakgrunnen utan at eit terminalvindauge blir ståande ope</li>
-          <li data-en="The daemon also restarts without a console after a crash">Daemonen startar òg utan konsoll etter eit krasj</li>
+          <li data-en="Filter nodes by RF only, MQTT only or both, based on recorded receptions through the active gateway">Filtrer nodar på berre RF, berre MQTT eller begge, basert på registrerte mottak gjennom den aktive gatewayen</li>
+          <li data-en="Recent messages and last-seen times show their age; entries at least 24 hours old show both date and time">Nye meldingar og sist sett viser alder; oppføringar som er minst 24 timar gamle viser både dato og klokkeslett</li>
+          <li data-en="Node details always show the full date and time; reception paths are remembered after restart">Nodedetaljane viser alltid full dato og klokkeslett; mottaksvegane blir hugsa etter omstart</li>
           <li data-en="Existing profiles, history and settings are preserved">Eksisterande profilar, historikk og innstillingar blir bevarte</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.9.3-py3-none-any.whl" data-en="Download the Python package">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.9.4-py3-none-any.whl" data-en="Download the Python package">Last ned Python-pakken</a>
           <a href="https://github.com/rvenes/meshpi" data-en="Source code on GitHub">Kjeldekode på GitHub</a>
         </div>
       </div>

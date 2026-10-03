@@ -196,10 +196,45 @@ def _message_time_parts(
         else:
             parsed = datetime.fromisoformat(value).astimezone()
         current = now.astimezone() if now is not None else datetime.now().astimezone()
-        date_label = parsed.strftime("%d.%m.%y") if parsed.date() != current.date() else None
-        return date_label, parsed.strftime("%H:%M")
-    except (ValueError, TypeError, OSError):
+        age = current.timestamp() - parsed.timestamp()
+        if 0 <= age < 60:
+            return None, _t("time.now")
+        if 60 <= age < 3600:
+            return None, _t("time.minutes", count=int(age // 60))
+        if 3600 <= age < 6 * 3600:
+            hours = int(age // 3600)
+            return None, _t("time.hour" if hours == 1 else "time.hours", count=hours)
+        if age >= 24 * 3600:
+            return parsed.strftime("%d.%m.%y"), parsed.strftime("%H:%M")
+        return None, _t("time.clock", time=parsed.strftime("%H:%M"))
+    except (ValueError, TypeError, OSError, OverflowError):
         return None, str(value)
+
+
+def _age_time(value: str | int | None, now: datetime | None = None) -> str:
+    date, time = _message_time_parts(value, now=now)
+    return f"{date} {time}" if date else time
+
+
+def _node_transports(node: dict[str, Any]) -> set[str]:
+    transports = {str(node.get("transport"))} & {"RF", "MQTT"}
+    if node.get("seen_rf"):
+        transports.add("RF")
+    if node.get("seen_mqtt"):
+        transports.add("MQTT")
+    return transports
+
+
+def _node_transport_label(node: dict[str, Any]) -> str:
+    transports = _node_transports(node)
+    return " + ".join(value for value in ("RF", "MQTT") if value in transports)
+
+
+def _node_matches_transport(node: dict[str, Any], mode: str) -> bool:
+    transports = _node_transports(node)
+    return mode == "all" or transports == {
+        "rf": {"RF"}, "mqtt": {"MQTT"}, "both": {"RF", "MQTT"},
+    }.get(mode)
 
 
 def _battery(value: Any) -> str:
@@ -497,7 +532,7 @@ class ConversationItem(ListItem):
         if unread:
             text.append(f"  {unread}", style="bold cyan")
         text.append("\n")
-        last_time = _time(self.conversation.get("last_timestamp"))
+        last_time = _age_time(self.conversation.get("last_timestamp"))
         last_text = sanitize_terminal_text(
             self.conversation.get("last_text") or _t("conversation.no_messages")
         )
@@ -545,13 +580,13 @@ class NodePickerItem(ListItem):
             text.append(f"  {short_name}", style="dim")
         text.append(f"  {self.node_id}", style="cyan")
         text.append("\n")
-        details = [_t("node.last_seen", time=_time(self.node.get("last_heard")))]
+        details = [_t("node.last_seen", time=_age_time(self.node.get("last_heard")))]
         if self.node.get("hops_away") is not None:
             details.append(_t("node.hops", value=self.node["hops_away"]))
         if self.node.get("battery_level") is not None:
             details.append(_t("node.battery", value=_battery(self.node["battery_level"])))
-        if self.node.get("transport") not in (None, "", "Ukjend"):
-            details.append(str(self.node["transport"]))
+        if transport := _node_transport_label(self.node):
+            details.append(transport)
         text.append("  " + "  •  ".join(details), style="dim")
         return text
 
@@ -584,14 +619,13 @@ class NodeSidebarItem(ListItem):
         text.append(str(name), style="bold")
         text.append(f" [{self.node_id[-4:]}]", style="cyan")
         text.append("\n  ")
-        details = [_t("node.last", time=_time(self.node.get("last_heard")))]
+        details = [_t("node.last", time=_age_time(self.node.get("last_heard")))]
         if self.node.get("hops_away") is not None:
             details.append(_t("node.hops", value=self.node["hops_away"]))
         if self.node.get("battery_level") is not None:
             details.append(_battery(self.node["battery_level"]))
-        transport = self.node.get("transport")
-        if transport not in (None, "", "Ukjend"):
-            details.append(str(transport))
+        if transport := _node_transport_label(self.node):
+            details.append(transport)
         text.append("  •  ".join(details), style="dim")
         return text
 
@@ -1136,8 +1170,8 @@ class NodeInfoScreen(ModalScreen[None]):
             (_t("field.short_name"), node.get("short_name")),
             (_t("field.hardware"), node.get("hw_model")),
             (_t("field.role"), node.get("role")),
-            (_t("field.last_heard"), _time(node.get("last_heard"), seconds=True)),
-            (_t("field.transport"), node.get("transport")),
+            (_t("field.last_heard"), _date_time(node.get("last_heard"), seconds=True)),
+            (_t("field.transport"), _node_transport_label(node)),
             (_t("field.hops"), node.get("hops_away")),
             ("SNR", f"{node['snr']:g} dB" if node.get("snr") is not None else None),
             ("RSSI", f"{node['rssi']} dBm" if node.get("rssi") is not None else None),
@@ -1616,6 +1650,7 @@ class HelpScreen(ModalScreen[None]):
         ("Ctrl+D", "help.new_dm"),
         ("F2", "help.conversations"),
         ("F3", "help.nodes"),
+        ("F4", "help.node_filter"),
         ("F8", "help.toggle_dm"),
         ("F9", "help.toggle_channels"),
         ("F10", "help.settings"),
@@ -1854,6 +1889,19 @@ class MeshPiTUI(App[str | None]):
         height: 2;
     }
 
+    #node-transport-filter {
+        height: 3;
+        margin: 0 1;
+        width: 1fr;
+    }
+
+    #node-filter-empty {
+        height: auto;
+        padding: 1 2;
+        color: #8d9699;
+        display: none;
+    }
+
     #node-list {
         height: 1fr;
         background: $panel;
@@ -1864,7 +1912,8 @@ class MeshPiTUI(App[str | None]):
     }
 
     NodeSidebarItem {
-        height: 3;
+        height: auto;
+        min-height: 3;
         padding: 0 1;
         color: #cbd0d2;
     }
@@ -1876,7 +1925,7 @@ class MeshPiTUI(App[str | None]):
 
     .node-sidebar-label {
         width: 1fr;
-        height: 2;
+        height: auto;
     }
 
     #key-bar {
@@ -2160,6 +2209,7 @@ class MeshPiTUI(App[str | None]):
         Binding("ctrl+d", "new_dm", ""),
         Binding("f2", "focus_conversations", ""),
         Binding("f3", "focus_nodes", ""),
+        Binding("f4", "focus_node_filter", ""),
         Binding("f8", "toggle_direct_messages", "", priority=True),
         Binding("f9", "toggle_channels", "", priority=True),
         Binding("f10", "settings", "", priority=True),
@@ -2201,6 +2251,9 @@ class MeshPiTUI(App[str | None]):
         self.show_direct_messages = True
         self.show_secondary_channels = True
         self.nodes: dict[str, dict[str, Any]] = {}
+        self.node_transport_filter = "all"
+        self._visible_timeline: list[tuple[str, dict[str, Any]]] = []
+        self._timeline_time_labels: list[tuple[str | None, str]] = []
         self.current_conversation = "public"
         self._watch_socket: socket.socket | None = None
         self._watch_lock = threading.Lock()
@@ -2227,6 +2280,7 @@ class MeshPiTUI(App[str | None]):
                 ("ctrl+d", "new_dm", "binding.new_dm", False),
                 ("f2", "focus_conversations", "binding.conversations", False),
                 ("f3", "focus_nodes", "binding.nodes", False),
+                ("f4", "focus_node_filter", "binding.node_filter", False),
                 ("f8", "toggle_direct_messages", "binding.toggle_dm", True),
                 ("f9", "toggle_channels", "binding.toggle_channels", True),
                 ("f10", "settings", "binding.settings", True),
@@ -2273,6 +2327,15 @@ class MeshPiTUI(App[str | None]):
                 yield Static(_t("main.node_details"), id="node-panel-title", classes="panel-title")
                 yield Static(_t("main.no_node_selected"), id="node-details")
                 yield Static(_t("main.nodes"), id="node-list-title", classes="panel-title")
+                node_filter = Select(
+                    self._node_filter_options(),
+                    value=self.node_transport_filter,
+                    allow_blank=False,
+                    id="node-transport-filter",
+                )
+                node_filter.tooltip = _t("node_filter.help")
+                yield node_filter
+                yield Static(_t("node_filter.empty"), id="node-filter-empty")
                 yield ListView(id="node-list")
         yield Static(
             _t("main.key_bar"),
@@ -2309,6 +2372,38 @@ class MeshPiTUI(App[str | None]):
             )
         self.set_interval(1, self._update_status_bar)
         self.set_interval(5, self._schedule_status_refresh)
+        self.set_interval(60, self._refresh_time_labels)
+
+    @staticmethod
+    def _node_filter_options() -> list[tuple[str, str]]:
+        return [(_t(f"node_filter.{mode}"), mode) for mode in ("all", "rf", "mqtt", "both")]
+
+    @on(Select.Changed, "#node-transport-filter")
+    async def node_transport_changed(self, event: Select.Changed) -> None:
+        if event.value is Select.BLANK:
+            return
+        self.node_transport_filter = str(event.value)
+        await self._apply_nodes(list(self.nodes.values()))
+
+    def action_focus_node_filter(self) -> None:
+        if self.query_one("#node-panel", Vertical).display:
+            self.query_one("#node-transport-filter", Select).focus()
+
+    async def _refresh_time_labels(self) -> None:
+        await self._apply_nodes(list(self.nodes.values()))
+        await self._render_conversation_sidebar()
+        log = self.query_one("#message-log", RichLog)
+        labels = [
+            _message_time_parts(entry.get("timestamp" if kind == "message" else "started_at"))
+            for kind, entry in self._visible_timeline
+        ]
+        if labels != self._timeline_time_labels and log.text_selection is None:
+            offset, at_end = log.scroll_offset, log.is_vertical_scroll_end
+            self._write_visible_timeline(log)
+            if at_end:
+                log.scroll_end(animate=False)
+            else:
+                log.scroll_to(x=offset.x, y=offset.y, animate=False, force=True)
 
     def on_resize(self, event: Resize) -> None:
         width = event.size.width
@@ -2684,9 +2779,18 @@ class MeshPiTUI(App[str | None]):
 
     async def _apply_nodes(self, nodes: list[dict[str, Any]]) -> None:
         self.nodes = {str(node["node_id"]): node for node in nodes}
-        ordered = sorted(self.nodes.values(), key=_node_sidebar_sort_key)
+        visible = {
+            node_id: node for node_id, node in self.nodes.items()
+            if _node_matches_transport(node, self.node_transport_filter)
+        }
+        ordered = sorted(visible.values(), key=_node_sidebar_sort_key)
+        self.query_one("#node-list-title", Static).update(
+            _t("main.nodes_count", count=len(visible)) if self.node_transport_filter == "all"
+            else _t("main.nodes_filtered", count=len(visible), total=len(self.nodes))
+        )
+        self.query_one("#node-filter-empty", Static).display = not visible
         preferred = self.selected_node_id
-        if preferred not in self.nodes:
+        if preferred not in visible:
             preferred = (
                 self._conversation_peer(self.current_conversation)
                 if not self._is_public_conversation(self.current_conversation)
@@ -2697,7 +2801,7 @@ class MeshPiTUI(App[str | None]):
             item for item in node_list.children if isinstance(item, NodeSidebarItem)
         ]
         existing_ids = [item.node_id for item in existing]
-        incoming_ids = list(self.nodes)
+        incoming_ids = list(visible)
         existing_local = next(
             (item.node_id for item in existing if item.node.get("is_local")),
             None,
@@ -2705,7 +2809,7 @@ class MeshPiTUI(App[str | None]):
         incoming_local = next(
             (
                 str(node["node_id"])
-                for node in self.nodes.values()
+                for node in visible.values()
                 if node.get("is_local")
             ),
             None,
@@ -2720,9 +2824,6 @@ class MeshPiTUI(App[str | None]):
                 item.update_node(self.nodes[item.node_id])
             if self.selected_node_id in self.nodes:
                 self._show_node(self.nodes[self.selected_node_id])
-            self.query_one("#node-list-title", Static).update(
-                _t("main.nodes_count", count=len(self.nodes))
-            )
             return
 
         self._rebuilding_nodes = True
@@ -2731,9 +2832,7 @@ class MeshPiTUI(App[str | None]):
         ids = [str(node["node_id"]) for node in ordered]
         node_list.index = ids.index(preferred) if preferred in ids else (0 if ids else None)
         self.selected_node_id = ids[node_list.index] if node_list.index is not None else None
-        self.query_one("#node-list-title", Static).update(
-            _t("main.nodes_count", count=len(ordered))
-        )
+        self._show_node(self.nodes.get(self.selected_node_id or ""))
         self._rebuilding_nodes = False
 
     @on(ListView.Highlighted, "#conversation-list")
@@ -2982,18 +3081,8 @@ class MeshPiTUI(App[str | None]):
                     insert_at,
                     ("node_action", action),
                 )
-        for entry_type, entry in timeline:
-            renderable = (
-                self._render_message(entry)
-                if entry_type == "message"
-                else self._render_node_action(entry)
-            )
-            log.write(renderable, scroll_end=False)
-        if self.update_notice is not None:
-            log.write(
-                self._render_update_notice(self.update_notice),
-                scroll_end=False,
-            )
+        self._visible_timeline = timeline
+        self._write_visible_timeline(log)
         log.scroll_end(animate=False)
         self._show_node(node)
         if node:
@@ -3005,6 +3094,25 @@ class MeshPiTUI(App[str | None]):
             if item.conversation_id == conversation:
                 item.conversation["unread"] = 0
                 item.update_conversation(item.conversation)
+
+    def _write_visible_timeline(self, log: RichLog) -> None:
+        log.clear()
+        self._timeline_time_labels = []
+        for entry_type, entry in self._visible_timeline:
+            self._timeline_time_labels.append(_message_time_parts(
+                entry.get("timestamp" if entry_type == "message" else "started_at")
+            ))
+            renderable = (
+                self._render_message(entry)
+                if entry_type == "message"
+                else self._render_node_action(entry)
+            )
+            log.write(renderable, scroll_end=False)
+        if self.update_notice is not None:
+            log.write(
+                self._render_update_notice(self.update_notice),
+                scroll_end=False,
+            )
 
     def _render_message(self, message: dict[str, Any]) -> Text:
         node_id = str(message.get("from_node") or "")
@@ -3223,13 +3331,13 @@ class MeshPiTUI(App[str | None]):
             (_t("field.node_id"), node.get("node_id")),
             (_t("field.hardware"), node.get("hw_model")),
             (_t("field.role"), node.get("role")),
-            (_t("field.last_seen"), _time(node.get("last_heard"), seconds=True)),
+            (_t("field.last_seen"), _date_time(node.get("last_heard"), seconds=True)),
             (_t("metric.battery"), _battery(battery) + bar),
             (_t("metric.voltage"), f"{node['voltage']} V" if node.get("voltage") else None),
             ("SNR", node.get("snr")),
             ("RSSI", node.get("rssi")),
             (_t("field.hops"), node.get("hops_away")),
-            (_t("field.transport"), node.get("transport")),
+            (_t("field.transport"), _node_transport_label(node)),
             (_t("field.can_receive_dm"), dm),
         )
         text = Text()
@@ -3435,6 +3543,8 @@ class MeshPiTUI(App[str | None]):
             self.current_conversation,
             str(conversation),
         ):
+            self._visible_timeline.append(("message", data))
+            self._timeline_time_labels.append(_message_time_parts(data.get("timestamp")))
             self.query_one("#message-log", RichLog).write(
                 self._render_message(data),
                 scroll_end=True,
@@ -4123,6 +4233,11 @@ class MeshPiTUI(App[str | None]):
             _t("main.conversations")
         )
         self.query_one("#node-panel-title", Static).update(_t("main.node_details"))
+        node_filter = self.query_one("#node-transport-filter", Select)
+        node_filter.set_options(self._node_filter_options())
+        node_filter.value = self.node_transport_filter
+        node_filter.tooltip = _t("node_filter.help")
+        self.query_one("#node-filter-empty", Static).update(_t("node_filter.empty"))
         self.query_one("#input-help", Static).update(_t("main.input_help"))
         self.query_one("#key-bar", Static).update(_t("main.key_bar"))
         message_input.placeholder = _t("main.message_placeholder")

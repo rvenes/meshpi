@@ -23,6 +23,45 @@ from meshpi.models import (
 LOCAL_NODE_ID = "!710365c8"
 
 
+def test_node_transports_accumulate_per_gateway_and_survive_restart(tmp_path):
+    database = Database(tmp_path / 'transports.db')
+    database.initialize()
+    database.upsert_node(Node(node_id='!11112222', last_heard=100,
+                              transport=Transport.RF), local_node_id=LOCAL_NODE_ID)
+    database.upsert_node(Node(node_id='!11112222', last_heard=99,
+                              transport=Transport.MQTT), local_node_id=LOCAL_NODE_ID)
+    database.upsert_node(Node(node_id='!11112222', transport=Transport.UNKNOWN),
+                         local_node_id=LOCAL_NODE_ID)
+    database.upsert_node(Node(node_id='!11112222', transport=Transport.RF),
+                         local_node_id='!00000001')
+    database.initialize()
+    node = database.get_node('!11112222', local_node_id=LOCAL_NODE_ID)
+    assert node['transport'] == 'RF'
+    assert node['last_heard'] == 100
+    assert (node['seen_rf'], node['seen_mqtt']) == (1, 1)
+    other = database.list_nodes(local_node_id='!00000001')[0]
+    assert (other['seen_rf'], other['seen_mqtt']) == (1, 0)
+
+
+def test_v5_migration_backfills_both_from_scoped_receptions_without_data_loss(tmp_path):
+    database = Database(tmp_path / 'v5.db')
+    database.initialize()
+    database.upsert_node(Node(node_id='!11112222', long_name='Preserved',
+                              transport=Transport.MQTT), local_node_id=LOCAL_NODE_ID)
+    database.insert_message(message())
+    with sqlite3.connect(database.path) as connection:
+        connection.execute('ALTER TABLE nodes DROP COLUMN seen_rf')
+        connection.execute('ALTER TABLE nodes DROP COLUMN seen_mqtt')
+        connection.execute('PRAGMA user_version=5')
+    database.initialize()
+    node = database.get_node('!11112222', local_node_id=LOCAL_NODE_ID)
+    assert node['long_name'] == 'Preserved'
+    assert (node['seen_rf'], node['seen_mqtt']) == (1, 1)
+    assert database.list_messages('public')[0]['text'] == 'Test'
+    with sqlite3.connect(database.path) as connection:
+        assert connection.execute('PRAGMA user_version').fetchone()[0] == 5
+
+
 def message(packet_id=42, kind=ConversationKind.PUBLIC, peer=None):
     return Message(
         packet_id=packet_id,

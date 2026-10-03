@@ -420,6 +420,13 @@ ein node, eller marker han og trykk `Shift+F10`, for å opne nodehandlingane.
 Samtalelista viser berre éi DM-oppføring per motpart, sjølv om eldre data har
 fleire kanalruter til same node. Gamle «Public (arkiv …)»-ruter blir ikkje
 viste, men historikken blir verande i databasen.
+Filteret under «Nodar» viser «Alle», «Berre RF», «Berre MQTT» eller «Begge».
+Trykk `F4` eller klikk på filteret for å velje. «Begge» tyder at noden er
+observert via både RF og MQTT gjennom den aktive lokale gatewayen; dei to
+«Berre»-vala utelèt slike nodar. Ukjend transport er med under «Alle».
+Mottaksvegane blir hugsa etter omstart. Ved oppgradering blir dei fylde ut
+frå transporten i noderegisteret og den lagra mottakshistorikken; manglande
+historikk blir ikkje gjetta. Overskrifta viser talet på synlege nodar av totalen.
 Her kan du mellom anna sende traceroute. Status og resultat kjem som ei tydeleg
 ramme i DM-samtalen med noden, slik at resten av appen kan brukast medan du
 ventar. Vel «Nodeinfo og loggar» i den same menyen for ei samla vising med
@@ -440,8 +447,11 @@ når nodane rapporterer dette. Traceroute-forsøk og resultat blir lagra i den
 lokale loggen og viste igjen både i DM-samtalen og nodeinfo. Fastvaren tillèt
 éin traceroute kvart 30. sekund;
 nodehandlinga er sperra og viser ei nedteljing til neste forsøk kan sendast.
-Meldingar frå tidlegare datoar viser dato som `21.07.26` i svak grå tekst før
-klokkeslettet; meldingar frå i dag viser berre klokkeslett.
+Meldingar og «sist sett» viser «nettopp» det første minuttet, deretter minutt
+fram til éin time og heile timar fram til seks timar. Frå seks til 24 timar
+viser dei klokkeslett, og frå 24 timar dato og klokkeslett som `21.07.26 14:32`.
+Grensa følgjer faktisk alder, også over midnatt. Tidsmerkinga blir oppdatert
+kvar minutt utan nye mottak. Nodedetaljane viser alltid full dato og klokkeslett.
 
 Når meldingsfeltet har fokus, hentar `↑` og `↓` fram tidlegare meldingar som
 du sjølv har sendt i akkurat den aktive public- eller DM-samtalen. Utkastet
@@ -467,6 +477,7 @@ Ctrl+L             flytt markøren til meldingsfeltet
 Ctrl+D             finn ein node og start ein ny DM
 F2                 flytt markøren til samtalelista
 F3                 flytt markøren til nodelista
+F4                 vel RF-, MQTT- eller begge-filter for nodar
 F8                 vis eller skjul DM-samtalane
 F9                 vis eller skjul sekundærkanalane; primærkanalen blir ståande
 F10                vel språk og andre appinnstillingar

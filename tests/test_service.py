@@ -78,6 +78,20 @@ def service(tmp_path):
     return value, interface, database
 
 
+def test_all_packet_types_accumulate_transport_evidence_without_sending(service):
+    value, interface, database = service
+    packet = {'fromId': '!11112222', 'rxTime': 1_700_000_000,
+              'transportMechanism': 'TRANSPORT_LORA'}
+    value._on_receive(packet, interface)
+    value._on_receive(packet | {'viaMqtt': True}, interface)
+    node = database.get_node('!11112222', local_node_id=value._local_node_id)
+    assert (node['seen_rf'], node['seen_mqtt']) == (1, 1)
+    value._on_receive({'fromId': '!33334444', 'viaMqtt': True}, FakeInterface())
+    assert database.get_node('!33334444', local_node_id=value._local_node_id) is None
+    assert not interface.calls
+    assert not interface.data_calls
+
+
 def test_discover_connections_includes_ble_results(service, monkeypatch):
     value, _, _ = service
     monkeypatch.setattr("meshpi.service.discover_serial", list)

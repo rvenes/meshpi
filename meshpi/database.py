@@ -342,6 +342,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     rssi INTEGER,
     hops_away INTEGER,
     transport TEXT NOT NULL DEFAULT 'Ukjend',
+    seen_rf INTEGER NOT NULL DEFAULT 0,
+    seen_mqtt INTEGER NOT NULL DEFAULT 0,
     can_receive_dm INTEGER,
     is_local INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL,
@@ -395,6 +397,7 @@ class Database:
             connection.execute("BEGIN IMMEDIATE")
             self._migrate_message_schema(connection, current_version)
             self._migrate_scope_schema(connection, current_version)
+            self._migrate_node_transports(connection)
             self._ensure_message_indexes(connection)
             self._ensure_scope_indexes(connection)
             # Eldre versjonar kalla også den førebelse, implisitte ACK-en
@@ -406,6 +409,40 @@ class Database:
             self._prune_messages(connection)
             self._prune_observations(connection)
             connection.execute(f"PRAGMA user_version={DATABASE_SCHEMA_VERSION}")
+
+    @staticmethod
+    def _migrate_node_transports(connection: sqlite3.Connection) -> None:
+        # Additive fields remain readable and writable by v5 clients on rollback.
+        columns = {row['name'] for row in connection.execute('PRAGMA table_info(nodes)')}
+        if {'seen_rf', 'seen_mqtt'} <= columns:
+            return
+        for column in ('seen_rf', 'seen_mqtt'):
+            if column not in columns:
+                connection.execute(
+                    f'ALTER TABLE nodes ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0'
+                )  # nosec B608 -- column names are fixed local constants
+        connection.execute(
+            """
+            WITH observations AS (
+                SELECT local_node_id, node_id, transport FROM nodes
+                UNION
+                SELECT o.local_node_id, m.from_node, o.transport
+                FROM message_observations o JOIN messages m ON m.id=o.message_id
+                WHERE m.direction='inn'
+                UNION
+                SELECT local_node_id, node_id, transport FROM telemetry_samples
+                UNION
+                SELECT local_node_id, node_id, transport FROM positions
+            )
+            UPDATE nodes SET
+                seen_rf=EXISTS(SELECT 1 FROM observations o
+                    WHERE o.local_node_id=nodes.local_node_id
+                    AND o.node_id=nodes.node_id AND o.transport='RF'),
+                seen_mqtt=EXISTS(SELECT 1 FROM observations o
+                    WHERE o.local_node_id=nodes.local_node_id
+                    AND o.node_id=nodes.node_id AND o.transport='MQTT')
+            """
+        )
 
     @staticmethod
     def _migrate_message_schema(
@@ -2419,6 +2456,15 @@ class Database:
                         THEN excluded.updated_at ELSE nodes.updated_at END
                 """,
                 values,
+            )
+
+            connection.execute(
+                """
+                UPDATE nodes SET seen_rf=MAX(seen_rf, ?), seen_mqtt=MAX(seen_mqtt, ?)
+                WHERE local_node_id=? AND node_id=?
+                """,
+                (int(str(node.transport) == 'RF'), int(str(node.transport) == 'MQTT'),
+                 local_node_id.lower(), node.node_id),
             )
 
     def list_nodes(

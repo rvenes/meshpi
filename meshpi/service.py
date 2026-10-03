@@ -44,7 +44,11 @@ from meshpi.models import (
     validate_message_text,
 )
 from meshpi.node_actions import NodeActionError, parse_traceroute_response
-from meshpi.observations import parse_position_packet, parse_telemetry_packet
+from meshpi.observations import (
+    parse_node_observation,
+    parse_position_packet,
+    parse_telemetry_packet,
+)
 from meshpi.packet import node_from_registry, parse_text_packet
 from meshpi.transports import Interface, InterfaceFactory, default_interface_factory
 
@@ -758,6 +762,11 @@ class MeshtasticService:
             with self._state_lock:
                 self._status["last_valid_event_at"] = now_iso()
             self._update_routing_ack(packet)
+            if self._local_node_id:
+                node = parse_node_observation(packet, self._local_node_id)
+                if node is not None:
+                    self.database.upsert_node(node, local_node_id=self._local_node_id)
+                    self.events.publish({"type": "nodes"})
             self._store_observations(packet)
             message = parse_text_packet(packet, self._local_node_id)
             if message is None:

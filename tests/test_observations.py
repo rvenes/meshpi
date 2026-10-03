@@ -1,4 +1,21 @@
-from meshpi.observations import parse_position_packet, parse_telemetry_packet
+from meshpi.observations import (
+    parse_node_observation,
+    parse_position_packet,
+    parse_telemetry_packet,
+)
+
+
+def test_node_observation_tracks_source_transport_and_never_guesses_rf():
+    packet = {'fromId': '!11112222', 'rxTime': 1_700_000_000, 'viaMqtt': True}
+    node = parse_node_observation(packet, '!710365c8')
+    assert node.node_id == '!11112222'
+    assert node.last_heard == 1_700_000_000
+    assert str(node.transport) == 'MQTT'
+    assert not node.is_local
+    packet.pop('viaMqtt')
+    assert str(parse_node_observation(packet, '!710365c8').transport) == 'Ukjend'
+    assert parse_node_observation({'fromId': '!ffffffff'}, '!710365c8') is None
+    assert parse_node_observation({}, '!710365c8') is None
 
 
 def test_telemetry_packet_builds_one_sample_per_metric_group():
