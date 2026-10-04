@@ -208,6 +208,16 @@ class IPCApplication:
                     "daemon_pid": os.getpid(),
                 },
             }
+        if command == "local_node_info":
+            return {"ok": True, "data": self.service.local_node_info()}
+        if command == "remove_nodes":
+            return {
+                "ok": True,
+                "data": self.service.remove_nodes(
+                    request.get("node_ids", []),
+                    str(request.get("expected_local_node_id", "")),
+                ),
+            }
         if command == "shutdown":
             if self.shutdown_callback is None:
                 raise RuntimeError(tr("backend.ipc.shutdown_unavailable"))
@@ -314,6 +324,7 @@ class IPCApplication:
                 else []
             )
             channels = self.active_channels()
+            active_public_routes = {str(channel["conversation"]) for channel in channels}
             by_id = {
                 str(item["conversation"]): item for item in conversations
             }
@@ -374,7 +385,11 @@ class IPCApplication:
             return {
                 "ok": True,
                 "data": self._visible_conversations(
-                    conversations,
+                    [
+                        item for item in conversations
+                        if item["kind"] != "public"
+                        or str(item["conversation"]) in active_public_routes
+                    ],
                     str(request.get("preferred_conversation") or ""),
                 ),
             }

@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.9.4",
-  "published_at": "2026-10-03T01:24:49Z",
+  "latest_version": "0.9.5",
+  "published_at": "2026-10-04T04:18:53Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.9.4",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.9.5",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.9.4-py3-none-any.whl",
-    "filename": "meshpi-0.9.4-py3-none-any.whl",
-    "sha256": "5f5710e097d15f9ba116be759fa8378d7e295c25393b7326a4905550a40ea0c2",
-    "size": 175269,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.9.5-py3-none-any.whl",
+    "filename": "meshpi-0.9.5-py3-none-any.whl",
+    "sha256": "9978928d9fccaa03f5bffcd69bcc9cd17b613dcc23211618ca501769cf40a7b1",
+    "size": 193243,
     "format": "wheel"
   },
   "locks": {
@@ -55,14 +55,16 @@
     }
   },
   "release_notes": [
-    "Transportfilter for nodar: Alle, Berre RF, Berre MQTT og Begge, med lagra mottaksvegar per gateway.",
-    "Nye meldingar og sist sett viser minutt og timar sidan; frå seks timar blir klokkeslett vist, og frå 24 timar både dato og klokkeslett.",
-    "Nodedetaljane viser full dato og klokkeslett. Eksisterande profilar, historikk og innstillingar blir bevarte."
+    "F10 opnar lokal nodeinfo med radioregion, modemprofil, rolle, batteri, kanaldetaljar og tal på nodar",
+    "Ei breiare, søkbar nodeliste viser sist sett, GPS-posisjon og batteri; Enter opnar detaljar og kartlenkje",
+    "Slett éin eller fleire valde kontaktar frå den tilkopla radioen, med stadfesting og verifikasjon mot ei nyinnlesen nodeliste",
+    "Gamle og inaktive kanaloppføringar blir skjulte når kanalane på radioen blir endra, medan meldingshistorikken blir bevart",
+    "Profilar, meldingshistorikk og radioinnstillingar blir bevarte; kontaktar kan bli lærte inn att frå ny trafikk"
   ],
   "channel": "stable",
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "Yw0pOAdGAMaQFhQFbDbpEvSnejr6/GQG848Aut7bN57/Xz6YhOyYJdvCoZGUYNAjV0a+J88r+IAPjZT3YDvg10WcVo/zU/bqt5QpTXSRbTc9rmH7+ANNCalp7XBuFUR/1dybogPJNpIF8LX6zq0GzgAg7jiC0X6hQNjbqdXWqEJS1fdRMPnQaCNYi6jpUqLvd569hdiPtfzbUNRaO2QtxLrzxhNciW7Em87/cZDijgz7chzOgwj8jeB/qn4D3sqDH+5KEt0q/jeYaWcB+7LmAxs48h9FxWFWuFN+C770ZnBiYTD0CO8UXxjaI7fthwG9QqcidpGl/7OJDjZ7HQw8zOHd4bCrs4cQ7YeHdyp5c7HaX9IsBpgUb2L5a2Lc2qedE71x+zh3LKtHDy0wBrt/tGKGfe4gxqvsyY0t6QEYRLK8d5eq5VzvTEedFOhpn3FVht73Y1eazsarCchp/9/76Ibgu7+WWGTJnBQT4miMSqXpKiO3YDOYIvrS5yOxOiQ8"
+    "value": "Dv4lqqbdH1fk5/tVvrMGkr38vBOOOBku0Ioji/An8kPlcrXRXVSAppYV6RuFdmRLuOy3ApAdalDS1pd0/siIC5Z4cmk09AwJWblFVCZrK3EPVsMYZ58aEmqMAOFXxTvgq8pLNfDUDEILJQOwkq5FpBs1RHR0v0lr3XtKtkLg8u97FHuZiUzI+xJDMNtU6Fvkp2ko4G8iSfdoqoTj2Mj1JEpDXWI+S5cdo/1cF130bUN8zHp8j66J85IY/WRb14Hv8uUzxz6Z0KFunZdc5tTjr1e8dLRP38ffy6fgaU9f9y2UQh5Fnsb4Aew/jdiwj0kzE9a6R2ZGkbduo77cX6F43hGzYfOuyii/duSUuw31Eu2nTFb21vFCisHeAcLSRBKwzpo1UdAPA8dPQf7qPFnn5ZFObd70aNCPWZUC55pHs/rvLBamk4t8x9s5tH71RiQCkwct97yE3u2101d1WlzcZcx2QhbHtsQ+WKbJ6qXFjxxeVK2OeqEtUpwHcB2/d9H/"
   }
 }

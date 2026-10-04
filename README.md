@@ -73,7 +73,8 @@ meshpi language nn
 meshpi language en
 ```
 
-Trykk `F10` i fullskjermsgrensesnittet og vel **Nynorsk** eller **English**.
+Trykk `F10` i fullskjermsgrensesnittet, opne fana **App** og vel **Nynorsk**
+eller **English**.
 Synleg tekst blir oppdatert med ein gong utan omstart av appen eller daemonen,
 og valet blir brukt neste gong MeshPi blir opna.
 
@@ -418,8 +419,10 @@ høgrepanelet for å vise detaljane, og trykk Enter for å opne DM. «Ny DM» vi
 òg heile nodelista og kan filtrerast på namn eller node-ID. Høgreklikk på
 ein node, eller marker han og trykk `Shift+F10`, for å opne nodehandlingane.
 Samtalelista viser berre éi DM-oppføring per motpart, sjølv om eldre data har
-fleire kanalruter til same node. Gamle «Public (arkiv …)»-ruter blir ikkje
-viste, men historikken blir verande i databasen.
+fleire kanalruter til same node. Når kanalar blir endra eller deaktiverte på
+radioen, blir gamle og inaktive kanaloppføringar skjulte frå samtalelista.
+Gamle «Public (arkiv …)»-ruter blir heller ikkje viste; all meldingshistorikk
+blir verande i databasen.
 Filteret under «Nodar» viser «Alle», «Berre RF», «Berre MQTT» eller «Begge».
 Trykk `F4` eller klikk på filteret for å velje. «Begge» tyder at noden er
 observert via både RF og MQTT gjennom den aktive lokale gatewayen; dei to
@@ -480,7 +483,7 @@ F3                 flytt markøren til nodelista
 F4                 vel RF-, MQTT- eller begge-filter for nodar
 F8                 vis eller skjul DM-samtalane
 F9                 vis eller skjul sekundærkanalane; primærkanalen blir ståande
-F10                vel språk og andre appinnstillingar
+F10                lokal nodeinfo og appinnstillingar
 Shift+F10          opne handlingar for markert node
 Delete             lukk vald DM utan å slette historikken
 Ctrl+R             oppdater status, samtalar og nodar
@@ -491,6 +494,32 @@ Esc                lukk dialogen som er open
 
 Grensesnittet tilpassar seg terminalbreidda. Nodedetaljane blir skjulte først
 dersom vindauget er smalt.
+
+`F10` opnar lokal nodeinfo med fanene Oversikt, Radio, Status, Nodar, Kanalar
+og App. Bruk `←`/`→` for å byte fane, `R`/`Ctrl+R` for å oppdatere og `Esc` eller `F10`
+for å lukke. Informasjonen blir oppdatert kvart tiande sekund medan sida er
+open. Sida viser mellom anna radioregion, modemprofil, rolle, batteri og
+kanalinnstillingar når radioen rapporterer desse. Radiofrekvensen blir berekna
+frå innstillingane for støtta fastvareversjonar; ho er ikkje ei måling. På
+fastvare 2.8 eller nyare og ved ukjend versjon blir usikre avleidde radioverdiar
+utelatne. Nodelista på radioen og historikken i MeshPi blir talde kvar for seg.
+
+Fana **Nodar** viser namn, full node-ID, sist høyrd, sist kjende GPS-posisjon,
+batteri og om kontakten finst i radioen si liste. Søk på namn eller ID; trykk
+`Enter` for detaljar, posisjonstidspunkt og kartlenkje. Vindauget bruker meir
+av terminalbreidda. I smale terminalar kan du rulle kolonnane med
+`Shift+←`/`Shift+→`. Opplysningane er lagra observasjonar og tyder ikkje at
+kontakten er tilgjengeleg no.
+
+Marker ein kontakt og trykk `Del` eller **Slett node**. Bruk `Mellomrom` eller
+**Vel / fjern val** for å velje fleire. Stadfestingsvindauget viser alle valde
+ID-ar og radioen som eig lista. Daemonen tek ein avgrensa lokal kopi utan
+nøklar, sender individuell sletting sekvensielt gjennom det eksisterande
+sambandet og hentar ei fersk nodeliste frå radioen for å verifisere resultatet.
+MeshPi-lista blir berre oppdatert for stadfesta slettingar. Feil eller manglande
+verifikasjon blir viste per kontakt. Eigen node kan ikkje slettast. Meldingar,
+historikk og radioinnstillingar blir bevarte; kontaktar kan bli lærte inn att
+frå ny trafikk utan at MeshPi slettar dei på nytt.
 
 Sendestatusen på ein DM går frå `[sendt]` til `[ACK]` når Meshtastic gir ein
 vanleg eller implisitt ACK. Det viser at pakken er teken vidare i nettet, men er

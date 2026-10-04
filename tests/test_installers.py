@@ -510,6 +510,8 @@ public static class Probe {
         capture_output=True,
     )
 
+    if result.returncode == 4551 and b"Device Guard policy" in result.stderr:
+        pytest.skip("Windows Device Guard blocks the temporary unsigned test executable")
     assert result.returncode == 7, (result.stdout, result.stderr)
     encoded = probe.with_name("args.txt").read_text(encoding="utf-8").splitlines()
     decoded = [

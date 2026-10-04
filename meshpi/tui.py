@@ -30,6 +30,7 @@ from textual.selection import Selection
 from textual.strip import Strip
 from textual.widgets import (
     Button,
+    DataTable,
     Input,
     Label,
     ListItem,
@@ -1686,56 +1687,575 @@ class HelpScreen(ModalScreen[None]):
         self.dismiss(None)
 
 
+def _known_position(node: dict[str, Any]) -> dict[str, Any] | None:
+    position = node.get("latest_position")
+    if not isinstance(position, dict):
+        return None
+    try:
+        lat, lon = float(position["latitude"]), float(position["longitude"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return position if math.isfinite(lat) and math.isfinite(lon) and (
+        -90 <= lat <= 90 and -180 <= lon <= 180
+    ) else None
+
+
+class StoredNodeScreen(ModalScreen[None]):
+    """Details from the gateway cache; opening this screen never requests radio data."""
+
+    BINDINGS = [Binding("escape", "close", "", priority=True)]
+    DEFAULT_CSS = """
+    StoredNodeScreen, RemoveNodeScreen { align: center middle; background: rgba(0,0,0,0.8); }
+    #stored-node-dialog {
+        width: 88; max-width: 96%; height: 32; max-height: 94%;
+        padding: 1 2; border: round #58d65c; background: #0d1112;
+    }
+    #stored-node-title { height: 2; color: #58d65c; text-style: bold; }
+    #stored-node-log { height: 1fr; }
+    #stored-node-buttons { height: 3; }
+    #stored-node-buttons Button { width: 1fr; }
+    """
+
+    def __init__(self, node: dict[str, Any]):
+        super().__init__()
+        self.node = dict(node)
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="stored-node-dialog"):
+            yield Label(_t("local.nodes.details"), id="stored-node-title")
+            yield SelectableRichLog(id="stored-node-log", wrap=True, markup=False)
+            with Horizontal(id="stored-node-buttons"):
+                yield Button(_t("local.nodes.map"), id="stored-node-map",
+                             disabled=_known_position(self.node) is None)
+                yield Button(_t("common.close"), id="stored-node-close")
+
+    def on_mount(self) -> None:
+        text = Text()
+
+        def row(key: str, value: Any) -> None:
+            rendered = _t("node_action.not_reported") if value in (None, "") else str(value)
+            text.append(f"{_t(key):<23}", style="bold cyan")
+            text.append(sanitize_terminal_text(rendered) + "\n")
+
+        for field in ("long_name", "short_name", "node_id", "last_heard", "role",
+                      "hw_model", "battery_level", "voltage", "snr", "rssi", "hops_away"):
+            value = self.node.get(field)
+            key = {"hw_model": "hardware", "battery_level": "battery",
+                   "hops_away": "hops"}.get(field, field)
+            if field == "last_heard":
+                value = _date_time(value, seconds=True)
+            elif field in {"battery_level", "voltage", "snr", "rssi"} and value is not None:
+                _, value = _metric_label_and_value(field, value)
+                if field == "battery_level" and self.node[field] == 0:
+                    value = "0%"
+            label_key = (f"metric.{key}" if field in {"battery_level", "voltage"}
+                         else f"local.nodes.{key}" if field in {"snr", "rssi"}
+                         else f"field.{key}")
+            row(label_key, value)
+        row("local.nodes.in_registry", _t(
+            "value.yes" if self.node.get("in_registry") else "value.no"
+        ))
+        text.append("\nGPS\n", style="bold green")
+        position = _known_position(self.node)
+        if position:
+            row("local.nodes.latitude", f"{float(position['latitude']):.7f}")
+            row("local.nodes.longitude", f"{float(position['longitude']):.7f}")
+            altitude = position.get("altitude_msl")
+            row("local.nodes.altitude", f"{altitude} m" if altitude is not None else None)
+            row("local.nodes.position_time", _date_time(position.get("sample_time"), seconds=True))
+            row("local.nodes.position_received", _date_time(
+                position.get("received_at"), seconds=True
+            ))
+            row("local.nodes.precision", position.get("precision_bits"))
+        else:
+            text.append(_t("local.nodes.no_position") + "\n")
+        text.append("\n" + _t("local.nodes.position_note"), style="dim")
+        self.query_one("#stored-node-log", RichLog).write(text)
+        self.query_one("#stored-node-log", RichLog).focus()
+
+    @on(Button.Pressed)
+    def choose(self, event: Button.Pressed) -> None:
+        event.stop()
+        if event.button.id == "stored-node-map":
+            position = _known_position(self.node)
+            if position:
+                self.app.open_url(_google_maps_url(position))
+        elif event.button.id == "stored-node-close":
+            self.action_close()
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
+class RemoveNodeScreen(ModalScreen[bool]):
+    BINDINGS = [Binding("escape", "cancel", "", priority=True)]
+    DEFAULT_CSS = """
+    RemoveNodeScreen { align: center middle; background: rgba(0,0,0,0.8); }
+    #remove-node-dialog {
+        width: 74; max-width: 96%; height: 24; max-height: 94%;
+        padding: 1 2; border: round #e7ac57; background: #0d1112;
+    }
+    #remove-node-text { height: 1fr; overflow-y: auto; margin-bottom: 1; }
+    #remove-node-buttons { height: 3; }
+    #remove-node-buttons Button { width: 1fr; }
+    """
+
+    def __init__(self, nodes: list[dict[str, Any]], gateway: str):
+        super().__init__()
+        self.nodes, self.gateway = [dict(node) for node in nodes], gateway
+
+    def compose(self) -> ComposeResult:
+        contacts = "\n".join(
+            f"{node['node_id']}  "
+            + sanitize_terminal_text(node.get("long_name") or node.get("short_name") or "")
+            for node in self.nodes
+        )
+        with Vertical(id="remove-node-dialog"):
+            yield Static(Text(_t(
+                "local.nodes.confirm", contacts=contacts,
+                count=len(self.nodes), gateway=self.gateway,
+            )), id="remove-node-text")
+            with Horizontal(id="remove-node-buttons"):
+                yield Button(_t("common.cancel"), id="remove-node-cancel")
+                yield Button(_t("local.nodes.remove"), id="remove-node-confirm", variant="error")
+
+    def on_mount(self) -> None:
+        self.query_one("#remove-node-cancel", Button).focus()
+
+    @on(Button.Pressed)
+    def choose(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.dismiss(event.button.id == "remove-node-confirm")
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+
 class SettingsScreen(ModalScreen[str | None]):
+    TABS = ("overview", "radio", "status", "nodes", "network", "app")
     BINDINGS = [
-        Binding("up", "previous_choice", "", priority=True),
-        Binding("down", "next_choice", "", priority=True),
+        Binding("left", "previous_tab", "", priority=True),
+        Binding("right", "next_tab", "", priority=True),
+        Binding("r", "refresh_info", ""),
+        Binding("ctrl+r", "refresh_info", "", priority=True),
+        Binding("delete", "remove_node", ""),
+        Binding("space", "toggle_node", ""),
+        Binding("shift+left", "scroll_node_columns(-1)", "", priority=True),
+        Binding("shift+right", "scroll_node_columns(1)", "", priority=True),
+        Binding("f10", "cancel", "", priority=True),
         Binding("escape", "cancel", "", priority=True),
     ]
 
     def __init__(self, language: str):
         super().__init__()
         self.language = language
+        self.current_tab = "overview"
+        self.info: dict[str, Any] | None = None
+        self.load_error: str | None = None
+        self.removing_node = False
+        self.node_message = ""
+        self.visible_nodes: dict[str, dict[str, Any]] = {}
+        self.node_rows: list[str] = []
+        self.checked_nodes: set[str] = set()
         _localize_bindings(
             self,
             (
-                ("up", "previous_choice", "binding.previous_choice", True),
-                ("down", "next_choice", "binding.next_choice", True),
-                ("escape", "cancel", "binding.cancel", True),
+                ("left", "previous_tab", "binding.previous_tab", True),
+                ("right", "next_tab", "binding.next_tab", True),
+                ("r", "refresh_info", "binding.refresh", False),
+                ("ctrl+r", "refresh_info", "binding.refresh", True),
+                ("escape", "cancel", "binding.close", True),
             ),
         )
 
     def compose(self) -> ComposeResult:
         with Container(id="settings-dialog"):
             yield Label(_t("settings.title"), id="settings-title")
-            yield Static(_t("settings.language"), id="settings-language-label")
-            yield Button("Nynorsk", id="settings-nn")
-            yield Button("English", id="settings-en")
-            yield Button(_t("common.cancel"), id="settings-cancel")
+            with Horizontal(id="local-node-tabs"):
+                for tab in self.TABS:
+                    yield Button(_t(f"local.tab.{tab}"), id=f"local-tab-{tab}")
+            yield SelectableRichLog(id="local-node-content", wrap=True, markup=False)
+            with Vertical(id="local-nodes-pane"):
+                yield Static(id="local-nodes-summary", markup=False)
+                yield Input(placeholder=_t("local.nodes.search"), id="local-nodes-search")
+                yield DataTable(id="local-nodes-table", cursor_type="row", zebra_stripes=True)
+                yield Static(id="local-nodes-message", markup=False)
+                with Horizontal(id="local-nodes-actions"):
+                    yield Button(_t("local.nodes.details"), id="local-nodes-details")
+                    yield Button(_t("local.nodes.select"), id="local-nodes-select")
+                    yield Button(_t("local.nodes.remove"), id="local-nodes-remove", variant="error")
+            with Vertical(id="settings-app"):
+                yield Static(_t("settings.language"), id="settings-language-label")
+                yield Button("Nynorsk", id="settings-nn")
+                yield Button("English", id="settings-en")
+            yield Button(_t("common.close"), id="settings-cancel")
             yield Static(_t("settings.help"), id="settings-help")
 
     def on_mount(self) -> None:
-        self.query_one(f"#settings-{self.language}", Button).focus()
+        self.query_one("#local-nodes-table", DataTable).add_columns(
+            _t("local.nodes.selected"),
+            _t("field.long_name"), _t("field.node_id"), _t("field.last_heard"),
+            "GPS", _t("metric.battery"), _t("local.nodes.registry_column"),
+        )
+        self.set_class(self.app.size.height < 32, "compact")
+        self._show_tab("overview")
+        self.set_interval(10, self.action_refresh_info)
+        self.action_refresh_info()
+
+    def on_resize(self, event: Resize) -> None:
+        self.set_class(event.size.height < 32, "compact")
 
     @on(Button.Pressed)
     def choose(self, event: Button.Pressed) -> None:
-        result = {
+        event.stop()
+        button_id = event.button.id or ""
+        if button_id.startswith("local-tab-"):
+            self._show_tab(button_id.removeprefix("local-tab-"))
+            return
+        if button_id == "local-nodes-details":
+            self.action_node_details()
+            return
+        if button_id == "local-nodes-remove":
+            self.action_remove_node()
+            return
+        if button_id == "local-nodes-select":
+            self.action_toggle_node()
+            return
+        results = {
             "settings-nn": "nn",
             "settings-en": "en",
             "settings-cancel": None,
-        }.get(event.button.id)
-        self.dismiss(result)
+        }
+        if button_id in results:
+            self.dismiss(results[button_id])
 
-    def _move_choice(self, direction: int) -> None:
-        buttons = list(self.query("#settings-dialog Button"))
-        focused = next((index for index, button in enumerate(buttons) if button.has_focus), 0)
-        buttons[(focused + direction) % len(buttons)].focus()
+    def _show_tab(self, tab: str) -> None:
+        self.current_tab = tab
+        self.query_one("#settings-app").display = tab == "app"
+        self.query_one("#local-node-content").display = tab not in {"app", "nodes"}
+        self.query_one("#local-nodes-pane").display = tab == "nodes"
+        for name in self.TABS:
+            self.query_one(f"#local-tab-{name}", Button).variant = (
+                "primary" if name == tab else "default"
+            )
+        if tab == "app":
+            self.query_one(f"#settings-{self.language}", Button).focus()
+        elif tab == "nodes":
+            self.query_one("#local-nodes-table", DataTable).focus()
+        else:
+            self.query_one("#local-node-content", RichLog).focus()
+        self._render_info(preserve_scroll=False)
 
-    def action_next_choice(self) -> None:
-        self._move_choice(1)
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        return not (
+            action in {"next_tab", "previous_tab", "scroll_node_columns"}
+            and isinstance(self.focused, Input)
+        )
 
-    def action_previous_choice(self) -> None:
-        self._move_choice(-1)
+    def action_scroll_node_columns(self, direction: int) -> None:
+        if self.current_tab == "nodes":
+            self.query_one("#local-nodes-table", DataTable).scroll_relative(
+                x=direction * 15, animate=False,
+            )
+
+    def _selected_node(self) -> dict[str, Any] | None:
+        table = self.query_one("#local-nodes-table", DataTable)
+        if 0 <= table.cursor_row < len(self.node_rows):
+            return self.visible_nodes.get(self.node_rows[table.cursor_row])
+        return None
+
+    @on(Input.Changed, "#local-nodes-search")
+    def filter_nodes(self) -> None:
+        self._render_nodes()
+
+    @on(Input.Submitted, "#local-nodes-search")
+    def focus_node_table(self) -> None:
+        self.query_one("#local-nodes-table", DataTable).focus()
+
+    @on(DataTable.RowHighlighted, "#local-nodes-table")
+    def selected_node_changed(self) -> None:
+        self._update_node_buttons()
+
+    @on(DataTable.RowSelected, "#local-nodes-table")
+    def node_selected(self) -> None:
+        self.action_node_details()
+
+    def _update_node_buttons(self) -> None:
+        node = self._selected_node()
+        info = self.info or {}
+        gateway = info.get("local_node_id") or info.get("status", {}).get("local_node_id")
+        self.query_one("#local-nodes-details", Button).disabled = node is None
+        allowed = node is not None and self._removable_node(node, gateway)
+        self.query_one("#local-nodes-select", Button).disabled = not allowed or self.removing_node
+        targets = self._removal_targets()
+        self.query_one("#local-nodes-remove", Button).disabled = (
+            not targets or not info.get("connected") or self.removing_node
+        )
+        self.query_one("#local-nodes-remove", Button).label = (
+            _t("local.nodes.remove_count", count=len(targets)) if len(targets) > 1
+            else _t("local.nodes.remove")
+        )
+
+    @staticmethod
+    def _removable_node(node: dict[str, Any], gateway: str | None) -> bool:
+        node_id = str(node.get("node_id") or "")
+        if not re.fullmatch(r"![0-9a-fA-F]{8}", node_id):
+            return False
+        number = int(node_id[1:], 16)
+        return number not in {0, 1, 2, 3, 0xFFFFFFFF} and (
+            not node.get("is_local") and node_id.lower() != str(gateway).lower()
+        )
+
+    def _removal_targets(self) -> list[dict[str, Any]]:
+        info = self.info or {}
+        gateway = info.get("local_node_id") or info.get("status", {}).get("local_node_id")
+        if self.checked_nodes:
+            candidates = [node for node in info.get("nodes", [])
+                          if node.get("node_id") in self.checked_nodes]
+        else:
+            node = self._selected_node()
+            candidates = [node] if node else []
+        return [node for node in candidates if self._removable_node(node, gateway)]
+
+    def action_toggle_node(self) -> None:
+        if self.current_tab != "nodes" or self.removing_node:
+            return
+        node = self._selected_node()
+        info = self.info or {}
+        gateway = info.get("local_node_id") or info.get("status", {}).get("local_node_id")
+        if not node or not self._removable_node(node, gateway):
+            return
+        node_id = str(node["node_id"])
+        if node_id in self.checked_nodes:
+            self.checked_nodes.remove(node_id)
+        else:
+            self.checked_nodes.add(node_id)
+        self._render_nodes()
+
+    def _render_nodes(self) -> None:
+        table = self.query_one("#local-nodes-table", DataTable)
+        selected = self._selected_node()
+        old_index = table.cursor_row
+        search = self.query_one("#local-nodes-search", Input).value.casefold().strip()
+        info = self.info or {}
+        nodes = info.get("nodes", [])
+        self.checked_nodes.intersection_update(node["node_id"] for node in nodes)
+        self.visible_nodes = {
+            str(node["node_id"]): node for node in nodes
+            if not search or search in " ".join(str(node.get(key) or "") for key in (
+                "node_id", "long_name", "short_name"
+            )).casefold()
+        }
+        self.node_rows = list(self.visible_nodes)
+        table.clear()
+        for node_id, node in self.visible_nodes.items():
+            name = str(node.get("long_name") or node.get("short_name") or node_id)
+            if node.get("is_local"):
+                name = _t("local.nodes.self", name=name)
+            position = _known_position(node)
+            gps = (f"{float(position['latitude']):.5f}, {float(position['longitude']):.5f}"
+                   if position else "—")
+            battery = node.get("battery_level")
+            battery_text = ("—" if battery is None else "0%" if battery == 0 else
+                            _metric_label_and_value("battery_level", battery)[1])
+            table.add_row(
+                Text("✓" if node_id in self.checked_nodes else "·"),
+                Text(sanitize_terminal_text(name[:32])), Text(node_id),
+                Text(_date_time(node.get("last_heard"))), Text(gps), Text(battery_text),
+                Text(_t("value.yes" if node.get("in_registry") else "value.no")), key=node_id,
+            )
+        if selected and selected["node_id"] in self.node_rows:
+            index = self.node_rows.index(selected["node_id"])
+        else:
+            index = max(0, min(old_index, len(self.node_rows) - 1))
+        table.move_cursor(row=index, animate=False)
+        summary = _t("local.nodes.summary", shown=len(self.node_rows), total=len(nodes),
+                     registry=info.get("registry_count", "—"), selected=len(self.checked_nodes))
+        if not info.get("connected"):
+            summary += " · " + _t("state.disconnected")
+        self.query_one("#local-nodes-summary", Static).update(summary)
+        message = self.node_message or (
+            _t("local.load_error", error=self.load_error) if self.load_error else
+            _t("local.loading") if self.info is None else
+            _t("local.nodes.empty") if not self.node_rows else _t("local.nodes.help")
+        )
+        self.query_one("#local-nodes-message", Static).update(message)
+        self._update_node_buttons()
+
+    def action_node_details(self) -> None:
+        node = self._selected_node()
+        if node and self.current_tab == "nodes":
+            self.app.push_screen(StoredNodeScreen(node))
+
+    def action_remove_node(self) -> None:
+        if self.current_tab != "nodes" or self.query_one("#local-nodes-remove", Button).disabled:
+            return
+        nodes = self._removal_targets()
+        if not nodes:
+            return
+        info = self.info or {}
+        gateway = str(
+            info.get("local_node_id") or info.get("status", {}).get("local_node_id") or ""
+        )
+        node_ids = [str(node["node_id"]) for node in nodes]
+
+        def confirmed(remove: bool) -> None:
+            if remove and self.is_mounted:
+                self.removing_node = True
+                self.node_message = _t("local.nodes.removing", count=len(node_ids))
+                self._render_nodes()
+                self.app.remove_local_registry_nodes(self, node_ids, gateway)
+
+        self.app.push_screen(RemoveNodeScreen(nodes, gateway), confirmed)
+
+    def removal_finished(self, result: dict[str, Any] | None, error: str | None) -> None:
+        self.removing_node = False
+        results = (result or {}).get("result", {}).get("contacts", [])
+        self.checked_nodes.difference_update(
+            item["node_id"] for item in results if item.get("status") == "removed"
+        )
+        self.node_message = self.removal_message(result, error)
+        self._render_nodes()
+        self.action_refresh_info()
+
+    @staticmethod
+    def removal_message(result: dict[str, Any] | None, error: str | None) -> str:
+        if error:
+            return _t("local.nodes.failed", error=error)
+        results = (result or {}).get("result", {}).get("contacts", [])
+        completed = [item for item in results if item.get("status") == "removed"]
+        message = _t("local.nodes.result", confirmed=len(completed), total=len(results))
+        errors = [f"{item['node_id']}: {item.get('error') or _t('local.nodes.unverified')}"
+                  for item in results if item.get("status") != "removed"]
+        return message + (" · " + "; ".join(dict.fromkeys(errors)) if errors else "")
+
+    def action_next_tab(self) -> None:
+        self._show_tab(self.TABS[(self.TABS.index(self.current_tab) + 1) % len(self.TABS)])
+
+    def action_previous_tab(self) -> None:
+        self._show_tab(self.TABS[(self.TABS.index(self.current_tab) - 1) % len(self.TABS)])
+
+    def action_refresh_info(self) -> None:
+        if self.app.screen is self:
+            self.app.load_local_node_info(self)
+
+    def update_info(self, info: dict[str, Any] | None, error: str | None = None) -> None:
+        self.info = info
+        self.load_error = error
+        self._render_info()
+
+    def _render_info(self, *, preserve_scroll: bool = True) -> None:
+        self._render_nodes()
+        log = self.query_one("#local-node-content", RichLog)
+        old_scroll = log.scroll_y if preserve_scroll else 0
+        log.clear()
+        text = Text()
+
+        def row(key: str, value: Any) -> None:
+            label = _t(key)
+            if isinstance(value, bool):
+                value = _t("value.yes" if value else "value.no")
+            rendered = (
+                sanitize_terminal_text(str(value))
+                if value not in (None, "") else _t("node_action.not_reported")
+            )
+            text.append(f"{label:<27}", style="bold cyan")
+            text.append(f"{rendered}\n")
+
+        if self.load_error:
+            text.append(_t("local.load_error", error=self.load_error), style="yellow")
+        elif self.info is None:
+            text.append(_t("local.loading"), style="dim")
+        else:
+            info = self.info
+            node = info.get("node", {})
+            status = info.get("status", {})
+            radio = info.get("radio", {})
+            text.append(_t(f"local.tab.{self.current_tab}") + "\n\n", style="bold green")
+            if not info.get("connected"):
+                text.append(_t("local.offline") + "\n\n", style="yellow")
+            if self.current_tab == "overview":
+                row("field.long_name", node.get("long_name"))
+                row("field.short_name", node.get("short_name"))
+                row("field.node_id", node.get("node_id") or status.get("local_node_id"))
+                row("field.hardware", info.get("hw_model") or node.get("hw_model"))
+                row("local.firmware", info.get("firmware_version"))
+                row("field.role", info.get("role") or node.get("role"))
+                state_key = "state.connected" if info.get("connected") else "state.disconnected"
+                row("local.connection", _t(state_key))
+                row("field.transport", status.get("transport"))
+                row("local.endpoint", status.get("endpoint"))
+                row("local.profile", status.get("connection_name"))
+                row("local.config_received", _date_time(info.get("config_received_at")))
+                text.append("\n" + _t("local.read_only"), style="dim")
+            elif self.current_tab == "radio":
+                if radio.get("derivation_unavailable"):
+                    text.append(_t("local.radio_version_unknown") + "\n\n", style="yellow")
+                row("local.region", radio.get("region"))
+                band_min, band_max = radio.get("band_min_mhz"), radio.get("band_max_mhz")
+                row("local.band", f"{band_min:g}–{band_max:g} MHz" if band_min else None)
+                frequency = radio.get("frequency_mhz")
+                row("local.frequency", f"{frequency:g} MHz" if frequency is not None else None)
+                source = radio.get("frequency_source")
+                row("local.frequency_source", _t(f"local.source.{source}") if source else None)
+                slot = radio.get("channel_num")
+                row("local.slot_configured", _t("local.automatic") if slot == 0 else slot)
+                row("local.slot_effective", radio.get("effective_slot"))
+                row("local.preset", radio.get("modem_preset") if radio.get("use_preset") else (
+                    _t("local.custom") if radio.get("use_preset") is False else None
+                ))
+                bw = radio.get("effective_bandwidth_khz")
+                row("local.bandwidth", f"{bw:g} kHz" if bw else None)
+                row("local.spread_factor", radio.get("effective_spread_factor"))
+                cr = radio.get("effective_coding_rate")
+                row("local.coding_rate", f"4/{cr}" if cr else None)
+                row("local.hop_limit", radio.get("hop_limit"))
+                power = radio.get("tx_power")
+                row("local.tx_power", _t("local.automatic") if power == 0 else (
+                    f"{power} dBm" if power is not None else None
+                ))
+                row("local.tx_enabled", radio.get("tx_enabled"))
+                row("local.ignore_mqtt", radio.get("ignore_mqtt"))
+                row("local.mqtt_allowed", radio.get("config_ok_to_mqtt"))
+                text.append("\n" + _t("local.frequency_note"), style="dim")
+            elif self.current_tab == "status":
+                latest = info.get("latest_telemetry", {})
+                device = latest.get("device", {})
+                metrics = device.get("metrics", {})
+                canonical = {
+                    _canonical_metric_name(str(key)): value for key, value in metrics.items()
+                }
+                for key in ("battery_level", "voltage", "uptime_seconds",
+                            "channel_utilization", "air_util_tx"):
+                    value = canonical.get(key, node.get(key))
+                    if value is not None:
+                        label, rendered = _metric_label_and_value(key, value)
+                    else:
+                        label = _t(METRIC_PRESENTATION[key][0])
+                        rendered = _t("node_action.not_reported")
+                    if key == "battery_level" and value == 0:
+                        rendered = "0%"
+                    text.append(f"{label:<27}", style="bold cyan")
+                    text.append(f"{sanitize_terminal_text(rendered)}\n")
+                row("local.telemetry_time", _date_time(device.get("sample_time")))
+                row("field.last_heard", _date_time(node.get("last_heard")))
+                text.append("\n" + _t("local.telemetry_note"), style="dim")
+            elif self.current_tab == "network":
+                row("local.registry_count", info.get("registry_count"))
+                row("local.stored_count", info.get("stored_count"))
+                row("local.heard_count", info.get("heard_24h_count"))
+                channels = info.get("channels", [])
+                row("local.channel_count", len(channels) if info.get("connected") else None)
+                text.append("\n" + _t("local.channels") + "\n", style="bold green")
+                for channel in channels:
+                    name = channel.get("display_name") or _t("local.default_channel")
+                    role = _t(f"local.channel_role.{channel.get('role')}")
+                    text.append(f"  {channel.get('index')} · {name} · {role}\n")
+                    row("local.uplink", channel.get("uplink_enabled"))
+                    row("local.downlink", channel.get("downlink_enabled"))
+                text.append("\n" + _t("local.count_note"), style="dim")
+        log.write(text)
+        log.scroll_to(y=old_scroll, animate=False)
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -2136,9 +2656,10 @@ class MeshPiTUI(App[str | None]):
     }
 
     #settings-dialog {
-        width: 52;
-        max-width: 94%;
-        height: 23;
+        width: 132;
+        max-width: 98%;
+        height: 36;
+        max-height: 94%;
         padding: 1 2;
         border: round $accent;
         background: $panel;
@@ -2158,6 +2679,46 @@ class MeshPiTUI(App[str | None]):
     #settings-dialog Button {
         width: 1fr;
         margin: 0 0 1 0;
+    }
+
+    #local-node-tabs {
+        height: 3;
+        margin-bottom: 1;
+    }
+
+    #local-node-tabs Button {
+        min-width: 8;
+        margin: 0;
+    }
+
+    #local-node-content {
+        height: 1fr;
+        padding: 0 1;
+        scrollbar-color: $accent;
+    }
+
+    #settings-app {
+        height: 1fr;
+        padding-top: 1;
+    }
+
+    #local-nodes-pane { height: 1fr; }
+    #local-nodes-summary { height: 1; color: $cyan; }
+    #local-nodes-search { height: 3; margin: 0; }
+    #local-nodes-table { height: 1fr; min-height: 3; scrollbar-color: $accent; }
+    #local-nodes-message { height: 2; color: #aeb5b7; overflow-y: auto; }
+    #local-nodes-actions { height: 3; }
+    #local-nodes-actions Button { margin: 0; min-width: 12; }
+
+    SettingsScreen.compact #settings-dialog { padding: 0 1; }
+    SettingsScreen.compact #settings-title { height: 1; }
+    SettingsScreen.compact #local-node-tabs { margin-bottom: 0; }
+    SettingsScreen.compact #settings-cancel { display: none; }
+    SettingsScreen.compact #settings-help { height: 1; }
+
+    #settings-cancel {
+        margin: 0;
+        height: 3;
     }
 
     #settings-help {
@@ -2268,6 +2829,7 @@ class MeshPiTUI(App[str | None]):
         self._message_history_loaded: set[str] = set()
         self._pending_message_history: dict[str, list[str]] = {}
         self._settings_snapshot: dict[str, Any] | None = None
+        self._last_node_removal_message = ""
 
     def _localize_app_bindings(self) -> None:
         _localize_bindings(
@@ -3630,6 +4192,12 @@ class MeshPiTUI(App[str | None]):
         return targets
 
     def _move_focus(self, direction: int) -> None:
+        if isinstance(self.screen, ModalScreen):
+            if direction > 0:
+                self.screen.focus_next()
+            else:
+                self.screen.focus_previous()
+            return
         targets = self._focus_targets()
         if not targets:
             return
@@ -4184,7 +4752,10 @@ class MeshPiTUI(App[str | None]):
         self.notify(_t("notice.update_command_copied"))
 
     def action_settings(self) -> None:
+        if isinstance(self.screen, (StoredNodeScreen, RemoveNodeScreen)):
+            return
         if isinstance(self.screen, SettingsScreen):
+            self.screen.action_cancel()
             return
         focused = self.focused
         message_input = self.query_one("#message-input", MessageInput)
@@ -4195,7 +4766,71 @@ class MeshPiTUI(App[str | None]):
             "selected_node": self.selected_node_id,
             "current_conversation": self.current_conversation,
         }
-        self.push_screen(SettingsScreen(get_language()), self._finish_settings)
+        screen = SettingsScreen(get_language())
+        screen.node_message = self._last_node_removal_message
+        self.push_screen(screen, self._finish_settings)
+
+    def load_local_node_info(self, screen: SettingsScreen) -> None:
+        def load() -> None:
+            try:
+                info = self._call({"command": "local_node_info"})["data"]
+                error = None
+            except Exception as exc:
+                info, error = None, str(exc)
+
+            def apply() -> None:
+                if self.screen is screen and screen.is_mounted:
+                    screen.update_info(info, error)
+
+            self.call_from_thread(apply)
+
+        self.run_worker(
+            load, name="local-node-info", group="local-node-info", thread=True,
+            exclusive=True, exit_on_error=False,
+        )
+
+    def remove_local_registry_nodes(
+        self, screen: SettingsScreen, node_ids: list[str], gateway: str,
+    ) -> None:
+        def remove() -> None:
+            result = None
+            error = None
+            try:
+                result = self._call({
+                    "command": "remove_nodes", "node_ids": node_ids,
+                    "expected_local_node_id": gateway,
+                })["data"]
+                deadline = time.monotonic() + 60 * len(node_ids) + 30
+                while result.get("status") == "started":
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(_t("local.nodes.unverified"))
+                    time.sleep(0.3)
+                    result = self._call({
+                        "command": "node_action_status", "action_id": result["action_id"],
+                    })["data"]
+                if not result.get("result", {}).get("contacts"):
+                    error = str(result.get("error") or _t("local.nodes.unverified"))
+            except Exception as exc:
+                error = str(exc)
+
+            def apply() -> None:
+                self._last_node_removal_message = screen.removal_message(result, error)
+                if screen.is_mounted:
+                    screen.removal_finished(result, error)
+                if not screen.is_mounted or error:
+                    self.notify(
+                        self._last_node_removal_message,
+                        severity="warning" if error or (result or {}).get("status") != "completed"
+                        else "information", timeout=10,
+                    )
+
+            self.call_from_thread(apply)
+            self._refresh_lists_worker()
+
+        self.run_worker(
+            remove, name="remove-local-nodes", group="remove-local-nodes",
+            thread=True, exit_on_error=False,
+        )
 
     def _finish_settings(self, language: str | None) -> None:
         if language is None or language == get_language():

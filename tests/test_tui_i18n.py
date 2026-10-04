@@ -1,7 +1,8 @@
 import asyncio
 import json
 
-from textual.widgets import Input, Static
+import pytest
+from textual.widgets import Input, RichLog, Static
 
 from meshpi.config import Settings
 from meshpi.i18n import using_language
@@ -75,6 +76,11 @@ class I18nBackend:
             data = self.conversations
         elif command == "nodes":
             data = self.nodes
+        elif command == "local_node_info":
+            data = {
+                "connected": True, "status": self.status, "node": self.nodes[0],
+                "radio": {}, "stored_count": 2, "heard_24h_count": 0,
+            }
         elif command in {"messages", "node_actions"}:
             data = []
         elif command == "node":
@@ -97,6 +103,84 @@ def test_f10_is_settings_and_shift_f10_remains_node_actions():
 
     assert app._bindings.key_to_bindings["f10"][0].action == "settings"
     assert app._bindings.key_to_bindings["shift+f10"][0].action == "node_actions"
+
+
+@pytest.mark.parametrize("size", [(80, 24), (130, 42)])
+def test_local_info_tabs_refresh_without_sending_and_preserve_draft(size):
+    async def scenario():
+        backend = I18nBackend()
+        original_request = backend.request
+        info = {
+            "connected": True, "status": backend.status, "node": backend.nodes[0],
+            "firmware_version": "2.7.test", "role": "CLIENT_MUTE",
+            "radio": {"region": "EU_868", "frequency_mhz": 869.525,
+                      "frequency_source": "calculated", "channel_num": 0,
+                      "effective_slot": 1, "tx_enabled": False},
+            "registry_count": 5, "stored_count": 7, "heard_24h_count": 0,
+            "latest_telemetry": {"device": {"metrics": {"batteryLevel": 0}}},
+        }
+
+        def requester(settings, payload):
+            if payload["command"] == "local_node_info":
+                backend.calls.append(dict(payload))
+                return {"ok": True, "data": info}
+            return original_request(settings, payload)
+
+        def content(screen):
+            return "\n".join(line.text for line in screen.query_one(
+                "#local-node-content", RichLog
+            ).lines)
+
+        with using_language("nn"):
+            app = MeshPiTUI(Settings(), requester=requester, watcher=None, update_checker=None)
+            async with app.run_test(size=size) as pilot:
+                await pilot.pause(0.3)
+                message_input = app.query_one("#message-input", Input)
+                message_input.value = "Usendt utkast"
+                message_input.cursor_position = 4
+                message_input.focus()
+                app.selected_node_id = PEER_ID
+                await pilot.pause(0.2)
+                message_input.cursor_position = 4
+                await pilot.press("f10")
+                await pilot.pause(0.2)
+                screen = app.screen
+                assert isinstance(screen, SettingsScreen)
+                assert "Local node" in content(screen)
+                assert "Remote node" not in content(screen)
+                assert "CLIENT_MUTE" in content(screen)
+                await pilot.press("right")
+                assert "EU_868" in content(screen)
+                assert "869.525 MHz" in content(screen)
+                assert "nei" in content(screen)
+                await pilot.press("right")
+                assert "0%" in content(screen)
+                await pilot.press("right", "right")
+                assert "Høyrde siste døgn" in content(screen)
+                assert "0" in content(screen)
+                info.update(connected=False, radio={})
+                await pilot.press("r")
+                await pilot.pause(0.2)
+                assert "ikkje tilkopla" in content(screen)
+                await pilot.press("left", "left", "left")
+                assert "869.525 MHz" not in content(screen)
+                assert "Ikkje rapportert" in content(screen)
+                await pilot.press("right", "right", "right", "right")
+                assert screen.current_tab == "app"
+                assert screen.query_one("#settings-en").display is True
+                close_button = screen.query_one("#settings-cancel")
+                assert close_button.region.bottom <= size[1]
+                await pilot.press("f10")
+                assert not isinstance(app.screen, SettingsScreen)
+                assert message_input.value == "Usendt utkast"
+                assert message_input.cursor_position == 4
+                assert app.selected_node_id == PEER_ID
+                assert not any(call["command"].startswith(("send_", "node_action"))
+                               for call in backend.calls if call["command"] != "node_actions")
+                await pilot.press("f10", "escape")
+                assert not isinstance(app.screen, SettingsScreen)
+
+    asyncio.run(scenario())
 
 
 def test_tui_starts_in_english_and_help_uses_dynamic_language():
@@ -124,7 +208,7 @@ def test_tui_starts_in_english_and_help_uses_dynamic_language():
                 )
                 shortcuts = _text(app.screen.query_one("#help-shortcuts", Static))
                 assert "F10" in shortcuts
-                assert "Choose language and other app settings" in shortcuts
+                assert "Local node information and app settings" in shortcuts
 
     asyncio.run(scenario())
 
@@ -184,6 +268,7 @@ def test_live_language_switch_persists_and_preserves_tui_state(tmp_path, monkeyp
                 await pilot.press("f10")
                 await pilot.pause()
                 assert isinstance(app.screen, SettingsScreen)
+                await pilot.press("left")
                 await pilot.click("#settings-en")
                 await pilot.pause(0.6)
 

@@ -346,6 +346,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     seen_mqtt INTEGER NOT NULL DEFAULT 0,
     can_receive_dm INTEGER,
     is_local INTEGER NOT NULL DEFAULT 0,
+    removed_at INTEGER,
     updated_at TEXT NOT NULL,
     PRIMARY KEY(local_node_id, node_id)
 );
@@ -398,6 +399,10 @@ class Database:
             self._migrate_message_schema(connection, current_version)
             self._migrate_scope_schema(connection, current_version)
             self._migrate_node_transports(connection)
+            if "removed_at" not in {
+                row["name"] for row in connection.execute("PRAGMA table_info(nodes)")
+            }:
+                connection.execute("ALTER TABLE nodes ADD COLUMN removed_at INTEGER")
             self._ensure_message_indexes(connection)
             self._ensure_scope_indexes(connection)
             # Eldre versjonar kalla også den førebelse, implisitte ACK-en
@@ -2357,7 +2362,9 @@ class Database:
             result.append(item)
         return result
 
-    def upsert_node(self, node: Node, *, local_node_id: str) -> None:
+    def upsert_node(
+        self, node: Node, *, local_node_id: str, observed: bool = False
+    ) -> None:
         node.updated_at = node.updated_at or now_iso()
         # Manglande last_heard frå ein annan gateway er ikkje prov på at
         # registerdataa er nyare. Bevar derfor siste tidsfesta observasjon,
@@ -2451,11 +2458,14 @@ class Database:
                          AND (nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard)
                         THEN excluded.can_receive_dm ELSE nodes.can_receive_dm END,
                     is_local=excluded.is_local,
+                    removed_at=CASE
+                        WHEN ? OR excluded.last_heard > nodes.removed_at
+                        THEN NULL ELSE nodes.removed_at END,
                     updated_at=CASE
                         WHEN nodes.last_heard IS NULL OR excluded.last_heard >= nodes.last_heard
                         THEN excluded.updated_at ELSE nodes.updated_at END
                 """,
-                values,
+                (*values, int(observed)),
             )
 
             connection.execute(
@@ -2487,7 +2497,8 @@ class Database:
         with self._connect() as connection:
             query = f"""
                 SELECT * FROM nodes
-                WHERE (? IS NULL OR local_node_id = ?) AND (
+                WHERE removed_at IS NULL
+                  AND (? IS NULL OR local_node_id = ?) AND (
                       ? = ''
                    OR node_id LIKE ? ESCAPE '\\' COLLATE NOCASE
                    OR long_name LIKE ? ESCAPE '\\' COLLATE NOCASE
@@ -2513,6 +2524,38 @@ class Database:
             if item["can_receive_dm"] is not None:
                 item["can_receive_dm"] = bool(item["can_receive_dm"])
             result.append(item)
+        return result
+
+    def remove_node_from_list(self, node_id: str, *, local_node_id: str) -> None:
+        """Hide a confirmed removal while retaining names used by history."""
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE nodes SET removed_at = MAX(?, COALESCE(last_heard, 0))
+                WHERE local_node_id = ? AND node_id = ? AND is_local = 0
+                """,
+                (int(datetime.now(timezone.utc).timestamp()), local_node_id, node_id),
+            )
+
+    def latest_node_positions(self, *, local_node_id: str) -> dict[str, dict[str, Any]]:
+        """Read the latest sample per node in one gateway-scoped query."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM (
+                    SELECT positions.*, ROW_NUMBER() OVER (
+                        PARTITION BY node_id ORDER BY sample_time DESC, id DESC
+                    ) AS position_rank
+                    FROM positions WHERE local_node_id = ?
+                ) WHERE position_rank = 1
+                """,
+                (local_node_id,),
+            ).fetchall()
+        result = {}
+        for row in rows:
+            position = self._position_row(row)
+            position.pop("position_rank", None)
+            result[str(position["node_id"])] = position
         return result
 
     def get_node(

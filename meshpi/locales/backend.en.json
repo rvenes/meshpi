@@ -71,5 +71,16 @@
   "backend.traceroute.missing_route": "The traceroute response is missing route data",
   "backend.traceroute.send_failed": "Could not send traceroute: {error}",
   "backend.traceroute.timeout": "Traceroute did not receive a response before the timeout",
-  "backend.traceroute.wrong_response": "Received the wrong response type for traceroute"
+  "backend.traceroute.wrong_response": "Received the wrong response type for traceroute",
+  "backend.remove_node.gateway_changed": "The active radio has changed. Refresh the node list and try again.",
+  "backend.remove_node.local_target": "The local node or a reserved node ID cannot be removed.",
+  "backend.remove_node.local_admin_unavailable": "Local node administration is unavailable for this connection.",
+  "backend.remove_node.managed": "The node is managed and does not allow local node removal.",
+  "backend.remove_node.pending": "A node removal is already in progress.",
+  "backend.remove_node.invalid_response": "The response does not confirm a fresh node list from the active radio.",
+  "backend.remove_node.send_failed": "Could not request removal from the local radio: {error}",
+  "backend.remove_node.timeout": "Deletion may have been sent, but a fresh node list did not confirm the result before the timeout. The MeshPi list is unchanged for this contact.",
+  "backend.remove_node.invalid_selection": "Select one or more distinct nodes (maximum 1000).",
+  "backend.remove_node.still_present": "The contact is still in the fresh radio node list, or has been learned again from new traffic.",
+  "backend.remove_node.refresh_unavailable": "Could not obtain a fresh, complete node list from the radio."
 }

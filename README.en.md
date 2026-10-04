@@ -71,7 +71,8 @@ meshpi language nn    # use Nynorsk
 meshpi language en    # use English
 ```
 
-Press `F10` in the full-screen interface and choose **Nynorsk** or **English**.
+Press `F10` in the full-screen interface, open the **App** tab and choose
+**Nynorsk** or **English**.
 Visible TUI text changes immediately without restarting the application or
 daemon. The saved choice is reused on the next run.
 
@@ -370,8 +371,10 @@ newest message. A DM in another conversation raises a visible notification.
 Select a node in the right panel to inspect it and press Enter to open its DM.
 **New DM** shows the full node list with name/node-ID filtering. Right-click a
 node or press `Shift+F10` for node actions. The conversation list shows one DM
-entry per peer even when older data has several channel routes. Hidden legacy
-public routes remain in the database.
+entry per peer even when older data has several channel routes. When channels
+are changed or disabled on the radio, old and inactive channel entries are
+hidden from the conversation list. Legacy public routes are also hidden;
+all message history remains in the database.
 The filter below **Nodes** offers **All**, **RF only**, **MQTT only**, and
 **Both**. Press `F4` or click it to choose. **Both** means receptions have
 been recorded through both RF and MQTT by the active local gateway; the two
@@ -402,7 +405,7 @@ text with the mouse; releasing copies it automatically through OSC52 where
 supported. `Ctrl+C` repeats the copy. Other terminals may require their native
 selection, often with `Shift` while dragging.
 
-Press `F10` to open settings and switch between Nynorsk and English. The
+Press `F10`, open the **App** tab and switch between Nynorsk and English. The
 current conversation, node selection, and draft are retained while visible
 labels, dialogs, bindings, and notifications update immediately.
 
@@ -419,7 +422,7 @@ F3                 move focus to the node list
 F4                 select the RF, MQTT or both filter for nodes
 F8                 show or hide DM conversations
 F9                 show or hide secondary channels; the primary remains visible
-F10                choose language and other app settings
+F10                local node information and app settings
 Shift+F10          open actions for the selected node
 Delete             close the selected DM without deleting its history
 Ctrl+R             refresh status, conversations, and nodes
@@ -427,6 +430,32 @@ Ctrl+U             copy the update command when a new version is available
 Ctrl+Q             quit MeshPi and choose what happens to the daemon
 Esc                close the open dialog
 ```
+
+`F10` opens local node information with Overview, Radio, Status, Nodes, Channels
+and App tabs. Use `←`/`→` to change tabs, `R`/`Ctrl+R` to refresh and `Esc` or `F10` to
+close. Information refreshes every ten seconds while open. The page shows
+radio region, modem preset, role, battery and channel settings when reported
+by the radio. Frequency is calculated from configuration for supported
+firmware versions, not measured. Firmware 2.8 or newer and unknown versions
+omit unverified derived radio values. The device registry and MeshPi's stored
+history are counted separately.
+
+The **Nodes** tab lists names, full node IDs, last heard, last known GPS position,
+battery and membership of the radio's node list. Search by name or ID and press
+`Enter` for details, position timestamps and a map link. The dialog uses more
+of the terminal width. In narrow terminals, use `Shift+←`/`Shift+→` to scroll
+the columns. These are stored observations, not proof that a contact is
+currently reachable.
+
+Highlight a contact and press `Del` or **Delete node**. Use `Space` or
+**Select / deselect** to select multiple contacts. Confirmation shows every
+selected ID and the radio owning the list. The daemon saves a limited local
+copy without keys, sends individual removals sequentially over its existing
+connection, then reads a fresh node list from the radio to verify the outcome.
+MeshPi updates its list only for verified removals and reports failures or
+missing verification per contact. The local node cannot be deleted. Messages,
+history and radio settings are preserved. New traffic can teach the radio about
+a contact again; MeshPi does not automatically delete it again.
 
 The layout adapts to terminal width and hides node details first in a narrow
 window.

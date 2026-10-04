@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#090d0e">
   <title>MeshPi – Meshtastic i terminalen</title>
   <link rel="stylesheet" href="styles.css">
-  <script src="script.js?v=0.9.4" defer></script>
+  <script src="script.js?v=0.9.5" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#installasjon" data-en="Skip to installation">Gå til installasjon</a>
@@ -34,7 +34,7 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> <span data-en="Version 0.9.4">Versjon 0.9.4</span></div>
+        <div class="eyebrow"><span class="status-dot"></span> <span data-en="Version 0.9.5">Versjon 0.9.5</span></div>
         <h1><span class="heading-line" data-en="Meshtastic chat.">Meshtastic-chat.</span><br><span data-en="Right in your terminal.">Rett i terminalen.</span></h1>
         <p class="lead" data-en="MeshPi keeps the radio connection open in the background, receives messages in real time, and gives you public chat, direct messages, history, and a node list in a fast terminal interface.">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
@@ -59,7 +59,7 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.9.4</b><i>●</i> <span data-en="Connected">Tilkopla</span>
+          <b>MeshPi 0.9.5</b><i>●</i> <span data-en="Connected">Tilkopla</span>
           <span>BLE Meshtastic</span>
         </div>
         <div class="terminal-grid">
@@ -102,12 +102,12 @@
         <article>
           <span class="feature-number">01</span>
           <h3 data-en="Real-time chat">Sanntidschat</h3>
-          <p data-en="All enabled public channels and routed direct messages appear automatically, with RF/MQTT, SNR, RSSI, and ACK details when available.">Alle aktiverte public-kanalar og direktemeldingar med kanalrute dukkar opp automatisk, med RF/MQTT, SNR, RSSI og ACK når data finst.</p>
+          <p data-en="Enabled public channels and routed direct messages appear automatically, with RF/MQTT, SNR, RSSI, and ACK details when available. Old channel entries are hidden after a channel change; history is preserved.">Aktiverte public-kanalar og direktemeldingar med kanalrute dukkar opp automatisk, med RF/MQTT, SNR, RSSI og ACK når data finst. Gamle kanaloppføringar blir skjulte etter kanalbyte; historikken blir bevart.</p>
         </article>
         <article>
           <span class="feature-number">02</span>
           <h3 data-en="The full node list">Heile nodelista</h3>
-          <p data-en="Navigate with Tab and the arrow keys, view details, and press Enter to open a direct message with a node.">Naviger med Tab og piltastar, sjå detaljar og trykk Enter for å opne DM med ein node.</p>
+          <p data-en="Open F10 for local radio information and a searchable node list with last-seen times, battery and GPS. Inspect details or select contacts for verified removal from the connected radio's node list.">Opne F10 for lokal radioinfo og ei søkbar nodeliste med sist sett, batteri og GPS. Sjå detaljar eller vel kontaktar for verifisert sletting frå nodelista på den tilkopla radioen.</p>
         </article>
         <article>
           <span class="feature-number">03</span>
@@ -384,7 +384,7 @@
         <div><kbd>F4</kbd><span data-en="Select the RF, MQTT or both filter for nodes">Vel RF-, MQTT- eller begge-filter for nodar</span></div>
         <div><kbd>F8</kbd><span data-en="Show or hide DM conversations">Vis eller skjul DM-samtalane</span></div>
         <div><kbd>F9</kbd><span data-en="Show or hide secondary channels; the primary remains visible">Vis eller skjul sekundærkanalane; primærkanalen blir ståande</span></div>
-        <div><kbd>F10</kbd><span data-en="Choose language and other app settings">Vel språk og andre appinnstillingar</span></div>
+        <div><kbd>F10</kbd><span data-en="Local node information and app settings">Lokal nodeinfo og appinnstillingar</span></div>
         <div><kbd>Shift+F10</kbd><span data-en="Open actions for the selected node">Opne handlingar for markert node</span></div>
         <div><kbd>Delete</kbd><span data-en="Close the selected DM without deleting its history">Lukk vald DM utan å slette historikken</span></div>
         <div><kbd>Ctrl+R</kbd><span data-en="Refresh status, conversations, and nodes">Oppdater status, samtalar og nodar</span></div>
@@ -394,20 +394,21 @@
       </div>
     </section>
 
-    <section id="release-0.9.4" class="section release-section">
+    <section id="release-0.9.5" class="section release-section">
       <div class="section-heading">
         <span data-en="Latest version">Siste versjon</span>
-        <h2>MeshPi 0.9.4</h2>
+        <h2>MeshPi 0.9.5</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li data-en="Filter nodes by RF only, MQTT only or both, based on recorded receptions through the active gateway">Filtrer nodar på berre RF, berre MQTT eller begge, basert på registrerte mottak gjennom den aktive gatewayen</li>
-          <li data-en="Recent messages and last-seen times show their age; entries at least 24 hours old show both date and time">Nye meldingar og sist sett viser alder; oppføringar som er minst 24 timar gamle viser både dato og klokkeslett</li>
-          <li data-en="Node details always show the full date and time; reception paths are remembered after restart">Nodedetaljane viser alltid full dato og klokkeslett; mottaksvegane blir hugsa etter omstart</li>
-          <li data-en="Existing profiles, history and settings are preserved">Eksisterande profilar, historikk og innstillingar blir bevarte</li>
+          <li data-en="F10 opens local node information with radio region, modem preset, role, battery, channel details and node counts">F10 opnar lokal nodeinfo med radioregion, modemprofil, rolle, batteri, kanaldetaljar og tal på nodar</li>
+          <li data-en="A wider, searchable node list shows last-seen times, GPS positions and battery; Enter opens details and a map link">Ei breiare, søkbar nodeliste viser sist sett, GPS-posisjon og batteri; Enter opnar detaljar og kartlenkje</li>
+          <li data-en="Remove one or more selected contacts from the connected radio, with confirmation and verification against a freshly read node list">Slett éin eller fleire valde kontaktar frå den tilkopla radioen, med stadfesting og verifikasjon mot ei nyinnlesen nodeliste</li>
+          <li data-en="Old and inactive channel entries are hidden when the radio's channels change, while message history is preserved">Gamle og inaktive kanaloppføringar blir skjulte når kanalane på radioen blir endra, medan meldingshistorikken blir bevart</li>
+          <li data-en="Profiles, message history and radio settings are preserved; contacts can be learned again from new traffic">Profilar, meldingshistorikk og radioinnstillingar blir bevarte; kontaktar kan bli lærte inn att frå ny trafikk</li>
         </ul>
         <div class="release-links">
-          <a href="downloads/meshpi-0.9.4-py3-none-any.whl" data-en="Download the Python package">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.9.5-py3-none-any.whl" data-en="Download the Python package">Last ned Python-pakken</a>
           <a href="https://github.com/rvenes/meshpi" data-en="Source code on GitHub">Kjeldekode på GitHub</a>
         </div>
       </div>

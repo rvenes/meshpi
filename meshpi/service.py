@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import copy
+import json
 import logging
 import math
+import os
 import sqlite3
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from meshpi.ble import BLEDiscoveryError, discover_ble
@@ -31,6 +35,7 @@ from meshpi.connections import (
 from meshpi.database import Database
 from meshpi.events import EventHub
 from meshpi.i18n import tr
+from meshpi.local_node import interface_details
 from meshpi.models import (
     ConversationKind,
     Direction,
@@ -60,6 +65,7 @@ TRACEROUTE_TIMEOUT_SECONDS = 120
 TRACEROUTE_COOLDOWN_SECONDS = 30
 POSITION_EXCHANGE_TIMEOUT_SECONDS = 120
 POSITION_EXCHANGE_COOLDOWN_SECONDS = 30
+NODE_REMOVAL_TIMEOUT_SECONDS = 30
 MAX_NODE_ACTIONS = 50
 
 
@@ -166,10 +172,10 @@ class MeshtasticService:
         self.events = events
         self.interface_factory = interface_factory
         interrupted = self.database.fail_started_node_actions(
-            "MeshPi-tenesta blei avslutta før traceroute fekk svar"
+            "MeshPi-tenesta blei avslutta før nodehandlinga fekk eit stadfesta resultat"
         )
         if interrupted:
-            LOG.info("Merka %s avbrotne traceroute-forsøk som feila", interrupted)
+            LOG.info("Merka %s avbrotne nodehandlingar som feila", interrupted)
         default_profile = (
             ConnectionProfile.tcp(settings.meshtastic_host, settings.meshtastic_port)
             if settings.meshtastic_host
@@ -194,6 +200,8 @@ class MeshtasticService:
         self._local_node_id: str | None = None
         self._channel_bindings: dict[int, ChannelBinding] = {}
         self._node_actions: dict[str, dict[str, Any]] = {}
+        self._node_refresh_interface: Interface | None = None
+        self._node_removal_send_active = threading.Event()
         self._node_action_timers: dict[str, threading.Timer] = {}
         self._traceroute_cooldown_until = 0.0
         self._position_exchange_cooldown_until = 0.0
@@ -267,6 +275,84 @@ class MeshtasticService:
     def status(self) -> dict[str, Any]:
         with self._state_lock:
             return dict(self._status)
+
+    def local_node_info(self) -> dict[str, Any]:
+        with self._lock:
+            status = self.status()
+            local_id = self.history_local_node_id()
+            connected = (
+                status.get("state") == "tilkopla"
+                and self._interface is not None and not self._lost.is_set()
+                and self._node_refresh_interface is not self._interface
+            )
+            details = interface_details(self._interface) if connected else {}
+            nodes = self.database.list_nodes(local_node_id=local_id) if local_id else []
+            positions = (
+                self.database.latest_node_positions(local_node_id=local_id)
+                if local_id else {}
+            )
+            registry = getattr(self._interface, "nodes", {}) if connected else {}
+            registry = registry if isinstance(registry, dict) else {}
+            for item in nodes:
+                registered = registry.get(item["node_id"])
+                item["in_registry"] = isinstance(registered, dict)
+                position = positions.get(item["node_id"])
+                if isinstance(registered, dict):
+                    cached = self._registry_position(item["node_id"], registered)
+                    if cached is not None and (
+                        position is None
+                        or str(cached.get("sample_time") or "")
+                        > str(position.get("sample_time") or "")
+                    ):
+                        position = cached
+                item["latest_position"] = position
+            node = next((item for item in nodes if item["node_id"] == local_id), {})
+            summary = (
+                self.database.node_observation_summary(local_id, local_node_id=local_id)
+                if local_id else {}
+            )
+        sampled_at = time.time()
+        cutoff = sampled_at - 86_400
+        return {
+            "connected": connected,
+            "status": status,
+            "local_node_id": local_id,
+            "node": node,
+            "nodes": nodes,
+            **details,
+            "config_received_at": status.get("connected_since") if connected else None,
+            "latest_telemetry": summary.get("latest_telemetry", {}),
+            "stored_count": len(nodes),
+            "heard_24h_count": sum(
+                1 for item in nodes if cutoff <= (item.get("last_heard") or 0) <= sampled_at
+            ),
+        }
+
+    @staticmethod
+    def _registry_position(node_id: str, registered: dict[str, Any]) -> dict[str, Any] | None:
+        raw = registered.get("position")
+        if not isinstance(raw, dict):
+            return None
+        position = parse_position_packet({
+            "fromId": node_id,
+            "decoded": {"portnum": "POSITION_APP", "position": raw},
+        })
+        if position is None:
+            return None
+        # A cached coordinate without a timestamp is not a new observation.
+        position["sample_time"] = None
+        for key in ("timestamp", "time"):
+            try:
+                stamp = int(raw.get(key) or 0)
+                if 0 < stamp <= time.time() + 600:
+                    position["sample_time"] = datetime.fromtimestamp(
+                        stamp, timezone.utc
+                    ).isoformat(timespec="seconds")
+                    break
+            except (TypeError, ValueError, OverflowError, OSError):
+                continue
+        position["source"] = "registry"
+        return position
 
     def list_connections(self) -> dict[str, Any]:
         with self._lock:
@@ -604,6 +690,17 @@ class MeshtasticService:
                 self._status["history_local_node_id"] = self._local_node_id
 
     def _sync_nodes(self, interface: Interface) -> None:
+        # Serialize snapshots with a confirmed removal so stale cache rows cannot
+        # be reinserted after the cache and visible list have been updated.
+        with self._lock:
+            if (
+                interface is not self._interface or interface is self._node_refresh_interface
+                or self._lost.is_set()
+            ):
+                return
+            self._sync_nodes_locked(interface)
+
+    def _sync_nodes_locked(self, interface: Interface) -> None:
         nodes = getattr(interface, "nodes", None)
         if not isinstance(nodes, dict):
             return
@@ -762,11 +859,14 @@ class MeshtasticService:
             with self._state_lock:
                 self._status["last_valid_event_at"] = now_iso()
             self._update_routing_ack(packet)
-            if self._local_node_id:
-                node = parse_node_observation(packet, self._local_node_id)
-                if node is not None:
-                    self.database.upsert_node(node, local_node_id=self._local_node_id)
-                    self.events.publish({"type": "nodes"})
+            with self._lock:
+                if self._local_node_id:
+                    node = parse_node_observation(packet, self._local_node_id)
+                    if node is not None:
+                        self.database.upsert_node(
+                            node, local_node_id=self._local_node_id, observed=True
+                        )
+                        self.events.publish({"type": "nodes"})
             self._store_observations(packet)
             message = parse_text_packet(packet, self._local_node_id)
             if message is None:
@@ -933,7 +1033,266 @@ class MeshtasticService:
             action = self._node_actions.get(action_id)
             if action is None:
                 raise ValueError(tr("backend.node_action.not_found"))
-            return dict(action)
+            return copy.deepcopy(action)
+
+    def remove_nodes(
+        self, node_ids: list[str], expected_local_node_id: str
+    ) -> dict[str, Any]:
+        """Start sequential SDK removals, each checked against a fresh radio DB."""
+        if not isinstance(node_ids, list) or not node_ids or len(node_ids) > 1000:
+            raise ValueError(tr("backend.remove_node.invalid_selection"))
+        normalized = []
+        for supplied in [expected_local_node_id, *node_ids]:
+            if not isinstance(supplied, str) or not supplied.startswith("!") or len(supplied) != 9:
+                raise ValueError(tr("error.node_id.invalid"))
+            normalized.append(normalize_node_id(supplied))
+        local_id, *node_ids = normalized
+        if len(set(node_ids)) != len(node_ids):
+            raise ValueError(tr("backend.remove_node.invalid_selection"))
+        with self._lock:
+            interface = self._removal_interface(local_id)
+            if self._node_removal_send_active.is_set() or any(
+                action.get("action") == "remove_nodes" and action.get("status") == "started"
+                for action in self._node_actions.values()
+            ):
+                raise RuntimeError(tr("backend.remove_node.pending"))
+            contacts = []
+            for node_id in node_ids:
+                if node_id == local_id or int(node_id[1:], 16) < 4:
+                    raise ValueError(tr("backend.remove_node.local_target"))
+                node = self.database.get_node(node_id, local_node_id=local_id)
+                if node is None or node.get("removed_at") is not None:
+                    raise ValueError(tr("backend.ipc.node_not_found", node_id=node_id))
+                contacts.append(node)
+            action_id = uuid.uuid4().hex
+            backup_path = self._backup_removed_contacts(action_id, local_id, contacts)
+            action = {
+                "action_id": action_id, "local_node_id": local_id,
+                "action": "remove_nodes", "node_id": node_ids[0],
+                "status": "started", "started_at": now_iso(), "packet_id": None,
+                "result": {
+                    "contacts": [{"node_id": node_id, "status": "queued"} for node_id in node_ids],
+                    "backup_path": backup_path, "history_preserved": True,
+                },
+            }
+            self._node_actions[action_id] = action
+            self._trim_node_actions()
+            self.database.upsert_node_action(action)
+            snapshot = copy.deepcopy(action)
+            self.events.publish({"type": "node_action", "data": snapshot})
+            worker = threading.Thread(
+                target=self._remove_nodes_worker,
+                args=(action_id, interface), name="meshpi-remove-nodes", daemon=True,
+            )
+            worker.start()
+            return snapshot
+
+    def _removal_interface(self, local_id: str) -> Interface:
+        interface = self._interface
+        if (
+            interface is None or self.status()["state"] != "tilkopla"
+            or self._lost.is_set()
+        ):
+            raise RuntimeError(tr("backend.connection.not_connected"))
+        if self._local_node_id != local_id:
+            raise RuntimeError(tr("backend.remove_node.gateway_changed"))
+        local_node = getattr(interface, "localNode", None)
+        if (
+            not callable(getattr(local_node, "removeNode", None))
+            or getattr(local_node, "nodeNum", None) != int(local_id[1:], 16)
+            or getattr(local_node, "iface", interface) is not interface
+            or getattr(local_node, "noProto", False)
+            or getattr(interface, "noNodes", False)
+        ):
+            raise RuntimeError(tr("backend.remove_node.local_admin_unavailable"))
+        config = getattr(local_node, "localConfig", None)
+        if getattr(getattr(config, "security", None), "is_managed", False):
+            raise RuntimeError(tr("backend.remove_node.managed"))
+        return interface
+
+    def _backup_removed_contacts(
+        self, action_id: str, local_id: str, contacts: list[dict[str, Any]]
+    ) -> str:
+        folder = self.database.path.parent / "node-removal-backups"
+        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+        target = folder / f"{action_id}.json"
+        fields = ("node_id", "long_name", "short_name", "hw_model", "role", "last_heard")
+        payload = {
+            "created_at": now_iso(), "local_node_id": local_id,
+            "contacts": [{key: item.get(key) for key in fields} for item in contacts],
+        }
+        descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            json.dump(payload, output, ensure_ascii=False, indent=2)
+            output.write("\n")
+        return str(target.resolve())
+
+    def _remove_nodes_worker(self, action_id: str, interface: Interface) -> None:
+        with self._lock:
+            action = self._node_actions[action_id]
+            local_id = str(action["local_node_id"])
+            contacts = action["result"]["contacts"]
+        for item in contacts:
+            deadline = time.monotonic() + NODE_REMOVAL_TIMEOUT_SECONDS
+            try:
+                with self._lock:
+                    if action["status"] != "started":
+                        break
+                    if self._removal_interface(local_id) is not interface:
+                        raise RuntimeError(tr("backend.remove_node.gateway_changed"))
+                    stale_nodes = interface.nodes
+                    stale_by_num = getattr(interface, "nodesByNum", {})
+                    item["status"] = "sent"
+                    self.database.upsert_node_action(action)
+                # The pinned SDK's local removeNode sends only a local admin request.
+                # Bound the SDK call as well as verification; a late return is never
+                # allowed to mark a timed-out operation completed or start another.
+                sent_event = threading.Event()
+                send_errors: list[Exception] = []
+                self._node_removal_send_active.set()
+
+                def send_one(
+                    node_id: str = item["node_id"],
+                    errors: list[Exception] = send_errors,
+                    done: threading.Event = sent_event,
+                ) -> None:
+                    try:
+                        interface.localNode.removeNode(node_id)
+                    except Exception as exc:
+                        errors.append(exc)
+                    finally:
+                        self._node_removal_send_active.clear()
+                        done.set()
+
+                threading.Thread(target=send_one, daemon=True).start()
+                if not sent_event.wait(max(0, deadline - time.monotonic())):
+                    with self._lock:
+                        if interface is self._interface:
+                            self._lost.set()
+                            self._switch_requested.set()
+                    raise TimeoutError(tr("backend.remove_node.timeout"))
+                if send_errors:
+                    raise RuntimeError(
+                        tr("backend.remove_node.send_failed", error=send_errors[0])
+                    ) from send_errors[0]
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(tr("backend.remove_node.timeout"))
+                fresh = self._refresh_node_registry(interface, local_id, remaining)
+                if item["node_id"] in fresh:
+                    raise RuntimeError(tr("backend.remove_node.still_present"))
+                with self._lock:
+                    if action["status"] != "started":
+                        break
+                    if self._removal_interface(local_id) is not interface:
+                        raise RuntimeError(tr("backend.remove_node.gateway_changed"))
+                    if (
+                        item["node_id"] in interface.nodes
+                        or int(item["node_id"][1:], 16) in getattr(interface, "nodesByNum", {})
+                    ):
+                        raise RuntimeError(tr("backend.remove_node.still_present"))
+                    self.database.remove_node_from_list(item["node_id"], local_node_id=local_id)
+                    # The radio-provided snapshot has already proved absence. Purge
+                    # stale references only now, preserving all observation history.
+                    if stale_nodes is not interface.nodes:
+                        stale_nodes.pop(item["node_id"], None)
+                    if stale_by_num is not getattr(interface, "nodesByNum", None):
+                        stale_by_num.pop(int(item["node_id"][1:], 16), None)
+                    self._sync_nodes_locked(interface)
+                    item["status"] = "removed"
+                    self.database.upsert_node_action(action)
+                    self.events.publish({"type": "node_action", "data": copy.deepcopy(action)})
+            except Exception as exc:
+                with self._lock:
+                    item["status"] = "sent_unverified" if item["status"] == "sent" else "failed"
+                    item["error"] = str(exc)
+                    for pending in contacts:
+                        if pending["status"] == "queued":
+                            pending["status"] = "skipped"
+                    self.database.upsert_node_action(action)
+                    self._finish_node_action(action_id, error=str(exc))
+                return
+        with self._lock:
+            if action["status"] != "started":
+                for item in contacts:
+                    if item["status"] == "sent":
+                        item["status"] = "sent_unverified"
+                    elif item["status"] == "queued":
+                        item["status"] = "skipped"
+                self.database.upsert_node_action(action)
+                return
+        self._finish_node_action(action_id, result=copy.deepcopy(action["result"]))
+
+    def _refresh_node_registry(
+        self, interface: Interface, local_id: str, timeout: float
+    ) -> dict[str, Any]:
+        """Use SDK config download and its full config-complete barrier."""
+        completed = threading.Event()
+        with self._lock:
+            if self._removal_interface(local_id) is not interface:
+                raise RuntimeError(tr("backend.remove_node.gateway_changed"))
+            start = getattr(interface, "_startConfig", None)
+            original_complete = getattr(interface, "_handleConfigComplete", None)
+            if not callable(start) or not callable(original_complete):
+                raise RuntimeError(tr("backend.remove_node.refresh_unavailable"))
+            previous_nodes = interface.nodes
+            previous_by_num = getattr(interface, "nodesByNum", None)
+            previous_config_id = getattr(interface, "configId", None)
+            self._node_refresh_interface = interface
+
+            def config_complete() -> None:
+                original_complete()
+                completed.set()
+
+            interface._handleConfigComplete = config_complete
+        refresh_errors: list[Exception] = []
+
+        def start_refresh() -> None:
+            try:
+                start()
+            except Exception as exc:
+                refresh_errors.append(exc)
+                completed.set()
+
+        try:
+            threading.Thread(target=start_refresh, daemon=True).start()
+            if not completed.wait(timeout):
+                raise TimeoutError(tr("backend.remove_node.timeout"))
+            if refresh_errors:
+                raise RuntimeError(
+                    tr("backend.remove_node.refresh_unavailable")
+                ) from refresh_errors[0]
+            with self._lock:
+                if self._removal_interface(local_id) is not interface:
+                    raise RuntimeError(tr("backend.remove_node.gateway_changed"))
+                info = getattr(interface, "myInfo", None)
+                if getattr(info, "my_node_num", None) != int(local_id[1:], 16):
+                    raise RuntimeError(tr("backend.remove_node.gateway_changed"))
+                nodes = interface.nodes
+                by_num = getattr(interface, "nodesByNum", None)
+                if (
+                    not isinstance(nodes, dict) or not isinstance(by_num, dict)
+                    or nodes is previous_nodes or by_num is previous_by_num
+                    or getattr(interface, "configId", None) == previous_config_id
+                ):
+                    raise RuntimeError(tr("backend.remove_node.invalid_response"))
+                # Include unnamed NodeInfo entries, which only exist in nodesByNum.
+                snapshot = dict(nodes)
+                for number, node in by_num.items():
+                    node_id = node_num_to_id(int(number))
+                    if node_id:
+                        snapshot.setdefault(node_id, node)
+                return snapshot
+        finally:
+            with self._lock:
+                interface._handleConfigComplete = original_complete
+                if self._node_refresh_interface is interface:
+                    self._node_refresh_interface = None
+                if (not completed.is_set() or refresh_errors) and interface is self._interface:
+                    # A partial download must never become a trusted registry.
+                    # Let the existing reconnect loop obtain a complete snapshot.
+                    self._lost.set()
+                    self._switch_requested.set()
 
     def node_action_availability(self, action: str, node_id: str) -> dict[str, Any]:
         normalized_action = action.strip().lower()
@@ -1361,16 +1720,22 @@ class MeshtasticService:
             action["finished_at"] = now_iso()
             if error:
                 action["error"] = error
+                if action.get("action") == "remove_nodes":
+                    for contact in action.get("result", {}).get("contacts", []):
+                        if contact.get("status") == "sent":
+                            contact["status"] = "sent_unverified"
+                        elif contact.get("status") == "queued":
+                            contact["status"] = "skipped"
             else:
                 action["result"] = result or {}
-            snapshot = dict(action)
+            snapshot = copy.deepcopy(action)
         self.database.upsert_node_action(snapshot)
         self.events.publish({"type": "node_action", "data": snapshot})
-        label = (
-            "Traceroute"
-            if snapshot.get("action") == "traceroute"
-            else "Posisjonsførespurnad"
-        )
+        label = {
+            "traceroute": "Traceroute",
+            "position_exchange": "Posisjonsførespurnad",
+            "remove_nodes": "Nodefjerning",
+        }.get(str(snapshot.get("action")), "Nodehandling")
         if error:
             LOG.warning("%s til %s feila: %s", label, snapshot["node_id"], error)
         else:

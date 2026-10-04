@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from meshpi.channels import (
+    ChannelBinding,
     dm_conversation_id,
     logical_channel_key,
     public_conversation_id,
@@ -568,6 +569,74 @@ def test_conversation_view_hides_public_archives_and_groups_dm_routes(tmp_path):
                 "conversations": [primary_route, other_peer_route],
             }
         )
+
+
+@pytest.mark.parametrize("meshtastic_id", [None, 1234])
+def test_replaced_primary_channel_disappears_without_losing_history(tmp_path, meshtastic_id):
+    database = Database(tmp_path / "channel-history.sqlite")
+    database.initialize()
+    local_id = "!aaaaaaaa"
+    peer = "!11112222"
+    old_key = logical_channel_key(local_id, 0, "", meshtastic_id)
+    replacement_key = logical_channel_key(local_id, 0, "NarrowFast", meshtastic_id)
+    secondary_key = logical_channel_key(local_id, 2, "Ops", 5678)
+    old_primary = ChannelBinding(local_id, 0, old_key, "", "PRIMARY", meshtastic_id)
+    replacement = ChannelBinding(
+        local_id, 0, replacement_key, "NarrowFast", "PRIMARY", meshtastic_id,
+    )
+    secondary = ChannelBinding(local_id, 2, secondary_key, "Ops", "SECONDARY", 5678)
+    database.sync_channel_bindings(local_id, None, [old_primary, secondary])
+    service = MultiChannelService()
+    service.list_channels = lambda: database.list_channel_bindings(local_id, active_only=True)
+    app = IPCApplication(Settings(database_path=database.path), database, service, EventHub())
+    old_route = old_primary.conversation_id
+    secondary_route = secondary.conversation_id
+    dm_route = dm_conversation_id(local_id, peer, old_key)
+    for packet_id, kind, route, channel, key, text in (
+        (1, ConversationKind.PUBLIC, old_route, 0, old_key, "Public-historikk"),
+        (2, ConversationKind.PUBLIC, secondary_route, 2, secondary_key, "Ops-historikk"),
+        (3, ConversationKind.DM, dm_route, 0, old_key, "Bevart DM"),
+    ):
+        database.insert_message(Message(
+            packet_id=packet_id, timestamp="2026-10-04T12:00:00+00:00",
+            from_node=peer, to_node=local_id if kind == ConversationKind.DM else "!ffffffff",
+            channel=channel, kind=kind, peer_node=peer if kind == ConversationKind.DM else None,
+            text=text, direction=Direction.INCOMING, transport=Transport.RF,
+            status=MessageStatus.RECEIVED, conversation_id=route, channel_key=key,
+            local_node_id=local_id,
+        ))
+    before = app.dispatch({"command": "conversations"})["data"]
+    assert {row["conversation"] for row in before if row["kind"] == "public"} == {
+        old_route, secondary_route,
+    }
+
+    database.sync_channel_bindings(local_id, None, [replacement, secondary])
+    after = app.dispatch({
+        "command": "conversations", "preferred_conversation": old_route,
+    })["data"]
+    public = [row for row in after if row["kind"] == "public"]
+    assert {row["conversation"] for row in public} == {
+        replacement.conversation_id, secondary_route,
+    }
+    primary = next(row for row in public if row["channel"] == 0)
+    assert primary["channel_name"] == "NarrowFast"
+    assert all(row["sendable"] for row in public)
+    assert next(row for row in after if row["kind"] == "dm")["conversation"] == dm_route
+
+    # A disabled secondary channel also leaves the visible list, with both
+    # channel histories and the old DM route still available for explicit reads.
+    database.sync_channel_bindings(local_id, None, [replacement])
+    visible = app.dispatch({"command": "conversations"})["data"]
+    assert [row["conversation"] for row in visible if row["kind"] == "public"] == [
+        replacement.conversation_id,
+    ]
+    for route, text in ((old_route, "Public-historikk"), (secondary_route, "Ops-historikk"),
+                        (dm_route, "Bevart DM")):
+        history = app.dispatch({"command": "messages", "conversation": route})["data"]
+        assert [row["text"] for row in history] == [text]
+    assert {row["conversation"] for row in database.conversations(local_id)} == {
+        old_route, secondary_route, dm_route,
+    }
 
 
 def test_public_watch_matches_only_the_active_primary_channel(tmp_path):

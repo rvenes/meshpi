@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="index, follow">
-  <meta name="description" content="MeshPi-betakanalen gir ein signert veg til den stabile 0.9.4-utgivinga.">
+  <meta name="description" content="MeshPi-betakanalen gir ein signert veg til den stabile 0.9.5-utgivinga.">
   <title>MeshPi betakanal</title>
   <style>
     body { max-width: 48rem; margin: 4rem auto; padding: 0 1.5rem; color: #e8edf2; background: #0d141b; font: 1rem/1.6 system-ui, sans-serif; }
@@ -18,24 +18,24 @@
     .language-switcher button[aria-pressed="true"] { color: #0d141b; background: #9fe7c4; }
     a { color: #8bc7ff; }
   </style>
-  <script src="../script.js?v=0.9.4" defer></script>
+  <script src="../script.js?v=0.9.5" defer></script>
 </head>
-<body data-page="beta" data-title-nn="MeshPi betakanal" data-title-en="MeshPi beta channel" data-description-nn="MeshPi-betakanalen gir ein signert veg til den stabile 0.9.4-utgivinga." data-description-en="The MeshPi beta channel provides a signed path to the stable 0.9.4 release.">
+<body data-page="beta" data-title-nn="MeshPi betakanal" data-title-en="MeshPi beta channel" data-description-nn="MeshPi-betakanalen gir ein signert veg til den stabile 0.9.5-utgivinga." data-description-en="The MeshPi beta channel provides a signed path to the stable 0.9.5 release.">
   <div class="language-switcher" role="group" aria-label="Språk" data-aria-en="Language">
     <button type="button" data-language="nn" aria-pressed="true">Nynorsk</button>
     <button type="button" data-language="en" aria-pressed="false">English</button>
   </div>
   <main>
     <h1 data-en="MeshPi beta channel">MeshPi betakanal</h1>
-    <p data-en="The beta channel now points to the same signed MeshPi 0.9.4 release as the stable channel. Existing beta users can safely continue to the stable release.">
-      Betakanalen peikar no på den same signerte MeshPi 0.9.4-utgivinga som stabilkanalen. Eksisterande betabrukarar kan trygt gå vidare til den stabile utgivinga.
+    <p data-en="There is no separate beta release at present. The beta channel points to the same signed MeshPi 0.9.5 release as the stable channel, so existing beta users can continue to the stable release.">
+      Det finst inga eiga betautgiving no. Betakanalen peikar på den same signerte MeshPi 0.9.5-utgivinga som stabilkanalen, slik at eksisterande betabrukarar kan gå vidare til den stabile utgivinga.
     </p>
     <p class="warning" data-en-html="Normal &lt;code&gt;meshpi update&lt;/code&gt; uses the stable channel. The beta channel remains a compatible path for existing beta users. Installation and updates preserve configuration, profiles, the SQLite database, and message history.">
       Vanleg <code>meshpi update</code> bruker stabilkanalen. Betakanalen blir ståande som ein kompatibel veg vidare for eksisterande betabrukarar. Installasjon og oppdatering bevarer konfigurasjon, profilar, SQLite-database og meldingshistorikk.
     </p>
     <section>
       <h2 data-en="Update from MeshPi 0.8.6 or newer">Oppdater frå MeshPi 0.8.6 eller nyare</h2>
-      <p data-en="MeshPi 0.8.6 and newer can install the signed stable 0.9.4 release through the beta channel with:">MeshPi 0.8.6 og nyare kan installere den signerte stabile 0.9.4-utgivinga gjennom betakanalen med:</p>
+      <p data-en="MeshPi 0.8.6 and newer can install the signed stable 0.9.5 release through the beta channel with:">MeshPi 0.8.6 og nyare kan installere den signerte stabile 0.9.5-utgivinga gjennom betakanalen med:</p>
       <pre><code>meshpi update --beta</code></pre>
       <p data-en-html="On Linux in &lt;code&gt;always&lt;/code&gt; mode, use &lt;code&gt;sudo meshpi update --beta&lt;/code&gt;. &lt;code&gt;--beta&lt;/code&gt; only applies to this update; normal &lt;code&gt;meshpi update&lt;/code&gt; continues to use the stable channel.">På Linux i <code>always</code>-modus bruker du <code>sudo meshpi update --beta</code>. <code>--beta</code> gjeld berre denne oppdateringa; vanleg <code>meshpi update</code> held fram med å bruke stabilkanalen.</p>
     </section>
@@ -57,12 +57,12 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\install-windows.ps1 -BaseUrl https://venes.org/meshpi/beta</code></pre>
     </section>
     <section>
-      <h2>MeshPi 0.9.4</h2>
-      <p data-en="MeshPi 0.9.4 adds node transport filters and clearer timestamps.">MeshPi 0.9.4 får transportfilter for nodar og tydelegare tidsmerking.</p>
+      <h2>MeshPi 0.9.5</h2>
+      <p data-en="MeshPi 0.9.5 adds local node information under F10 and keeps the channel list in step with the radio.">MeshPi 0.9.5 får lokal nodeinfo under F10 og held kanallista i samsvar med radioen.</p>
       <ul>
-        <li data-en="Filter nodes by RF only, MQTT only or both through the active gateway.">Filtrer nodar på berre RF, berre MQTT eller begge gjennom den aktive gatewayen.</li>
-        <li data-en="Recent entries show their age; entries at least 24 hours old show date and time.">Nye oppføringar viser alder; oppføringar som er minst 24 timar gamle viser dato og klokkeslett.</li>
-        <li data-en="Reception paths are remembered after restart. Existing profiles, history and settings are preserved.">Mottaksvegane blir hugsa etter omstart. Eksisterande profilar, historikk og innstillingar blir bevarte.</li>
+        <li data-en="View radio settings, battery and a wider, searchable node list with last-seen times and GPS.">Sjå radioinnstillingar, batteri og ei breiare, søkbar nodeliste med sist sett og GPS.</li>
+        <li data-en="Remove selected contacts from the connected radio with confirmation and verification against a freshly read node list.">Slett valde kontaktar frå den tilkopla radioen med stadfesting og verifikasjon mot ei nyinnlesen nodeliste.</li>
+        <li data-en="Old and inactive channel entries are hidden. Profiles, message history and radio settings are preserved.">Gamle og inaktive kanaloppføringar blir skjulte. Profilar, meldingshistorikk og radioinnstillingar blir bevarte.</li>
       </ul>
     </section>
     <p data-en-html="Without &lt;code&gt;--beta&lt;/code&gt;, MeshPi always uses the &lt;a href=&quot;../version.json&quot;&gt;stable channel&lt;/a&gt;.">Utan <code>--beta</code> bruker MeshPi alltid den <a href="../version.json">stabile kanalen</a>.</p>

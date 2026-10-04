@@ -62,6 +62,61 @@ def test_v5_migration_backfills_both_from_scoped_receptions_without_data_loss(tm
         assert connection.execute('PRAGMA user_version').fetchone()[0] == 5
 
 
+def test_removed_node_retains_history_and_names_without_stale_resurrection(tmp_path):
+    database = Database(tmp_path / "removed.db")
+    database.initialize()
+    remote = "!11112222"
+    original = Node(node_id=remote, long_name="Bevart namn", last_heard=100)
+    database.upsert_node(original, local_node_id=LOCAL_NODE_ID)
+    database.upsert_node(original, local_node_id="!aaaaaaaa")
+    database.insert_message(message())
+    common = {
+        "node_id": remote, "sample_time": "2026-10-04T12:00:00+00:00",
+        "received_at": "2026-10-04T12:00:01+00:00", "gateway_node_id": LOCAL_NODE_ID,
+    }
+    database.insert_position(common | {
+        "dedupe_key": "location", "latitude": 60, "longitude": 5,
+    })
+    database.insert_telemetry(common | {
+        "dedupe_key": "metrics", "kind": "device", "metrics": {"batteryLevel": 75},
+    })
+    database.remove_node_from_list(remote, local_node_id=LOCAL_NODE_ID)
+    database.initialize()
+    database.upsert_node(original, local_node_id=LOCAL_NODE_ID)
+    assert database.list_nodes(local_node_id=LOCAL_NODE_ID) == []
+    assert len(database.list_nodes(local_node_id="!aaaaaaaa")) == 1
+    assert database.get_node(remote, local_node_id=LOCAL_NODE_ID)["long_name"] == "Bevart namn"
+    assert database.list_messages("public")[0]["text"] == "Test"
+    assert len(database.list_positions(remote, local_node_id=LOCAL_NODE_ID)) == 1
+    assert len(database.list_telemetry(remote, local_node_id=LOCAL_NODE_ID)) == 1
+    database.upsert_node(Node(node_id=remote), local_node_id=LOCAL_NODE_ID, observed=True)
+    assert database.list_nodes(local_node_id=LOCAL_NODE_ID)[0]["long_name"] == "Bevart namn"
+
+
+def test_node_removal_migration_is_additive_and_latest_positions_are_scoped(tmp_path):
+    database = Database(tmp_path / "positions.db")
+    database.initialize()
+    database.upsert_node(Node(node_id="!11112222"), local_node_id=LOCAL_NODE_ID)
+    with sqlite3.connect(database.path) as connection:
+        connection.execute("ALTER TABLE nodes DROP COLUMN removed_at")
+    database.initialize()
+    common = {"node_id": "!11112222", "received_at": "2026-10-04T12:00:01+00:00",
+              "latitude": 60, "longitude": 5}
+    for identity, gateway, timestamp, latitude in (
+        ("new", LOCAL_NODE_ID, "2026-10-04T12:00:00+00:00", 61),
+        ("old-later-insert", LOCAL_NODE_ID, "2026-10-04T11:00:00+00:00", 60),
+        ("other-gateway", "!aaaaaaaa", "2026-10-04T13:00:00+00:00", 62),
+    ):
+        database.insert_position(common | {
+            "dedupe_key": identity, "gateway_node_id": gateway,
+            "sample_time": timestamp, "latitude": latitude,
+        })
+    latest = database.latest_node_positions(local_node_id=LOCAL_NODE_ID)
+    assert latest["!11112222"]["latitude"] == 61
+    assert len(latest) == 1
+    assert database.list_nodes(local_node_id=LOCAL_NODE_ID)[0]["removed_at"] is None
+
+
 def message(packet_id=42, kind=ConversationKind.PUBLIC, peer=None):
     return Message(
         packet_id=packet_id,

@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.9.4",
-  "published_at": "2026-10-03T01:24:49Z",
+  "latest_version": "0.9.5",
+  "published_at": "2026-10-04T04:18:53Z",
   "minimum_python": "3.11",
   "release_notes_url": "https://venes.org/meshpi/beta/",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.9.4-py3-none-any.whl",
-    "filename": "meshpi-0.9.4-py3-none-any.whl",
-    "sha256": "5f5710e097d15f9ba116be759fa8378d7e295c25393b7326a4905550a40ea0c2",
-    "size": 175269,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.9.5-py3-none-any.whl",
+    "filename": "meshpi-0.9.5-py3-none-any.whl",
+    "sha256": "9978928d9fccaa03f5bffcd69bcc9cd17b613dcc23211618ca501769cf40a7b1",
+    "size": 193243,
     "format": "wheel"
   },
   "locks": {
@@ -55,14 +55,16 @@
     }
   },
   "release_notes": [
-    "Transportfilter for nodar: Alle, Berre RF, Berre MQTT og Begge, med lagra mottaksvegar per gateway.",
-    "Nye meldingar og sist sett viser minutt og timar sidan; frå seks timar blir klokkeslett vist, og frå 24 timar både dato og klokkeslett.",
-    "Nodedetaljane viser full dato og klokkeslett. Eksisterande profilar, historikk og innstillingar blir bevarte."
+    "F10 opnar lokal nodeinfo med radioregion, modemprofil, rolle, batteri, kanaldetaljar og tal på nodar",
+    "Ei breiare, søkbar nodeliste viser sist sett, GPS-posisjon og batteri; Enter opnar detaljar og kartlenkje",
+    "Slett éin eller fleire valde kontaktar frå den tilkopla radioen, med stadfesting og verifikasjon mot ei nyinnlesen nodeliste",
+    "Gamle og inaktive kanaloppføringar blir skjulte når kanalane på radioen blir endra, medan meldingshistorikken blir bevart",
+    "Profilar, meldingshistorikk og radioinnstillingar blir bevarte; kontaktar kan bli lærte inn att frå ny trafikk"
   ],
   "channel": "beta",
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "KE0K1Le0YP7ohUTwEx4L3rkEgbrEeZh9WZ5g20GaLNddOrvwirQSpAbnpvfz3fsXgvXeb4BHg3iDB7JYCEIOfdVD4MO8tYfMWGh5O0ER0FSjzgDE77Lg8eXVhvo5eQ9bVFsOaQbCWEZtO/h1o4HCTFGwyw2gBrxMuHVFcqDmhHb60SLdJhv5WTRnX73VxkRIwoxwV0pZExSMnfRlnY+KuwnkuDkiODC1jwiSyWYjlyKwTSC1sEdgBkRqgAgAMzvDPYmbIPsePnertO0s5EYRFJOcaSOiPOkRaj4RxEJ0fRz2zrnq7mvnCySC8mwKTnPuVfgI5fohSQmKR7qHFA1dtSEtJmvNH1iJWoavxO615A5Cmmpbrhbxat+E5xnmSJ8mVDJbaPL5KlQIQMQnoPT2oYq0QI0bgoco+7XMds14p5Tktfx1b5IzXtKYVW3rd7Jehvdj7OBoZ3oKsWOM8Yl1xXymPJNZXk1kn6PxHTbB33wb4J3Qag9opHuoki2LD7ly"
+    "value": "fQ+pBsmJtmX4p6H4YuNW72wh7MtbkuIOEgXqEbky9wjpeq73gls6PRtY/8mHKmsxlqLiagjN8UzsTKdZ/WpAnBsok3YcBXV/sZWCPJqj1XiMeIvhadvSfWWOfjDi2R34gL/x66/1f+G7aj7mT2qGYd+4IM55wALhxjXwC6eLGpTmPhz8Phse/uHYYXqmsRI+27KDSrXnsC5ZGkW6H6JHPZAl92fIiTwTfnbzv93JiITZNCWs4UaEs7SfWLcVCEUrWyoS2ebowEhB6DVNSCT2hYwPfHMWD6lpxSxZQbA3i1NpHxoiRGEHYQW/8LbE/Kud1ALFNfJc8uDegLNqpEgOgYUvkxRyidNYrqjKWJK95LVdwDzKMbVzEzSM7cULgW5k56oxzw+VE8ukajUBS/hO00yhP+G8SmdxdSrfo++HkH+DsuPOvih8FqZY551fo1PVa0urlnT0cpUcr8IlzeF/9OFA2h036zMKUM7LVdJ5NsggmrW80tKYj2ON2BnfVcwf"
   }
 }

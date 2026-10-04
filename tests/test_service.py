@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import threading
 import time
@@ -17,6 +18,7 @@ from meshpi.models import (
     MessageStatus,
     Transport,
 )
+from meshpi.packet import node_from_registry
 from meshpi.service import (
     MeshtasticService,
     interface_reader_stopped,
@@ -53,7 +55,9 @@ class FakeInterface:
         self.calls.append((text, kwargs))
         return SentPacket()
 
-    def sendData(self, data, **kwargs):
+    def sendData(self, data, *args, **kwargs):
+        if args:
+            kwargs["destinationId"] = args[0]
         self.data_calls.append((data, kwargs))
         return SentPacket()
 
@@ -90,6 +94,536 @@ def test_all_packet_types_accumulate_transport_evidence_without_sending(service)
     assert database.get_node('!33334444', local_node_id=value._local_node_id) is None
     assert not interface.calls
     assert not interface.data_calls
+
+
+def test_local_node_info_uses_active_gateway_and_never_sends(service):
+    from meshtastic.protobuf import config_pb2, localonly_pb2, mesh_pb2
+
+    from meshpi.ipc import IPCApplication
+
+    value, interface, database = service
+    config = localonly_pb2.LocalConfig()
+    config.lora.CopyFrom(config_pb2.Config.LoRaConfig(
+        region=3, use_preset=True, tx_enabled=True, hop_limit=3,
+    ))
+    config.device.role = config_pb2.Config.DeviceConfig.CLIENT_MUTE
+    interface.localNode.localConfig = config
+    interface.metadata = mesh_pb2.DeviceMetadata(firmware_version="2.7.test")
+    interface.nodes = {
+        "!710365c8": {"user": {"id": "!710365c8", "longName": "Lokal"},
+                      "deviceMetrics": {"batteryLevel": 55, "voltage": 3.9}},
+        "!11112222": {"user": {"id": "!11112222"}, "lastHeard": int(time.time())},
+    }
+    value._sync_nodes(interface)
+    # A different gateway's history must not be included.
+    database.upsert_node(
+        node_from_registry("!33334444", {"lastHeard": int(time.time())}, "!ffffffff"),
+        local_node_id="!ffffffff",
+    )
+    app = IPCApplication(value.settings, database, value, value.events)
+    result = app.dispatch({"command": "local_node_info"})["data"]
+    assert result["node"]["long_name"] == "Lokal"
+    assert result["node"]["battery_level"] == 55
+    assert result["role"] == "CLIENT_MUTE"
+    assert result["radio"]["frequency_mhz"] == 869.525
+    assert result["registry_count"] == 2
+    assert result["stored_count"] == 2
+    assert result["heard_24h_count"] == 1
+    assert not interface.calls
+    assert not interface.data_calls
+
+    value._lost.set()
+    result = value.local_node_info()
+    assert result["connected"] is False
+    assert "radio" not in result
+    assert result["stored_count"] == 2
+    assert result["node"]["battery_level"] == 55
+
+
+def test_local_node_info_without_gateway_has_no_unscoped_history(service):
+    value, _, _ = service
+    value._interface = None
+    value._local_node_id = None
+    value._profile = None
+    value._set_status("ingen node")
+    result = value.local_node_info()
+    assert result["connected"] is False
+    assert result["node"] == {}
+    assert result["stored_count"] == 0
+    assert result["latest_telemetry"] == {}
+
+
+def _prepare_node_removal(service):
+    from meshtastic.node import Node
+
+    value, interface, database = service
+    remote = "!11112222"
+    local_id = value._local_node_id
+    interface.nodes[remote] = {
+        "num": int(remote[1:], 16),
+        "user": {"id": remote, "longName": "Fjernnode"},
+        "lastHeard": 1_700_000_000,
+        "position": {"latitudeI": 601234567, "longitudeI": 51234567},
+    }
+    interface.nodesByNum = {int(remote[1:], 16): interface.nodes[remote]}
+    channels = interface.localNode.channels
+    interface.localNode = Node(interface, int(local_id[1:], 16))
+    interface.localNode.channels = channels
+    # Exercise the SDK admin path using an in-memory transport only.
+    interface._getOrCreateByNum = lambda node_num: {"adminSessionPassKey": b""}
+    value._sync_nodes(interface)
+    return remote, local_id
+
+
+def test_local_node_list_includes_cached_and_logged_positions_by_gateway(service):
+    value, interface, database = service
+    remote, local_id = _prepare_node_removal(service)
+    item = value.local_node_info()["nodes"][0]
+    assert item["node_id"] == remote
+    assert item["in_registry"] is True
+    assert item["latest_position"]["latitude"] == pytest.approx(60.1234567)
+    assert item["latest_position"]["sample_time"] is None
+    value._on_receive({
+        "fromId": remote,
+        "id": 702,
+        "decoded": {"portnum": "POSITION_APP", "position": {
+            "latitude": 61, "longitude": 6, "time": 1_700_000_100,
+        }},
+    }, interface)
+    other = "!33334444"
+    value._on_receive({"fromId": other, "rxTime": 1_700_000_000}, interface)
+    items = {item["node_id"]: item for item in value.local_node_info()["nodes"]}
+    assert items[remote]["latest_position"]["latitude"] == 61
+    assert items[remote]["latest_position"]["gateway_node_id"] == local_id
+    assert items[other]["in_registry"] is False
+    assert items[other]["latest_position"] is None
+    assert not interface.data_calls
+
+
+@pytest.mark.parametrize("registry_time, expected_latitude", [
+    (1_700_000_200, 62), (1_700_000_000, 61), (None, 61),
+])
+def test_local_node_list_prefers_newest_timestamped_position(
+    service, registry_time, expected_latitude,
+):
+    value, interface, _ = service
+    remote, _ = _prepare_node_removal(service)
+    value._on_receive({
+        "fromId": remote,
+        "id": 702,
+        "decoded": {"portnum": "POSITION_APP", "position": {
+            "latitude": 61, "longitude": 6, "time": 1_700_000_100,
+        }},
+    }, interface)
+    interface.nodes[remote]["position"] = {"latitude": 62, "longitude": 7}
+    if registry_time is not None:
+        interface.nodes[remote]["position"]["time"] = registry_time
+    position = value.local_node_info()["nodes"][0]["latest_position"]
+    assert position["latitude"] == expected_latitude
+    assert position["sample_time"] is not None
+    assert not interface.data_calls
+
+
+def _wait_node_removal(value, action):
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        current = value.node_action_status(action["action_id"])
+        if current["status"] != "started":
+            return current
+        time.sleep(0.01)
+    pytest.fail("Node removal worker did not finish")
+
+
+def _empty_radio_snapshot(interface, *args):
+    interface.nodes = {}
+    interface.nodesByNum = {}
+    return {}
+
+
+def test_remove_nodes_uses_sdk_local_admin_and_verifies_fresh_snapshot(
+    service, monkeypatch,
+):
+    from meshtastic.protobuf import portnums_pb2
+
+    value, interface, database = service
+    remote, local_id = _prepare_node_removal(service)
+    stale_nodes = interface.nodes
+    stale_by_num = interface.nodesByNum
+    database.upsert_node(
+        node_from_registry(remote, interface.nodes[remote], "!abcdef12"),
+        local_node_id="!abcdef12",
+    )
+    value._on_receive({
+        "fromId": remote,
+        "id": 901,
+        "decoded": {"portnum": "POSITION_APP", "position": {
+            "latitude": 60, "longitude": 5, "time": 1_700_000_100,
+        }},
+    }, interface)
+    refreshes = []
+
+    def refresh(current, expected_local_id, timeout):
+        refreshes.append((current, expected_local_id, timeout))
+        assert database.list_nodes(local_node_id=local_id)
+        # Cache contents are stale until a fresh radio snapshot arrives.
+        assert remote in current.nodes
+        current.nodes = {}
+        current.nodesByNum = {}
+        return {}
+
+    monkeypatch.setattr(value, "_refresh_node_registry", refresh)
+    result = _wait_node_removal(value, value.remove_nodes([remote], local_id))
+    assert result["status"] == "completed"
+    assert result["result"]["contacts"][0]["node_id"] == remote
+    assert result["result"]["contacts"][0]["status"] == "removed"
+    assert result["result"]["history_preserved"] is True
+    assert len(interface.data_calls) == 1
+    payload, options = interface.data_calls[0]
+    assert payload.remove_by_nodenum == int(remote[1:], 16)
+    assert all(field.name in {"remove_by_nodenum", "session_passkey"}
+               for field, _ in payload.ListFields())
+    assert options["destinationId"] == int(local_id[1:], 16)
+    assert options["portNum"] == portnums_pb2.PortNum.ADMIN_APP
+    assert options["onResponse"] is None
+    assert len(refreshes) == 1
+    assert refreshes[0][0] is interface
+    assert refreshes[0][1] == local_id
+    assert refreshes[0][2] > 0
+    assert database.list_nodes(local_node_id=local_id) == []
+    assert remote not in stale_nodes
+    assert int(remote[1:], 16) not in stale_by_num
+    assert database.get_node(remote, local_node_id=local_id)["long_name"] == "Fjernnode"
+    assert len(database.list_positions(remote, local_node_id=local_id)) == 1
+    assert len(database.list_nodes(local_node_id="!abcdef12")) == 1
+    value._sync_nodes(interface)
+    assert database.list_nodes(local_node_id=local_id) == []
+    value._on_receive({"fromId": remote, "rxTime": int(time.time()) + 1}, interface)
+    assert database.list_nodes(local_node_id=local_id)[0]["node_id"] == remote
+    assert not interface.calls
+
+
+def test_remove_nodes_saves_contact_backup_before_first_send(service, monkeypatch):
+    from pathlib import Path
+
+    value, interface, _ = service
+    remote, local_id = _prepare_node_removal(service)
+    interface.nodes[remote]["user"]["publicKey"] = "not-for-contact-backup"
+    original_send = interface.sendData
+    seen_backups = []
+
+    def send(data, *args, **kwargs):
+        actions = list(value._node_actions.values())
+        path = Path(actions[-1]["result"]["backup_path"])
+        payload = path.read_text(encoding="utf-8")
+        seen_backups.append(json.loads(payload))
+        assert remote in payload
+        assert "Fjernnode" in payload
+        assert "not-for-contact-backup" not in payload
+        assert "adminSessionPassKey" not in payload
+        return original_send(data, *args, **kwargs)
+
+    monkeypatch.setattr(interface, "sendData", send)
+    monkeypatch.setattr(value, "_refresh_node_registry", _empty_radio_snapshot)
+    result = _wait_node_removal(value, value.remove_nodes([remote], local_id))
+    assert result["status"] == "completed"
+    assert len(seen_backups) == 1
+    assert Path(result["result"]["backup_path"]).is_file()
+
+
+def test_remove_nodes_sends_and_refreshes_contacts_sequentially(service, monkeypatch):
+    value, interface, _ = service
+    remote, local_id = _prepare_node_removal(service)
+    second = "!33334444"
+    interface.nodes[second] = {"num": int(second[1:], 16), "user": {"id": second}}
+    interface.nodesByNum[int(second[1:], 16)] = interface.nodes[second]
+    value._sync_nodes(interface)
+    steps = []
+    original_send = interface.sendData
+
+    def send(data, *args, **kwargs):
+        steps.append(("send", data.remove_by_nodenum))
+        return original_send(data, *args, **kwargs)
+
+    def refresh(current, expected_local_id, timeout):
+        removed = remote if len(steps) == 1 else second
+        steps.append(("refresh", removed))
+        current.nodes = {key: node for key, node in current.nodes.items() if key != removed}
+        current.nodesByNum = {node["num"]: node for node in current.nodes.values()}
+        return dict(current.nodes)
+
+    monkeypatch.setattr(interface, "sendData", send)
+    monkeypatch.setattr(value, "_refresh_node_registry", refresh)
+    result = _wait_node_removal(value, value.remove_nodes([remote, second], local_id))
+    assert steps == [
+        ("send", int(remote[1:], 16)), ("refresh", remote),
+        ("send", int(second[1:], 16)), ("refresh", second),
+    ]
+    assert [item["status"] for item in result["result"]["contacts"]] == ["removed", "removed"]
+
+
+@pytest.mark.parametrize("outcome", ["timeout", "still_present"])
+def test_remove_nodes_does_not_report_success_without_confirmed_absence(
+    service, monkeypatch, outcome,
+):
+    value, interface, database = service
+    remote, local_id = _prepare_node_removal(service)
+
+    def refresh(*args):
+        if outcome == "timeout":
+            raise TimeoutError("No complete radio snapshot")
+        return dict(interface.nodes)
+
+    monkeypatch.setattr(value, "_refresh_node_registry", refresh)
+    result = _wait_node_removal(value, value.remove_nodes([remote], local_id))
+    contact = result["result"]["contacts"][0]
+    assert contact["status"] == "sent_unverified"
+    assert result["status"] != "completed"
+    assert database.list_nodes(local_node_id=local_id)
+    assert remote in interface.nodes
+    assert len(interface.data_calls) == 1
+    assert interface.data_calls[0][1]["onResponse"] is None
+
+
+@pytest.mark.parametrize(
+    "case", ["local", "broadcast", "unknown", "gateway", "offline", "admin", "managed"],
+)
+def test_remove_nodes_fails_closed_before_sending(service, case):
+    value, interface, _ = service
+    remote, local_id = _prepare_node_removal(service)
+    if case == "local":
+        remote = local_id
+    elif case == "broadcast":
+        remote = "!ffffffff"
+    elif case == "unknown":
+        remote = "!55556666"
+    elif case == "gateway":
+        local_id = "!abcdef12"
+    elif case == "offline":
+        value._lost.set()
+    elif case == "admin":
+        interface.localNode.nodeNum = int(remote[1:], 16)
+    else:
+        interface.localNode.localConfig.security.is_managed = True
+    with pytest.raises((ValueError, RuntimeError)):
+        value.remove_nodes([remote], local_id)
+    assert not interface.data_calls
+
+
+def test_remove_nodes_rejects_whole_batch_before_sending_if_one_target_invalid(service):
+    value, interface, _ = service
+    remote, local_id = _prepare_node_removal(service)
+    with pytest.raises((ValueError, RuntimeError)):
+        value.remove_nodes([remote, local_id], local_id)
+    assert not interface.data_calls
+
+
+def test_remove_nodes_refuses_overlapping_removals(service, monkeypatch):
+    value, _, _ = service
+    remote, local_id = _prepare_node_removal(service)
+    entered = threading.Event()
+    release = threading.Event()
+
+    def refresh(interface, *args):
+        entered.set()
+        assert release.wait(3)
+        return _empty_radio_snapshot(interface)
+
+    monkeypatch.setattr(value, "_refresh_node_registry", refresh)
+    action = value.remove_nodes([remote], local_id)
+    try:
+        assert entered.wait(3)
+        with pytest.raises(RuntimeError):
+            value.remove_nodes([remote], local_id)
+    finally:
+        release.set()
+    assert _wait_node_removal(value, action)["status"] == "completed"
+
+
+def test_remove_nodes_stops_batch_if_gateway_changes_during_refresh(service, monkeypatch):
+    value, interface, database = service
+    remote, local_id = _prepare_node_removal(service)
+    second = "!33334444"
+    interface.nodes[second] = {"num": int(second[1:], 16), "user": {"id": second}}
+    value._sync_nodes(interface)
+
+    def refresh(*args):
+        value._local_node_id = "!abcdef12"
+        return {}
+
+    monkeypatch.setattr(value, "_refresh_node_registry", refresh)
+    result = _wait_node_removal(value, value.remove_nodes([remote, second], local_id))
+    assert result["status"] != "completed"
+    contacts = result["result"]["contacts"]
+    assert contacts[0]["status"] == "sent_unverified"
+    assert contacts[1]["status"] == "skipped"
+    assert len(interface.data_calls) == 1
+    assert len(database.list_nodes(local_node_id=local_id)) == 2
+
+
+def test_remove_nodes_ipc_requires_explicit_gateway_and_contact_list(service, monkeypatch):
+    from meshpi.ipc import IPCApplication
+
+    value, _, database = service
+    remote, local_id = _prepare_node_removal(service)
+    monkeypatch.setattr(value, "_refresh_node_registry", _empty_radio_snapshot)
+    app = IPCApplication(value.settings, database, value, value.events)
+    with pytest.raises(ValueError):
+        app.dispatch({"command": "remove_nodes", "node_ids": [remote]})
+    with pytest.raises(ValueError):
+        app.dispatch({"command": "remove_nodes", "node_ids": remote,
+                      "expected_local_node_id": local_id})
+    action = app.dispatch({
+        "command": "remove_nodes", "node_ids": [remote],
+        "expected_local_node_id": local_id,
+    })["data"]
+    assert _wait_node_removal(value, action)["status"] == "completed"
+
+
+@pytest.mark.parametrize("registry", ["nodes", "nodesByNum"])
+def test_remove_nodes_keeps_contact_if_new_traffic_arrives_after_snapshot(
+    service, monkeypatch, registry,
+):
+    value, interface, database = service
+    remote, local_id = _prepare_node_removal(service)
+    heard_now = int(time.time())
+
+    def refresh(current, *args):
+        fresh = _empty_radio_snapshot(current)
+        received = {"num": int(remote[1:], 16), "lastHeard": heard_now}
+        if registry == "nodes":
+            current.nodes[remote] = received
+        else:
+            current.nodesByNum[received["num"]] = received
+        value._on_receive({"fromId": remote, "rxTime": heard_now}, current)
+        return fresh
+
+    monkeypatch.setattr(value, "_refresh_node_registry", refresh)
+    result = _wait_node_removal(value, value.remove_nodes([remote], local_id))
+    assert result["status"] == "failed"
+    assert result["result"]["contacts"][0]["status"] == "sent_unverified"
+    row = database.list_nodes(local_node_id=local_id)[0]
+    assert row["node_id"] == remote
+    assert row["last_heard"] == heard_now
+    assert row["removed_at"] is None
+    assert getattr(interface, registry)
+
+
+def test_remove_nodes_sdk_timeout_and_late_return_never_complete_or_send_next(
+    service, monkeypatch,
+):
+    value, interface, database = service
+    remote, local_id = _prepare_node_removal(service)
+    second = "!33334444"
+    interface.nodes[second] = {"num": int(second[1:], 16), "user": {"id": second}}
+    value._sync_nodes(interface)
+    entered = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+    sent = []
+    refreshes = []
+
+    def blocked_send(node_id):
+        sent.append(node_id)
+        entered.set()
+        try:
+            assert release.wait(3)
+            return SentPacket()
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(interface.localNode, "removeNode", blocked_send)
+    monkeypatch.setattr("meshpi.service.NODE_REMOVAL_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(value, "_refresh_node_registry", lambda *args: refreshes.append(args))
+    action = value.remove_nodes([remote, second], local_id)
+    try:
+        assert entered.wait(3)
+        result = _wait_node_removal(value, action)
+        assert result["status"] == "failed"
+        assert [item["status"] for item in result["result"]["contacts"]] == [
+            "sent_unverified", "skipped",
+        ]
+        assert value._lost.is_set()
+        assert value._switch_requested.is_set()
+        # Even after connectivity recovers, the previous SDK send is still live.
+        value._lost.clear()
+        value._set_status("tilkopla")
+        with pytest.raises(RuntimeError):
+            value.remove_nodes([second], local_id)
+        assert sent == [remote]
+    finally:
+        release.set()
+        assert finished.wait(3)
+    assert value.node_action_status(action["action_id"])["status"] == "failed"
+    assert sent == [remote]
+    assert refreshes == []
+    assert len(database.list_nodes(local_node_id=local_id)) == 2
+
+
+def test_refresh_node_registry_requires_complete_new_download_and_keeps_unnamed_nodes(service):
+    value, interface, _ = service
+    remote, local_id = _prepare_node_removal(service)
+    unnamed = "!33334444"
+    interface.configId = 123
+    complete_calls = []
+
+    def original_complete():
+        complete_calls.append(True)
+
+    def start_config():
+        interface.nodes = {remote: interface.nodes[remote]}
+        interface.nodesByNum = {
+            int(unnamed[1:], 16): {"num": int(unnamed[1:], 16), "lastHeard": 1_700_000_000},
+        }
+        interface.configId = 124
+        interface.myInfo = SimpleNamespace(my_node_num=int(local_id[1:], 16))
+        interface._handleConfigComplete()
+
+    interface._handleConfigComplete = original_complete
+    interface._startConfig = start_config
+    snapshot = value._refresh_node_registry(interface, local_id, 0.1)
+    assert set(snapshot) == {remote, unnamed}
+    assert complete_calls == [True]
+    assert interface._handleConfigComplete is original_complete
+    assert value._node_refresh_interface is None
+    assert not interface.data_calls
+
+
+@pytest.mark.parametrize(
+    "failure", ["incomplete", "same_nodes", "same_numbers", "same_id", "gateway"],
+)
+def test_refresh_node_registry_never_accepts_partial_or_app_edited_cache(service, failure):
+    value, interface, _ = service
+    _, local_id = _prepare_node_removal(service)
+    interface.configId = 123
+
+    def original_complete():
+        pass
+
+    def start_config():
+        if failure == "same_nodes":
+            interface.nodes.clear()
+        else:
+            interface.nodes = {}
+        if failure == "same_numbers":
+            interface.nodesByNum.clear()
+        else:
+            interface.nodesByNum = {}
+        if failure != "same_id":
+            interface.configId = 124
+        interface.myInfo = SimpleNamespace(my_node_num=(
+            int("abcdef12", 16) if failure == "gateway" else int(local_id[1:], 16)
+        ))
+        if failure != "incomplete":
+            interface._handleConfigComplete()
+
+    interface._handleConfigComplete = original_complete
+    interface._startConfig = start_config
+    # This event is already set: it must not count as completion of a new download.
+    assert interface.isConnected.is_set()
+    with pytest.raises((RuntimeError, TimeoutError)):
+        value._refresh_node_registry(interface, local_id, 0.01)
+    assert interface._handleConfigComplete is original_complete
+    assert value._node_refresh_interface is None
 
 
 def test_discover_connections_includes_ble_results(service, monkeypatch):

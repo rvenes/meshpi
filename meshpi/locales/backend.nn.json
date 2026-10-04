@@ -71,5 +71,16 @@
   "backend.traceroute.missing_route": "Traceroute-svaret manglar rutedata",
   "backend.traceroute.send_failed": "Klarte ikkje sende traceroute: {error}",
   "backend.traceroute.timeout": "Traceroute fekk ikkje svar innan tidsfristen",
-  "backend.traceroute.wrong_response": "Mottok feil svartype for traceroute"
+  "backend.traceroute.wrong_response": "Mottok feil svartype for traceroute",
+  "backend.remove_node.gateway_changed": "Den aktive radioen er endra. Oppdater nodelista og prøv igjen.",
+  "backend.remove_node.local_target": "Den lokale noden eller ein reservert node-ID kan ikkje fjernast.",
+  "backend.remove_node.local_admin_unavailable": "Lokal nodeadministrasjon er ikkje tilgjengeleg for denne tilkoplinga.",
+  "backend.remove_node.managed": "Noden er administrert og tillèt ikkje lokal fjerning av nodar.",
+  "backend.remove_node.pending": "Ei nodefjerning er allereie i gang.",
+  "backend.remove_node.invalid_response": "Svaret stadfestar ikkje ei fersk nodeliste frå den aktive radioen.",
+  "backend.remove_node.send_failed": "Klarte ikkje be den lokale radioen om fjerning: {error}",
+  "backend.remove_node.timeout": "Slettinga kan vere sendt, men ei fersk nodeliste stadfesta ikkje resultatet innan tidsfristen. MeshPi-lista er ikkje endra for denne kontakten.",
+  "backend.remove_node.invalid_selection": "Vel éin eller fleire ulike nodar (maks. 1000).",
+  "backend.remove_node.still_present": "Kontakten finst framleis i den ferske nodelista frå radioen, eller er lært inn att frå ny trafikk.",
+  "backend.remove_node.refresh_unavailable": "Klarte ikkje hente ei fersk, fullstendig nodeliste frå radioen."
 }
