@@ -3,6 +3,7 @@ set -eu
 
 BASE_URL="${MESHPI_BASE_URL:-https://venes.org/meshpi}"
 MODE="${MESHPI_MODE:-always}"
+WEB_CHOICE=keep
 IPC_PORT_VALUE="${MESHPI_IPC_PORT:-8765}"
 SKIP_SERVICE="${MESHPI_SKIP_SERVICE:-0}"
 TEST_MODE="${MESHPI_TEST_MODE:-0}"
@@ -84,6 +85,8 @@ message() {
         rollback:en) printf '%s' 'The update failed. The previous version has been restored.' ;;
         no_rollback:nn) printf '%s' 'Oppdateringa feila, og ingen førre versjon finst.' ;;
         no_rollback:en) printf '%s' 'The update failed, and no previous version is available.' ;;
+        managed_pip:nn) printf '%s' 'MeshPi held pip og programpakkane oppdaterte gjennom testa utgivingar. Bruk meshpi update.' ;;
+        managed_pip:en) printf '%s' 'MeshPi updates pip and dependencies through tested releases. Use meshpi update.' ;;
         complete:nn) printf '%s' 'Installasjonen er ferdig.' ;;
         complete:en) printf '%s' 'Installation is complete.' ;;
         installed:nn) printf '%s' 'MeshPi %s er installert i %s-modus.' ;;
@@ -158,8 +161,70 @@ resolve_ipc_socket_gid() {
     printf '%s\n' "$ipc_gid"
 }
 
+
+# Read configuration as data; never source an env file as shell code.
+get_env_value() {
+    [ -f "$CONFIG_FILE" ] || return 0
+    awk -v key="$1" 'index($0, key "=") == 1 { value=substr($0, length(key)+2) } END { print value }' "$CONFIG_FILE"
+}
+
+choose_web() {
+    if [ "$WEB_CHOICE" = "keep" ]; then
+        WEB_ENABLED="$(get_env_value WEB_ENABLED)"
+        WEB_ENABLED="${WEB_ENABLED:-false}"
+        if [ "$FRESH_INSTALL" = "1" ] && [ -t 0 ]; then
+            printf '%s' 'Vil du aktivere webgrensesnittet? [j/N] '
+            read -r answer || answer=
+            case "$answer" in j | J | ja | Ja | y | Y | yes) WEB_ENABLED=true ;; esac
+        fi
+    else
+        WEB_ENABLED="$WEB_CHOICE"
+    fi
+    case "$WEB_ENABLED" in
+        true | false) ;;
+        *) printf '%s\n' 'WEB_ENABLED må vere true eller false.' >&2; return 1 ;;
+    esac
+}
+
+save_web_settings() {
+    set_env_value WEB_ENABLED "$WEB_ENABLED"
+    grep -q '^WEB_PORT=' "$CONFIG_FILE" || set_env_value WEB_PORT 8780
+    grep -q '^WEB_PUBLIC_URL=' "$CONFIG_FILE" || set_env_value WEB_PUBLIC_URL ''
+    grep -q '^WEB_BASE_PATH=' "$CONFIG_FILE" || set_env_value WEB_BASE_PATH /meshpi
+}
+
+show_web_access() {
+    if [ "$WEB_ENABLED" != "true" ]; then
+        printf '%s\n' 'Webgrensesnittet er avslått. Køyr meshpi web-info for steg til aktivering og tilgang.'
+        return 0
+    fi
+    web_url="$(get_env_value WEB_PUBLIC_URL)"
+    web_port="$(get_env_value WEB_PORT)"
+    web_path="$(get_env_value WEB_BASE_PATH)"
+    printf 'Webgrensesnitt: %s%s/\n' "${web_url:-http://localhost:$web_port}" "$web_path"
+    if [ "$MODE" = "session" ]; then
+        printf '%s\n' 'Start webgrensesnittet med: meshpi web'
+    fi
+    printf '%s\n' 'Hent ein eingongskode for innlogging med: meshpi web-code'
+    printf '%s\n' 'Tilgang via Tailscale Serve må setjast opp separat. Køyr meshpi web-info for kommandoane.'
+}
+
+snapshot_file() {
+    [ ! -f "$2" ] || cp -p "$2" "$TMP_DIR/$1.saved"
+}
+
+restore_file() {
+    if [ -f "$TMP_DIR/$1.saved" ]; then
+        cp -p "$TMP_DIR/$1.saved" "$2"
+    else
+        rm -f "$2"
+    fi
+}
+
 for argument in "$@"; do
     case "$argument" in
+        --web) WEB_CHOICE=true ;;
+        --no-web) WEB_CHOICE=false ;;
         --mode=always) MODE=always ;;
         --mode=session) MODE=session ;;
         --no-service) MODE=session ;;
@@ -283,6 +348,7 @@ else
     BIN_FILE="${MESHPI_BIN_FILE:-/usr/local/bin/meshpi}"
 fi
 UNIT_FILE="${MESHPI_UNIT_FILE:-/etc/systemd/system/meshpi.service}"
+WEB_UNIT_FILE="${MESHPI_WEB_UNIT_FILE:-$(dirname "$UNIT_FILE")/meshpi-web.service}"
 RELEASES_DIR="$PREFIX/releases"
 CURRENT_LINK="$PREFIX/current"
 PREVIOUS_LINK="$PREFIX/previous"
@@ -291,6 +357,8 @@ FRESH_INSTALL=0
 if [ ! -e "$PREFIX" ] && [ ! -e "$STATE_DIR" ] && [ ! -e "$CONFIG_FILE" ]; then
     FRESH_INSTALL=1
 fi
+choose_web
+
 CLIENT_USER="$INSTALL_USER"
 if [ "$MODE" = "always" ] && [ -f "$CONFIG_FILE" ]; then
     EXISTING_OWNER="$(stat -c %U "$CONFIG_FILE" 2>/dev/null || true)"
@@ -473,6 +541,66 @@ ACTUAL_LOCK_SHA256="$(sha256sum "$LOCK_FILE" | awk '{print $1}')"
     exit 1
 }
 
+# Preserve the complete previous configuration and service definitions for rollback.
+snapshot_file config "$CONFIG_FILE"
+if [ -n "$SYSTEMCTL" ]; then
+    snapshot_file daemon-unit "$UNIT_FILE"
+    snapshot_file web-unit "$WEB_UNIT_FILE"
+fi
+snapshot_file launcher "$BIN_FILE"
+ACTIVATION_STARTED=0
+OLD_DAEMON_ACTIVE=0
+OLD_DAEMON_ENABLED=0
+OLD_WEB_ACTIVE=0
+OLD_WEB_ENABLED=0
+if [ -n "$SYSTEMCTL" ]; then
+    "$SYSTEMCTL" is-active --quiet meshpi.service && OLD_DAEMON_ACTIVE=1 || true
+    "$SYSTEMCTL" is-enabled --quiet meshpi.service 2>/dev/null && OLD_DAEMON_ENABLED=1 || true
+    "$SYSTEMCTL" is-active --quiet meshpi-web.service && OLD_WEB_ACTIVE=1 || true
+    "$SYSTEMCTL" is-enabled --quiet meshpi-web.service 2>/dev/null && OLD_WEB_ENABLED=1 || true
+fi
+finish_install() {
+    result=$?
+    trap - EXIT INT TERM
+    if [ "$result" -ne 0 ]; then
+        set +e
+        if [ "$ACTIVATION_STARTED" = "1" ] && [ -n "$SYSTEMCTL" ]; then
+            "$SYSTEMCTL" stop meshpi-web.service meshpi.service >/dev/null 2>&1
+        fi
+        restore_file config "$CONFIG_FILE"
+        if [ -n "$SYSTEMCTL" ]; then
+            restore_file daemon-unit "$UNIT_FILE"
+            restore_file web-unit "$WEB_UNIT_FILE"
+        fi
+        restore_file launcher "$BIN_FILE"
+        if [ "$ACTIVATION_STARTED" = "1" ]; then
+            if [ -n "$OLD_RELEASE" ] && [ -d "$OLD_RELEASE" ]; then
+                switch_link "$OLD_RELEASE"
+                rm -f "$PREVIOUS_LINK"
+                say_error rollback
+            else
+                rm -f "$CURRENT_LINK"
+                say_error no_rollback
+            fi
+            if [ -n "$SYSTEMCTL" ]; then
+                "$SYSTEMCTL" daemon-reload
+                for service in meshpi.service meshpi-web.service; do
+                    "$SYSTEMCTL" disable "$service" >/dev/null 2>&1
+                done
+                [ "$OLD_DAEMON_ENABLED" != "1" ] || "$SYSTEMCTL" enable meshpi.service >/dev/null
+                [ "$OLD_WEB_ENABLED" != "1" ] || "$SYSTEMCTL" enable meshpi-web.service >/dev/null
+                [ "$OLD_DAEMON_ACTIVE" != "1" ] || "$SYSTEMCTL" start meshpi.service
+                [ "$OLD_WEB_ACTIVE" != "1" ] || "$SYSTEMCTL" start meshpi-web.service
+            fi
+        fi
+    fi
+    rm -rf "$TMP_DIR"
+    exit "$result"
+}
+trap finish_install EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 if [ "$MODE" = "always" ] && [ "$SKIP_SERVICE" != "1" ]; then
     getent group dialout >/dev/null 2>&1 || groupadd --system dialout
     if ! id meshpi >/dev/null 2>&1; then
@@ -518,6 +646,8 @@ else
     fi
 fi
 
+save_web_settings
+
 if [ "$MODE" = "always" ] && [ "$SKIP_SERVICE" != "1" ]; then
     chown "$CLIENT_USER:meshpi" "$CONFIG_FILE"
     chmod 0640 "$CONFIG_FILE"
@@ -545,7 +675,7 @@ if [ "$RELEASE" != "$OLD_RELEASE" ]; then
     "$RELEASE/.venv/bin/python" -I -c \
         'import runpy,sys; sys.path.insert(0,sys.argv.pop(1)); runpy.run_module("meshpi.bootstrap",run_name="__main__")' \
         "$WHEEL" "$LOCK_FILE"
-    "$RELEASE/.venv/bin/python" -m pip install -q --no-deps "$WHEEL"
+    "$RELEASE/.venv/bin/python" -m pip --disable-pip-version-check install -q --no-deps "$WHEEL"
     )
 else
     install_step 5 already_installed "$VERSION"
@@ -568,8 +698,10 @@ switch_link() {
 }
 
 install_step 7 activate
+ACTIVATION_STARTED=1
 if [ "$SKIP_SERVICE" != "1" ]; then
     if [ "$MODE" = "always" ]; then
+        "$SYSTEMCTL" stop meshpi-web.service >/dev/null 2>&1 || true
         "$SYSTEMCTL" stop meshpi.service >/dev/null 2>&1 || true
     elif [ -x "$BIN_FILE" ]; then
         "$BIN_FILE" service stop >/dev/null 2>&1 || true
@@ -637,9 +769,42 @@ ReadWritePaths=$STATE_DIR /run/meshpi
 WantedBy=multi-user.target
 EOF
     chmod 0644 "$UNIT_FILE"
+    cat >"$WEB_UNIT_FILE" <<EOF
+[Unit]
+Description=MeshPi webgrensesnitt
+After=network-online.target meshpi.service
+Wants=meshpi.service
+
+[Service]
+Type=simple
+User=meshpi
+Group=meshpi
+WorkingDirectory=$STATE_DIR
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+ExecStart=$CURRENT_LINK/.venv/bin/meshpi --env-file $CONFIG_FILE web --managed
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$STATE_DIR
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    chmod 0644 "$WEB_UNIT_FILE"
+    if [ "$WEB_ENABLED" != "true" ]; then
+        "$SYSTEMCTL" disable meshpi-web.service >/dev/null 2>&1 || true
+    fi
     "$SYSTEMCTL" daemon-reload
     "$SYSTEMCTL" enable meshpi.service >/dev/null
     "$SYSTEMCTL" start meshpi.service
+    if [ "$WEB_ENABLED" = "true" ]; then
+        "$SYSTEMCTL" enable meshpi-web.service >/dev/null
+        "$SYSTEMCTL" start meshpi-web.service
+    fi
 
     READY=0
     i=0
@@ -647,22 +812,18 @@ EOF
         if [ "${MESHPI_FORCE_HEALTH_FAILURE:-0}" != "1" ] &&
             "$CURRENT_LINK/.venv/bin/meshpi" --env-file "$CONFIG_FILE" status >/dev/null 2>&1
         then
-            READY=1
-            break
+            if [ "$WEB_ENABLED" != "true" ] || {
+                [ "${MESHPI_FORCE_WEB_HEALTH_FAILURE:-0}" != "1" ] &&
+                "$CURRENT_LINK/.venv/bin/meshpi" --env-file "$CONFIG_FILE" web-check >/dev/null 2>&1
+            }; then
+                READY=1
+                break
+            fi
         fi
         i=$((i + 1))
         sleep 0.25
     done
     if [ "$READY" != "1" ]; then
-        "$SYSTEMCTL" stop meshpi.service >/dev/null 2>&1 || true
-        if [ -n "$OLD_RELEASE" ] && [ -d "$OLD_RELEASE" ]; then
-            switch_link "$OLD_RELEASE"
-            rm -f "$PREVIOUS_LINK"
-            "$SYSTEMCTL" start meshpi.service || true
-            say_error rollback
-        else
-            say_error no_rollback
-        fi
         exit 1
     fi
 fi
@@ -681,4 +842,7 @@ fi
 
 install_step 8 complete
 say installed "$VERSION" "$MODE"
+say managed_pip
 say start
+
+show_web_access

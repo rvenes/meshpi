@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import socket
 import sys
 import tempfile
@@ -42,6 +43,7 @@ from meshpi.update import apply_update, check_for_update
 
 EXIT_ERROR = 1
 COMMANDS = {
+    "web", "web-code", "web-check", "web-configure", "web-info",
     "tui",
     "update",
     "new",
@@ -719,6 +721,27 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     parser.set_defaults(command="tui")
     sub.add_parser("tui", help=tr("cli.help.tui"))
+    web = sub.add_parser("web", help=tr("cli.help.web"))
+    web.add_argument("--port", type=int, default=None, help=tr("cli.help.web_port"))
+    web.add_argument("--public-url", default=None, help=tr("cli.help.web_url"))
+    web.add_argument("--base-path", default=None, help=tr("cli.help.web_path"))
+    web.add_argument("--managed", action="store_true", help=argparse.SUPPRESS)
+    web_code = sub.add_parser("web-code", help=tr("cli.help.web_code"))
+    web_code.add_argument("--local", action="store_true", help=tr("cli.help.web_code_local"))
+    sub.add_parser("web-check", help=tr("cli.help.web_check"))
+    web_info_parser = sub.add_parser("web-info", help=tr("cli.help.web_info"))
+    web_info_parser.add_argument("--local", action="store_true",
+                                 help=tr("cli.help.web_info_local"))
+    web_configure = sub.add_parser("web-configure", help=tr("cli.help.web_configure"))
+    web_choice = web_configure.add_mutually_exclusive_group()
+    web_choice.add_argument("--enable", dest="enabled", action="store_true")
+    web_choice.add_argument("--disable", dest="enabled", action="store_false")
+    web_configure.set_defaults(enabled=None)
+    web_configure.add_argument("--port", type=int)
+    web_configure.add_argument(
+        "--public-url", help=tr("cli.help.web_canonical"),
+    )
+    web_configure.add_argument("--base-path")
     sub.add_parser("new", help=tr("cli.help.new"))
     connect = sub.add_parser("connect", help=tr("cli.help.connect"))
     connect.add_argument(
@@ -838,7 +861,99 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run(args: argparse.Namespace, settings: Settings) -> str | None:
     command = args.command
-    if command == "language":
+    if command == "web":
+        from meshpi.web import run_web
+        from meshpi.web_setup import web_settings
+
+        if args.managed and not settings.web_enabled:
+            return None
+        selected = web_settings(settings, port=args.port, public_url=args.public_url,
+                                base_path=args.base_path)
+        handle = DaemonHandle()
+        try:
+            if selected.background_mode == "session":
+                handle = start_session_daemon(selected, args.env_file)
+            run_web(selected, port=selected.web_port, public_url=selected.web_public_url,
+                    base_path=selected.web_base_path)
+        finally:
+            if handle.owned:
+                stop_daemon(selected)
+    elif command == "web-info":
+        from meshpi.web_setup import setup_guidance, web_info
+
+        info = web_info(settings)
+        if args.json:
+            print(json.dumps(info, ensure_ascii=False))
+            return None
+        print(tr("web.info_status_heading"))
+        print(tr("web.info_enabled" if info["enabled"] else "web.info_disabled"))
+        print(tr("web.health_ok" if info["responding_locally"] else "web.health_failed"))
+        print()
+        print(tr("web.info_login", url=info["login_url"]))
+        if info["passkeys_enabled"]:
+            print(tr("web.info_https"))
+        else:
+            print(tr("web.info_local_only"))
+        print()
+        # Use this interpreter/configuration, not a possibly older meshpi in PATH.
+        parts = [sys.executable, "-m", "meshpi", "--env-file",
+                 str(Path(args.env_file).expanduser().absolute()), "web-code"]
+        if args.local:
+            parts.append("--local")
+        if sys.platform == "win32":
+            code_command = "& " + " ".join("'" + p.replace("'", "''") + "'" for p in parts)
+        else:
+            code_command = (shlex.join(parts[:3]) + " \\\n    " + shlex.join(parts[3:5])
+                            + " \\\n    " + shlex.join(parts[5:]))
+        print(tr("web.info_code", command=code_command))
+        if args.local:
+            print(tr("web.info_local_user"))
+        if info["passkeys_enabled"]:
+            print()
+            print(tr("web.info_passkeys"))
+        print()
+        print(tr("web.info_recovery"))
+        print()
+        print(tr("web.info_details_heading"))
+        print(tr("web.info_local", url=info["local_url"]))
+        if info["tailscale_url"]:
+            print(tr("web.info_tailscale", url=info["tailscale_url"]))
+            if info["public_url"] and info["public_url"] != info["tailscale_url"]:
+                print(tr("web.info_mismatch"))
+        else:
+            print(tr("web.info_tailscale_" + info["tailscale_state"]))
+        print(tr("web.info_serve"))
+        print()
+        print(setup_guidance(settings, args.env_file, info,
+                             executable=sys.executable, platform=sys.platform))
+        print()
+        print(tr("web.info_readonly"))
+    elif command == "web-check":
+        from meshpi.web_setup import check_web
+
+        if not check_web(settings):
+            raise CLIError(tr("web.health_failed"))
+        print(tr("web.health_ok"))
+    elif command == "web-code":
+        if args.local:
+            from meshpi.web_auth import AuthStore
+
+            code = AuthStore(settings.web_auth_dir, settings.web_origin).issue_code()
+        else:
+            code = _request(settings, {
+                "command": "web_login_code", "origin": settings.web_origin,
+            })["data"]["code"]
+        print(tr("web.code_intro"))
+        print(code)
+        print(tr("web.open_url", url=f"{settings.web_origin}{settings.web_base_path}/"))
+    elif command == "web-configure":
+        from meshpi.web_setup import configure_web
+
+        selected = configure_web(args.env_file, settings, enabled=args.enabled, port=args.port,
+                                 public_url=args.public_url, base_path=args.base_path)
+        print(tr("web.config_saved", url=f"{selected.web_origin}{selected.web_base_path}/"))
+        print(tr("web.config_restart"))
+    elif command == "language":
         if args.language is None:
             print(tr("language.current", language=LANGUAGE_NAMES[get_language()]))
         else:
@@ -1092,12 +1207,15 @@ def main(argv: list[str] | None = None) -> None:
         settings = Settings.load(args.env_file)
         handle = DaemonHandle()
         needs_daemon = args.command not in {
+            "web", "web-check", "web-configure", "web-info",
             "daemon",
             "doctor",
             "language",
             "service",
             "update",
         }
+        if args.command == "web-code" and args.local:
+            needs_daemon = False
         if needs_daemon:
             if settings.background_mode == "session":
                 handle = start_session_daemon(settings, args.env_file)

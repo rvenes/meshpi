@@ -3,6 +3,7 @@ set -eu
 
 BASE_URL="${MESHPI_BASE_URL:-https://venes.org/meshpi}"
 MODE="${MESHPI_MODE:-always}"
+WEB_CHOICE=keep
 IPC_PORT_VALUE="${MESHPI_IPC_PORT:-8765}"
 SKIP_SERVICE="${MESHPI_SKIP_SERVICE:-0}"
 TEST_MODE="${MESHPI_TEST_MODE:-0}"
@@ -68,6 +69,8 @@ message() {
         service_description:en) printf '%s' 'MeshPi Meshtastic background service' ;;
         rollback:nn) printf '%s' 'Oppdateringa feila. Førre versjon er sett tilbake.' ;;
         rollback:en) printf '%s' 'The update failed. The previous version has been restored.' ;;
+        managed_pip:nn) printf '%s' 'MeshPi held pip og programpakkane oppdaterte gjennom testa utgivingar. Bruk meshpi update.' ;;
+        managed_pip:en) printf '%s' 'MeshPi updates pip and dependencies through tested releases. Use meshpi update.' ;;
         complete:nn) printf '%s' 'Installasjonen er ferdig.' ;;
         complete:en) printf '%s' 'Installation is complete.' ;;
         installed:nn) printf '%s' 'MeshPi %s er installert i %s-modus.' ;;
@@ -122,8 +125,70 @@ set_env_value() {
     return 1
 }
 
+
+# Read configuration as data; never source an env file as shell code.
+get_env_value() {
+    [ -f "$CONFIG_FILE" ] || return 0
+    awk -v key="$1" 'index($0, key "=") == 1 { value=substr($0, length(key)+2) } END { print value }' "$CONFIG_FILE"
+}
+
+choose_web() {
+    if [ "$WEB_CHOICE" = "keep" ]; then
+        WEB_ENABLED="$(get_env_value WEB_ENABLED)"
+        WEB_ENABLED="${WEB_ENABLED:-false}"
+        if [ "$FRESH_INSTALL" = "1" ] && [ -t 0 ]; then
+            printf '%s' 'Vil du aktivere webgrensesnittet? [j/N] '
+            read -r answer || answer=
+            case "$answer" in j | J | ja | Ja | y | Y | yes) WEB_ENABLED=true ;; esac
+        fi
+    else
+        WEB_ENABLED="$WEB_CHOICE"
+    fi
+    case "$WEB_ENABLED" in
+        true | false) ;;
+        *) printf '%s\n' 'WEB_ENABLED må vere true eller false.' >&2; return 1 ;;
+    esac
+}
+
+save_web_settings() {
+    set_env_value WEB_ENABLED "$WEB_ENABLED"
+    grep -q '^WEB_PORT=' "$CONFIG_FILE" || set_env_value WEB_PORT 8780
+    grep -q '^WEB_PUBLIC_URL=' "$CONFIG_FILE" || set_env_value WEB_PUBLIC_URL ''
+    grep -q '^WEB_BASE_PATH=' "$CONFIG_FILE" || set_env_value WEB_BASE_PATH /meshpi
+}
+
+show_web_access() {
+    if [ "$WEB_ENABLED" != "true" ]; then
+        printf '%s\n' 'Webgrensesnittet er avslått. Køyr meshpi web-info for steg til aktivering og tilgang.'
+        return 0
+    fi
+    web_url="$(get_env_value WEB_PUBLIC_URL)"
+    web_port="$(get_env_value WEB_PORT)"
+    web_path="$(get_env_value WEB_BASE_PATH)"
+    printf 'Webgrensesnitt: %s%s/\n' "${web_url:-http://localhost:$web_port}" "$web_path"
+    if [ "$MODE" = "session" ]; then
+        printf '%s\n' 'Start webgrensesnittet med: meshpi web'
+    fi
+    printf '%s\n' 'Hent ein eingongskode for innlogging med: meshpi web-code'
+    printf '%s\n' 'Tilgang via Tailscale Serve må setjast opp separat. Køyr meshpi web-info for kommandoane.'
+}
+
+snapshot_file() {
+    [ ! -f "$2" ] || cp -p "$2" "$TMP_DIR/$1.saved"
+}
+
+restore_file() {
+    if [ -f "$TMP_DIR/$1.saved" ]; then
+        cp -p "$TMP_DIR/$1.saved" "$2"
+    else
+        rm -f "$2"
+    fi
+}
+
 for argument in "$@"; do
     case "$argument" in
+        --web) WEB_CHOICE=true ;;
+        --no-web) WEB_CHOICE=false ;;
         --mode=always) MODE=always ;;
         --mode=session | --no-service) MODE=session ;;
         --language=nn) LANGUAGE=nn ;;
@@ -196,6 +261,7 @@ CONFIG_FILE="${MESHPI_CONFIG_FILE:-$APP_ROOT/meshpi.env}"
 BIN_DIR="${MESHPI_BIN_DIR:-$HOME/.local/bin}"
 LAUNCH_AGENTS_DIR="${MESHPI_LAUNCH_AGENTS_DIR:-$HOME/Library/LaunchAgents}"
 PLIST_FILE="$LAUNCH_AGENTS_DIR/org.venes.meshpi.plist"
+WEB_PLIST_FILE="$LAUNCH_AGENTS_DIR/org.venes.meshpi.web.plist"
 RELEASES_DIR="$APP_ROOT/releases"
 CURRENT_LINK="$APP_ROOT/current"
 PREVIOUS_LINK="$APP_ROOT/previous"
@@ -204,6 +270,8 @@ FRESH_INSTALL=0
 if [ ! -e "$APP_ROOT" ] && [ ! -e "$CONFIG_FILE" ]; then
     FRESH_INSTALL=1
 fi
+
+choose_web
 
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
@@ -342,6 +410,64 @@ ACTUAL_LOCK_SHA256="$(shasum -a 256 "$LOCK_FILE" | awk '{print $1}')"
     exit 1
 }
 
+snapshot_file config "$CONFIG_FILE"
+snapshot_file daemon-plist "$PLIST_FILE"
+snapshot_file web-plist "$WEB_PLIST_FILE"
+snapshot_file launcher "$BIN_DIR/meshpi"
+ACTIVATION_STARTED=0
+DOMAIN="gui/$(id -u)"
+LABEL=org.venes.meshpi
+WEB_LABEL=org.venes.meshpi.web
+OLD_DAEMON_ACTIVE=0
+OLD_WEB_ACTIVE=0
+if [ "$SKIP_SERVICE" != "1" ]; then
+    launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 && OLD_DAEMON_ACTIVE=1 || true
+    launchctl print "$DOMAIN/$WEB_LABEL" >/dev/null 2>&1 && OLD_WEB_ACTIVE=1 || true
+fi
+stop_launch_job() {
+    job="$1"
+    launchctl bootout "$DOMAIN/$job" >/dev/null 2>&1 || true
+    attempts=0
+    while launchctl print "$DOMAIN/$job" >/dev/null 2>&1; do
+        attempts=$((attempts + 1))
+        [ "$attempts" -lt 50 ] || { say_error stop_failed; return 1; }
+        sleep 0.1
+    done
+}
+finish_install() {
+    result=$?
+    trap - EXIT INT TERM
+    if [ "$result" -ne 0 ]; then
+        set +e
+        if [ "$ACTIVATION_STARTED" = "1" ] && [ "$SKIP_SERVICE" != "1" ]; then
+            stop_launch_job "$WEB_LABEL"
+            stop_launch_job "$LABEL"
+        fi
+        restore_file config "$CONFIG_FILE"
+        restore_file daemon-plist "$PLIST_FILE"
+        restore_file web-plist "$WEB_PLIST_FILE"
+        restore_file launcher "$BIN_DIR/meshpi"
+        if [ "$ACTIVATION_STARTED" = "1" ]; then
+            if [ -n "$OLD_RELEASE" ] && [ -d "$OLD_RELEASE" ]; then
+                switch_link "$OLD_RELEASE"
+                rm -f "$PREVIOUS_LINK"
+                say_error rollback
+            else
+                rm -f "$CURRENT_LINK"
+            fi
+            if [ "$SKIP_SERVICE" != "1" ]; then
+                [ "$OLD_DAEMON_ACTIVE" != "1" ] || launchctl bootstrap "$DOMAIN" "$PLIST_FILE"
+                [ "$OLD_WEB_ACTIVE" != "1" ] || launchctl bootstrap "$DOMAIN" "$WEB_PLIST_FILE"
+            fi
+        fi
+    fi
+    rm -rf "$TMP_DIR"
+    exit "$result"
+}
+trap finish_install EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 mkdir -p \
     "$APP_ROOT" "$DATA_DIR" "$BIN_DIR" "$LAUNCH_AGENTS_DIR" "$RELEASES_DIR" \
     "$(dirname "$CONFIG_FILE")"
@@ -384,6 +510,8 @@ else
         printf 'IPC_TOKEN=%s\n' "$IPC_TOKEN" >>"$CONFIG_FILE"
     fi
 fi
+save_web_settings
+
 chmod 0600 "$CONFIG_FILE"
 
 RELEASE="$RELEASES_DIR/$VERSION"
@@ -398,7 +526,7 @@ if [ "$RELEASE" != "$OLD_RELEASE" ]; then
     "$RELEASE/venv/bin/python" -I -c \
         'import runpy,sys; sys.path.insert(0,sys.argv.pop(1)); runpy.run_module("meshpi.bootstrap",run_name="__main__")' \
         "$WHEEL" "$LOCK_FILE"
-    "$RELEASE/venv/bin/python" -m pip install -q --no-deps "$WHEEL"
+    "$RELEASE/venv/bin/python" -m pip --disable-pip-version-check install -q --no-deps "$WHEEL"
 else
     install_step 5 already_installed "$VERSION"
 fi
@@ -411,9 +539,26 @@ INSTALLED_VERSION="$("$RELEASE/venv/bin/meshpi" --version)"
 MESHPI_LANGUAGE="$LANGUAGE" \
     "$RELEASE/venv/bin/meshpi" --env-file "$CONFIG_FILE" doctor --offline
 
+switch_link() {
+    target="$1"
+    temporary="$APP_ROOT/.current-$$"
+    rm -f "$temporary"
+    ln -s "$target" "$temporary"
+    "$PYTHON" - "$temporary" "$CURRENT_LINK" <<'PY'
+import os
+import sys
+
+os.replace(sys.argv[1], sys.argv[2])
+PY
+}
+
 install_step 7 activate
+ACTIVATION_STARTED=1
 DOMAIN="gui/$(id -u)"
 LABEL="org.venes.meshpi"
+if [ "$SKIP_SERVICE" != "1" ]; then
+    stop_launch_job "$WEB_LABEL"
+fi
 if [ "$SKIP_SERVICE" != "1" ]; then
     launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
 
@@ -445,18 +590,6 @@ if [ -z "$OLD_RELEASE" ] && [ -d "$APP_ROOT/venv" ]; then
     fi
 fi
 
-switch_link() {
-    target="$1"
-    temporary="$APP_ROOT/.current-$$"
-    rm -f "$temporary"
-    ln -s "$target" "$temporary"
-    "$PYTHON" - "$temporary" "$CURRENT_LINK" <<'PY'
-import os
-import sys
-
-os.replace(sys.argv[1], sys.argv[2])
-PY
-}
 
 if [ -n "$OLD_RELEASE" ] && [ "$OLD_RELEASE" != "$RELEASE" ]; then
     rm -f "$PREVIOUS_LINK"
@@ -510,6 +643,28 @@ elif [ "$MODE" = "always" ]; then
 EOF
     plutil -lint "$PLIST_FILE" >/dev/null
     launchctl bootstrap "$DOMAIN" "$PLIST_FILE"
+    "$PYTHON" - "$WEB_PLIST_FILE" "$CURRENT_LINK/venv/bin/meshpi" "$CONFIG_FILE" "$DATA_DIR" <<'WEBPY'
+import plistlib
+import sys
+from pathlib import Path
+path, executable, config, data = sys.argv[1:]
+with open(path, "wb") as handle:
+    plistlib.dump({
+        "Label": "org.venes.meshpi.web",
+        "ProgramArguments": [executable, "--env-file", config, "web", "--managed"],
+        "WorkingDirectory": data,
+        "RunAtLoad": True,
+        "KeepAlive": {"SuccessfulExit": False},
+        "ThrottleInterval": 5,
+        "Umask": 63,
+        "StandardOutPath": str(Path(data) / "meshpi-web-launchd.log"),
+        "StandardErrorPath": str(Path(data) / "meshpi-web-launchd-error.log"),
+    }, handle)
+WEBPY
+    plutil -lint "$WEB_PLIST_FILE" >/dev/null
+    if [ "$WEB_ENABLED" = "true" ]; then
+        launchctl bootstrap "$DOMAIN" "$WEB_PLIST_FILE"
+    fi
 
     READY=0
     i=0
@@ -517,24 +672,22 @@ EOF
         if [ "${MESHPI_FORCE_HEALTH_FAILURE:-0}" != "1" ] &&
             "$CURRENT_LINK/venv/bin/meshpi" --env-file "$CONFIG_FILE" status >/dev/null 2>&1
         then
-            READY=1
-            break
+            if [ "$WEB_ENABLED" != "true" ] || {
+                [ "${MESHPI_FORCE_WEB_HEALTH_FAILURE:-0}" != "1" ] &&
+                "$CURRENT_LINK/venv/bin/meshpi" --env-file "$CONFIG_FILE" web-check >/dev/null 2>&1
+            }; then
+                READY=1
+                break
+            fi
         fi
         i=$((i + 1))
         sleep 0.25
     done
     if [ "$READY" != "1" ]; then
-        launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
-        if [ -n "$OLD_RELEASE" ] && [ -d "$OLD_RELEASE" ]; then
-            switch_link "$OLD_RELEASE"
-            rm -f "$PREVIOUS_LINK"
-            launchctl bootstrap "$DOMAIN" "$PLIST_FILE" >/dev/null 2>&1 || true
-            say_error rollback
-        fi
         exit 1
     fi
 else
-    rm -f "$PLIST_FILE"
+    rm -f "$PLIST_FILE" "$WEB_PLIST_FILE"
 fi
 
 if [ "$FRESH_INSTALL" = "1" ] && [ ! -e "$LANGUAGE_FILE" ]; then
@@ -546,4 +699,7 @@ fi
 
 install_step 8 complete
 say installed "$VERSION" "$MODE"
+say managed_pip
 say start
+
+show_web_access

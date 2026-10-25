@@ -207,8 +207,13 @@ def test_linux_ipc_gid_handles_root_and_shared_groups(
     expected_status: int,
     expected_output: str,
 ) -> None:
-    function = _shell_function(_text("install-linux.sh"), "resolve_ipc_socket_gid")
+    source = _text("install-linux.sh")
+    function = "\n".join(
+        _shell_function(source, name)
+        for name in ("message", "say", "say_error", "resolve_ipc_socket_gid")
+    )
     script = f"""
+LANGUAGE=nn
 id() {{
     printf '%s\\n' "$TEST_GID"
 }}
@@ -273,7 +278,7 @@ def test_linux_skip_service_avoids_all_service_stop_paths() -> None:
     assert (
         'if [ "$SKIP_SERVICE" != "1" ]; then\n'
         '    if [ "$MODE" = "always" ]; then\n'
-        '        "$SYSTEMCTL" stop meshpi.service'
+        '        "$SYSTEMCTL" stop meshpi-web.service'
     ) in source
 
 
@@ -379,7 +384,7 @@ def test_windows_installer_reads_utf8_paths_and_environment() -> None:
     assert "ValueFromRemainingArguments" not in windows
     assert "Set-Content -Encoding ASCII -LiteralPath $meshpiCmd" in windows
     assert 'set /p MESHPI_CURRENT=<' not in windows
-    assert "Remove-Item -LiteralPath $previousFile" in windows
+    assert "$backupTargets = @($configFile, $currentFile, $previousFile," in windows
     assert "Write-MeshPiLaunchers $binDir $oldRelease $configFile" in windows
     assert "Start-LegacyLauncherCleanup" in windows
     assert "-WindowStyle Hidden" in windows
@@ -606,7 +611,7 @@ def test_posix_installers_replace_config_atomically_and_clear_bad_rollback() -> 
         assert 'mktemp "${CONFIG_FILE}.tmp.XXXXXX"' in source
         assert 'mv -f "$config_tmp" "$CONFIG_FILE"' in source
         assert 'cat "$TMP_DIR/config-update" >"$CONFIG_FILE"' not in source
-        assert 'switch_link "$OLD_RELEASE"\n            rm -f "$PREVIOUS_LINK"' in source
+        assert 'switch_link "$OLD_RELEASE"\n                rm -f "$PREVIOUS_LINK"' in source
 
 
 def test_posix_installers_report_the_same_progress_as_windows() -> None:
@@ -616,3 +621,11 @@ def test_posix_installers_report_the_same_progress_as_windows() -> None:
             assert f"install_step {step} " in source
         assert "Dette kan ta nokre minutt" in source
         assert "doctor --offline >/dev/null" not in source
+
+
+def test_installers_explain_managed_pip_without_misleading_update_notices():
+    for name in ("install-linux.sh", "install-macos.sh", "install-windows.ps1"):
+        source = (ROOT / "installers" / name).read_text(encoding="utf-8")
+        assert "--disable-pip-version-check" in source
+        assert "MeshPi held pip og programpakkane oppdaterte" in source
+        assert "Bruk meshpi update." in source

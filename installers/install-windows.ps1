@@ -3,6 +3,8 @@
     [ValidateSet("Always", "Session")]
     [string]$Mode = "Always",
     [switch]$SkipAutostart,
+    [ValidateSet("Enabled", "Disabled", "Keep")]
+    [string]$Web = "Keep",
     [ValidateRange(0, [int]::MaxValue)]
     [int]$UpdaterProcessId = 0,
     [string]$Language = ""
@@ -55,6 +57,7 @@ $Messages = @{
     service_description = @{ nn = 'MeshPi Meshtastic-bakgrunnsteneste'; en = 'MeshPi Meshtastic background service' }
     rollback = @{ nn = 'Oppdateringa feila. Førre versjon er sett tilbake.'; en = 'The update failed. The previous version has been restored.' }
     no_rollback = @{ nn = 'Oppdateringa feila, og ingen førre versjon finst.'; en = 'The update failed, and no previous version is available.' }
+    managed_pip = @{ nn = 'MeshPi held pip og programpakkane oppdaterte gjennom testa utgivingar. Bruk meshpi update.'; en = 'MeshPi updates pip and dependencies through tested releases. Use meshpi update.' }
     complete = @{ nn = 'Installasjonen er ferdig.'; en = 'Installation is complete.' }
     installed = @{ nn = 'MeshPi {0} er installert i {1}-modus.'; en = 'MeshPi {0} is installed in {1} mode.' }
     start = @{ nn = 'Opne eit nytt terminalvindauge og start med: meshpi'; en = 'Open a new terminal window and start with: meshpi' }
@@ -352,6 +355,22 @@ function ConvertTo-PowerShellLiteral {
 }
 $freshInstall = -not (Test-Path -LiteralPath $installRoot) -and `
     -not (Test-Path -LiteralPath $configRoot)
+$webEnabled = "false"
+if ($Web -eq "Keep") {
+    if (Test-Path -LiteralPath $configFile) {
+        $savedWeb = Get-EnvValue $configFile "WEB_ENABLED"
+        if ($savedWeb) { $webEnabled = $savedWeb }
+    } elseif ($freshInstall -and [Environment]::UserInteractive -and
+              -not [Console]::IsInputRedirected -and $Host.Name -eq "ConsoleHost") {
+        $answer = Read-Host 'Vil du aktivere webgrensesnittet? [j/N]'
+        if ($answer -match '^(j|ja|y|yes)$') { $webEnabled = "true" }
+    }
+} elseif ($Web -eq "Enabled") {
+    $webEnabled = "true"
+}
+if ($webEnabled -notin @("true", "false")) {
+    throw 'WEB_ENABLED må vere true eller false.'
+}
 $tempDir = Join-Path ([IO.Path]::GetTempPath()) ("meshpi-" + [guid]::NewGuid())
 $manifestFile = Join-Path $tempDir "version.json"
 $verifierFile = Join-Path $tempDir "verify-manifest.py"
@@ -372,6 +391,44 @@ if ($UpdaterProcessId -le 0) {
 New-Item -ItemType Directory -Force -Path @(
     $tempDir, $installRoot, $configRoot, $binDir, $dataDir, $releasesDir
 ) | Out-Null
+
+$activationStarted = $false
+$oldSupervisor = Join-Path $binDir "meshpi-supervisor.ps1"
+$wasRunning = [bool](Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object {
+        $_.CommandLine -and $_.ExecutablePath -and (
+            ($_.ExecutablePath.StartsWith($installRoot + '\', [StringComparison]::OrdinalIgnoreCase) -and
+             $_.CommandLine.IndexOf($configFile, [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+             $_.CommandLine -match '\sdaemon\s*$') -or
+            ([IO.Path]::GetFileName($_.ExecutablePath) -ieq "powershell.exe" -and
+             $_.CommandLine -match ('(?i)(?:^|\s)-File\s+"?' + [regex]::Escape($oldSupervisor) + '(?:"|\s|$)'))
+        )
+    } | Select-Object -First 1)
+$managerFile = Join-Path $binDir "meshpi-service.ps1"
+$powerShellExe = Join-Path ([Environment]::SystemDirectory) "WindowsPowerShell\v1.0\powershell.exe"
+$startupDir = if ($env:MESHPI_STARTUP_DIR) {
+    $env:MESHPI_STARTUP_DIR
+} else {
+    [Environment]::GetFolderPath("Startup")
+}
+$backupFiles = @{}
+$backupTargets = @($configFile, $currentFile, $previousFile,
+    (Join-Path $startupDir "MeshPi Daemon.lnk"),
+    (Join-Path $startupDir "MeshPi-daemon.vbs")) + @(
+    "meshpi.cmd", "meshpi-daemon.cmd", "meshpi.env-path",
+    "meshpi-supervisor.ps1", "meshpi-service.ps1"
+) | ForEach-Object {
+    if ([IO.Path]::IsPathRooted($_)) { $_ } else { Join-Path $binDir $_ }
+}
+foreach ($target in $backupTargets) {
+    $backup = Join-Path $tempDir ([guid]::NewGuid().ToString() + ".saved")
+    if (Test-Path -LiteralPath $target) {
+        Copy-Item -LiteralPath $target -Destination $backup
+        $backupFiles[$target] = $backup
+    } else {
+        $backupFiles[$target] = $null
+    }
+}
 
 try {
     Write-InstallStep 2 fetch_manifest
@@ -522,6 +579,17 @@ BACKGROUND_MODE=$modeValue
         }
     }
 
+    Set-EnvValue $configFile "WEB_ENABLED" $webEnabled
+    if (-not (Get-EnvValue $configFile "WEB_PORT")) {
+        Set-EnvValue $configFile "WEB_PORT" "8780"
+    }
+    if (-not (Get-EnvValue $configFile "WEB_PUBLIC_URL")) {
+        Set-EnvValue $configFile "WEB_PUBLIC_URL" ""
+    }
+    if ($null -eq (Get-EnvValue $configFile "WEB_BASE_PATH")) {
+        Set-EnvValue $configFile "WEB_BASE_PATH" "/meshpi"
+    }
+
     $release = Join-Path $releasesDir $version
     $oldRelease = if (Test-Path -LiteralPath $currentFile) {
         ([IO.File]::ReadAllText(
@@ -545,7 +613,7 @@ BACKGROUND_MODE=$modeValue
             $wheelFile, $lockFile
         ) (Get-Message deps_failed)
         Invoke-NativeChecked $venvPython @(
-            "-m", "pip", "install", "-q", "--no-deps", $wheelFile
+            "-m", "pip", "--disable-pip-version-check", "install", "-q", "--no-warn-script-location", "--no-deps", $wheelFile
         ) (Get-Message package_failed)
     } else {
         Write-InstallStep 5 already_installed @($version)
@@ -561,6 +629,7 @@ BACKGROUND_MODE=$modeValue
     ) (Get-Message selftest_failed)
 
     Write-InstallStep 7 activate
+    $activationStarted = $true
     Stop-MeshPiProcesses $installRoot $UpdaterProcessId
     $legacyVenv = Join-Path $installRoot "venv"
     if (-not $oldRelease -and (Test-Path -LiteralPath $legacyVenv)) {
@@ -625,32 +694,73 @@ function Write-SupervisorEvent([string]`$message) {
     } catch { }
 }
 Write-SupervisorEvent "Supervisor started"
-while (`$true) {
-    try {
+`$children = @{}
+try {
+    while (`$true) {
         `$current = ([IO.File]::ReadAllText($currentLiteral, [Text.Encoding]::UTF8)).Trim()
-        `$daemonStart = New-Object Diagnostics.ProcessStartInfo
-        `$daemonStart.FileName = Join-Path `$current "venv\Scripts\pythonw.exe"
-        `$daemonStart.Arguments = '-I -c "import os,sys; sys.stdin=open(os.devnull); sys.stdout=sys.stderr=open(os.devnull,''w''); from meshpi.cli import main; main()" --env-file "' + $configLiteral + '" daemon'
-        `$daemonStart.UseShellExecute = `$false
-        `$daemonStart.CreateNoWindow = `$true
-        `$daemon = [Diagnostics.Process]::Start(`$daemonStart)
-        try {
-            `$daemon.WaitForExit()
-            `$exitCode = `$daemon.ExitCode
-        } finally { `$daemon.Dispose() }
-        Write-SupervisorEvent ("Daemon exited: " + `$exitCode)
-        if (`$exitCode -eq 0) { break }
-    } catch {
-        Write-SupervisorEvent "Daemon launch failed; retrying"
+        `$commands = @("daemon")
+        `$settings = [IO.File]::ReadAllLines($configLiteral, [Text.Encoding]::UTF8)
+        if (`$settings -contains "WEB_ENABLED=true") { `$commands += "web" }
+        foreach (`$command in `$commands) {
+            if (`$children.ContainsKey(`$command)) {
+                `$child = `$children[`$command]
+                if (-not `$child.HasExited) { continue }
+                `$exitCode = `$child.ExitCode
+                `$child.Dispose()
+                `$children.Remove(`$command)
+                Write-SupervisorEvent (`$command + " exited: " + `$exitCode)
+                if (`$command -eq "daemon" -and `$exitCode -eq 0) { return }
+                Start-Sleep -Seconds 5
+            }
+            try {
+                `$childStart = New-Object Diagnostics.ProcessStartInfo
+                `$childStart.FileName = Join-Path `$current "venv\Scripts\pythonw.exe"
+                `$childStart.Arguments = '-I -c "import os,sys; sys.stdin=open(os.devnull); sys.stdout=sys.stderr=open(os.devnull,''w''); from meshpi.cli import main; main()" --env-file "' + $configLiteral + '" ' + `$command
+                `$childStart.UseShellExecute = `$false
+                `$childStart.CreateNoWindow = `$true
+                `$children[`$command] = [Diagnostics.Process]::Start(`$childStart)
+            } catch {
+                Write-SupervisorEvent (`$command + " launch failed; retrying")
+                Start-Sleep -Seconds 5
+            }
+        }
+        if (`$commands -notcontains "web" -and `$children.ContainsKey("web")) {
+            `$webChild = `$children["web"]
+            if (-not `$webChild.HasExited) { `$webChild.Kill(); `$webChild.WaitForExit() }
+            `$webChild.Dispose()
+            `$children.Remove("web")
+        }
+        Start-Sleep -Milliseconds 500
     }
-    Start-Sleep -Seconds 5
+} finally {
+    foreach (`$child in `$children.Values) {
+        try { if (-not `$child.HasExited) { `$child.Kill(); `$child.WaitForExit() } } catch { }
+        `$child.Dispose()
+    }
 }
 "@ | Set-Content -Encoding UTF8 -LiteralPath $supervisorFile
     @"
-param([ValidateSet("start", "enable", "disable")][string]`$Action)
+param([ValidateSet("start", "stop", "enable", "disable")][string]`$Action)
 `$startup = $startupLiteral
 `$supervisor = $supervisorLiteral
 `$shortcutFile = Join-Path `$startup "MeshPi Daemon.lnk"
+# MeshPi managed stop v1
+function Get-MeshPiChildren {
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        `$_.ProcessId -ne `$PID -and `$_.CommandLine -and
+        `$_.CommandLine.IndexOf($configLiteral, [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+        `$_.CommandLine -match '\s(daemon|web)\s*$' -and
+        `$_.ExecutablePath -and
+        `$_.ExecutablePath.StartsWith((Split-Path $currentLiteral -Parent) + '\', [StringComparison]::OrdinalIgnoreCase)
+    }
+}
+function Get-MeshPiSupervisor {
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        `$_.ProcessId -ne `$PID -and `$_.CommandLine -and
+        `$_.ExecutablePath -and [IO.Path]::GetFileName(`$_.ExecutablePath) -ieq "powershell.exe" -and
+        `$_.CommandLine -match ('(?i)(?:^|\s)-File\s+"?' + [regex]::Escape(`$supervisor) + '(?:"|\s|$)')
+    }
+}
 if (`$Action -eq "enable") {
     `$shell = New-Object -ComObject WScript.Shell
     `$shortcut = `$shell.CreateShortcut(`$shortcutFile)
@@ -661,7 +771,23 @@ if (`$Action -eq "enable") {
     `$shortcut.Save()
 } elseif (`$Action -eq "disable") {
     Remove-Item -LiteralPath `$shortcutFile -Force -ErrorAction SilentlyContinue
+} elseif (`$Action -eq "stop") {
+    Get-MeshPiSupervisor | ForEach-Object {
+        Stop-Process -Id `$_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+    # IPC shutdown is requested by meshpi service stop before this manager runs.
+    # Never force-stop a daemon which may still be closing SQLite.
+    for (`$attempt = 0; `$attempt -lt 40; `$attempt++) {
+        `$daemons = @(Get-MeshPiChildren | Where-Object { `$_.CommandLine -match '\sdaemon\s*$' })
+        if (`$daemons.Count -eq 0) { break }
+        Start-Sleep -Milliseconds 250
+    }
+    if (`$daemons.Count -gt 0) { throw 'MeshPi-daemonen er ikkje ferdig avslutta.' }
+    Get-MeshPiChildren | Where-Object { `$_.CommandLine -match '\sweb\s*$' } | ForEach-Object {
+        Stop-Process -Id `$_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
 } elseif (`$Action -eq "start") {
+    if (Get-MeshPiSupervisor) { return }
     `$startInfo = New-Object Diagnostics.ProcessStartInfo
     `$startInfo.FileName = $pythonwLiteral
     `$startInfo.Arguments = '-I -m meshpi.windows_background "' + `$supervisor + '"'
@@ -720,22 +846,18 @@ if (`$Action -eq "enable") {
                 $env:MESHPI_FORCE_HEALTH_FAILURE -ne "1" -and
                 $LASTEXITCODE -eq 0
             ) {
+                if ($webEnabled -eq "true") {
+                    & $meshpiCmd web-check *> $null
+                    if ($LASTEXITCODE -ne 0 -or $env:MESHPI_FORCE_WEB_HEALTH_FAILURE -eq "1") {
+                        continue
+                    }
+                }
                 $ready = $true
                 break
             }
         }
         if (-not $ready) {
-            Stop-MeshPiProcesses $installRoot $UpdaterProcessId
-            if ($oldRelease -and (Test-Path -LiteralPath $oldRelease)) {
-                Set-CurrentRelease $currentFile $oldRelease
-                Write-MeshPiLaunchers $binDir $oldRelease $configFile
-                Remove-Item -LiteralPath $previousFile -Force `
-                    -ErrorAction SilentlyContinue
-                & $powerShellExe -NoProfile -ExecutionPolicy Bypass `
-                    -File $managerFile start
-                throw (Get-Message rollback)
-            }
-            throw (Get-Message no_rollback)
+            throw 'MeshPi-tenestene vart ikkje klare etter installasjonen.'
         }
     }
 
@@ -751,7 +873,38 @@ if (`$Action -eq "enable") {
     Write-InstallStep 8 complete
     Write-Host (Get-Message installed @($version, $modeValue)) `
         -ForegroundColor Green
+    Write-Host (Get-Message managed_pip)
     Write-Host (Get-Message start)
+    if ($webEnabled -eq "true") {
+        $webUrl = Get-EnvValue $configFile "WEB_PUBLIC_URL"
+        if (-not $webUrl) { $webUrl = "http://localhost:" + (Get-EnvValue $configFile "WEB_PORT") }
+        Write-Host ("Webgrensesnitt: " + $webUrl + (Get-EnvValue $configFile "WEB_BASE_PATH") + "/")
+        if ($Mode -eq "Session") { Write-Host 'Start webgrensesnittet med: meshpi web' }
+        Write-Host 'Hent ein eingongskode for innlogging med: meshpi web-code'
+        Write-Host 'Tilgang via Tailscale Serve må setjast opp separat. Køyr meshpi web-info for kommandoane.'
+    } else {
+        Write-Host 'Webgrensesnittet er avslått. Køyr meshpi web-info for steg til aktivering og tilgang.'
+    }
+} catch {
+    $installError = $_
+    if ($activationStarted) { Stop-MeshPiProcesses $installRoot $UpdaterProcessId }
+    foreach ($target in $backupFiles.Keys) {
+        if ($backupFiles[$target]) {
+            Copy-Item -LiteralPath $backupFiles[$target] -Destination $target -Force
+        } else {
+            Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if ($activationStarted -and $oldRelease -and (Test-Path -LiteralPath $oldRelease)) {
+        Write-MeshPiLaunchers $binDir $oldRelease $configFile
+        # The shortcut snapshot restores autostart independently of running state.
+        if ($wasRunning -and $env:MESHPI_SKIP_TASK -ne "1" -and
+            (Test-Path -LiteralPath $managerFile)) {
+            & $powerShellExe -NoProfile -ExecutionPolicy Bypass -File $managerFile start
+        }
+        Write-Warning (Get-Message rollback)
+    }
+    throw $installError
 } finally {
     Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 }

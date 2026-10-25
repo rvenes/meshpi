@@ -2,7 +2,7 @@
 
 [Nynorsk](README.md) | **English**
 
-MeshPi is a small, stable Meshtastic client for the terminal. It keeps one
+MeshPi is a small Meshtastic client for the terminal and browser. It keeps one
 connection to a Meshtastic node open in the background, stores messages in
 SQLite, and provides full-screen and conventional command-line interfaces in
 Nynorsk and English, including over SSH.
@@ -13,9 +13,13 @@ Nynorsk and English, including over SSH.
 > in critical or production-like environments.
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for development history, architecture
-decisions, and the prioritized roadmap. The first release has no web
-interface, but the core and local IPC protocol are separated from the CLI so
-that another interface can be added later.
+decisions, and the prioritized roadmap. **MeshPi 0.9.8** includes an optional
+private web interface using the same local IPC as the terminal client. It
+listens on loopback only; other devices connect through Tailscale Serve.
+Sign-in uses a local one-time code or passkeys at a fixed private HTTPS
+address. See the [web guide](docs/WEB.md) for setup and test limitations.
+This release uses the ordinary update channel, without creating another beta
+channel. We are collecting real-world feedback on the way to 1.0.0.
 
 ## Features
 
@@ -63,7 +67,8 @@ an IP address, hostname, COM port, serial path, or `ble://IDENTIFIER` manually.
 
 ## Language
 
-MeshPi includes complete Nynorsk (`nn`) and English (`en`) interfaces.
+The terminal client includes complete Nynorsk (`nn`) and English (`en`)
+interfaces. The web interface in 0.9.8 currently uses Nynorsk.
 
 ```bash
 meshpi language       # show the current language
@@ -162,6 +167,69 @@ and SHA-256 values. Every Python dependency has an exact version and hash and
 is installed with `pip --require-hashes`. Existing configuration and data are
 preserved.
 
+### Optional web interface in 0.9.8
+
+The installers ask whether to activate web access on a fresh
+interactive installation; the default is no. Linux/macOS accept `--web` or
+`--no-web`; Windows accepts `-Web Enabled`, `-Web Disabled`, or `-Web Keep`.
+Omitting the choice preserves existing settings. Fresh unattended installs
+leave web disabled. An upgrade does not enable web if it was disabled.
+Server and terminal client share one installed version.
+
+Only the MeshPi host needs the installation; other clients use a browser.
+Local access at `http://localhost:8780/meshpi/` uses a five-minute one-time
+code from `meshpi web-code`. A fixed Tailscale HTTPS address supports multiple
+named passkeys for one owner, without separate user roles. Generating a new
+code revokes existing web sessions. If the daemon is unavailable, the same
+OS account as the web process can use `meshpi web-code --local` for recovery;
+see the web guide.
+
+In 0.9.8, `meshpi web-info` shows copyable steps for enabling disabled web
+access and setting up Tailscale Serve with the saved port and path. It does
+not change anything until you run the commands yourself.
+
+`meshpi web-configure --enable` or `--disable` saves the choice; `--port`,
+`--public-url`, and `--base-path` configure the address. When enabling web, also run `meshpi service enable`
+to enable autostart. Restart the processes after changing settings. Linux system installations need administrator
+rights for configuration and service stop/start. In session mode, run
+`meshpi web`: it starts a missing daemon and stops only the daemon it owns
+when web exits. See [docs/WEB.md](docs/WEB.md) for the full Tailscale setup.
+
+### Fresh Raspberry Pi with the web interface
+
+On 64-bit Raspberry Pi OS with Python 3.11 or newer, run these commands on the Pi:
+
+```sh
+sudo apt update
+sudo apt install curl python3-venv
+curl -fLO https://venes.org/meshpi/install-linux.sh
+sudo sh install-linux.sh --web
+meshpi web-info
+meshpi web-code
+```
+
+Open `http://localhost:8780/meshpi/` in a browser on the Pi and enter the code.
+No node is preselected; select a profile under **Tilkoplingar** (Connections).
+Only the Pi needs the MeshPi installation. The web interface currently uses
+Nynorsk; terminal interfaces support Nynorsk and English.
+
+For a headless Pi, open another terminal on your PC and keep this SSH tunnel
+running. Replace the placeholders with your username and Pi hostname:
+
+```sh
+ssh -N -L 8780:127.0.0.1:8780 USER@PI-HOST
+```
+
+Then open `http://localhost:8780/meshpi/` on the PC and enter the code from
+the Pi. Port 8780 must be available on the PC; the tunnel must use the same
+port as the saved sign-in address. This tunnel is for the localhost setup.
+For phones and multiple clients, configure a fixed Tailscale HTTPS address
+and passkeys using the [web guide](docs/WEB.md#fast-privat-https-adresse-gjennom-tailscale).
+Inspect existing routes with `tailscale serve status` first. `--bg` keeps
+Serve running after the terminal closes and across restarts. If Tailscale
+asks you to enable HTTPS, open the link printed by the command and follow
+its instructions. Do not overwrite a route already in use.
+
 ### Transparent installation
 
 Piping directly to `bash`, `sudo bash`, or `iex` means trusting exactly what
@@ -212,21 +280,9 @@ Use `meshpi update --check` to check only. Installation requires typing the
 localized confirmation token (`UPDATE` in English or `OPPDATER` in Nynorsk),
 or explicit non-interactive confirmation with `--yes`.
 
-Opt in to the separate beta channel only where preview software is acceptable:
-
-```bash
-sudo meshpi update --beta  # Linux always mode
-meshpi update --beta       # Linux session mode and macOS
-```
-
-```powershell
-meshpi update --beta
-```
-
-`--beta` is available from MeshPi 0.8.6. Older installations must first use
-the full beta installer at `https://venes.org/meshpi/beta/`. The choice applies
-to one update only. Normal update checks always use stable. A final `0.9.0` is
-newer than prereleases such as `0.9.0b1`.
+0.9.8 uses the ordinary update channel. Use the commands above without
+`--beta`. The older beta mechanism remains for compatibility but is not used
+for this rollout.
 
 The TUI checks `https://venes.org/meshpi/version.json` at startup and displays
 the local command `meshpi update` when appropriate. It never puts the command
@@ -236,6 +292,23 @@ directory, and runs only the locally verified installer. It never executes a
 manifest command. Updates are prepared in a new version directory and checked
 offline before the daemon is stopped. After an atomic switch, a health check
 automatically restores the previous working release on failure.
+
+## Source code and contributions
+
+MeshPi is free software under GPL-3.0-only. Download the
+[exact 0.9.8 source archive](https://venes.org/meshpi/downloads/meshpi-0.9.8.tar.gz)
+to inspect or build this release. It also includes the web guide, installers,
+lock files, and tests. The development repository on
+[GitHub](https://github.com/rvenes/meshpi) may be at a different revision from
+the release archive.
+
+Bug reports, ideas, and contributions are welcome through
+[GitHub Issues](https://github.com/rvenes/meshpi/issues) and pull requests.
+Include the version, operating system, installation mode, browser, and steps
+to reproduce the problem. Do not attach one-time codes, tokens, private keys,
+configuration containing secrets, or private messages. Read `AGENTS.md` and
+`DEVELOPMENT.md`; automated tests must mock the radio. Run the complete pytest
+suite and Ruff before submitting a code change.
 
 ## Local development
 
@@ -311,17 +384,46 @@ meshpi connections
 ```
 
 The daemon still owns only one radio connection. Profile switching closes the
-old connection cleanly and opens the new one without restarting systemd. One
-database holds all history. Channels merge only when a trusted Meshtastic
+old connection cleanly and opens the new one without restarting systemd. Each
+local gateway has a separate database file. Channels merge only when a trusted Meshtastic
 channel ID proves they are the same logical channel on the same local node.
 Nodes, conversations, unread state, telemetry, positions, and node actions are
 scoped per local node, including LongFast. The same radio over TCP, USB, or BLE
 uses the same dataset. A profile remembers its last local node and shows that
 history while reconnecting.
 
+### Per-gateway history and retention
+
+Each local gateway has a separate SQLite file at
+`<dbstem>-gateways/<8hex>.sqlite3`, beside the configured database file.
+For example, `meshpi.db` uses the directory `meshpi-gateways`. There is one
+file per connected radio’s node ID, not per remote contact. Only the daemon
+opens these files; CLI, TUI and web use IPC. The same radio over USB, TCP or
+BLE shares its history.
+
+Open **F10 → App → History and storage** in the terminal or **Innstillingar**
+in the web interface. New gateways retain history for 30 days. Migrated
+history has no age limit until you choose and confirm a policy. Choose 7,
+30 or a custom number of days; 0 means no age limit. The 50,000-message cap
+still applies, except for unresolved outgoing messages that must be preserved.
+
+Manual cleanup can remove messages only, or also telemetry, positions and
+action history, older than 7/30/custom days or everything (0). A preview
+identifies the gateway and record counts; deletion requires confirmation.
+Unresolved outgoing messages and ongoing node actions are preserved, as are
+nodes, profiles, login keys and radio settings. Deletion cannot be undone.
+
+Migration preserves the original database, `legacy.sqlite3` and
+`legacy-upgraded.sqlite3` for recovery. The latter two are in the gateway
+directory. History cleanup does not remove these copies, which may contain
+older private data. If an older MeshPi release later writes to the original
+database, the newer release stops and requires reconciliation; it does not
+automatically replay the old history.
+
 ### Database export
 
-Export the entire database before testing a beta that may migrate it:
+Export the selected gateway’s database before testing a release that may
+migrate it. Select and export each gateway separately to preserve several:
 
 ```bash
 meshpi export
@@ -332,12 +434,13 @@ Without a filename, MeshPi creates a timestamped file in the current
 directory. The UTF-8 JSON Lines export begins with format/application/database
 schema versions, writes one data row per line, and ends with verified row
 counts. It covers messages, nodes, channels, telemetry, positions, node
-actions, archive state, and preserved unscoped legacy records. It is one
+actions and archive state, with the gateway ID and retention policy. It is one
 consistent SQLite snapshot while the daemon runs. Existing files require
 `--force`; interrupted output is not left as a completed export.
 
-Legacy rows that cannot safely be assigned to one local node remain
-read-oriented and are never made sendable automatically. Export is intended
+Legacy rows that cannot safely be assigned to one local node remain in the
+preserved legacy copies. They are not included in a gateway export or made
+sendable automatically. Export is intended
 for preservation and inspection, not as a promised import format. It may
 contain private messages and exact positions; protect it accordingly.
 
@@ -476,12 +579,17 @@ listed.
 | Command | Purpose |
 |---|---|
 | `meshpi` or `meshpi tui` | Start the full-screen interface. |
+| `meshpi web [--port PORT] [--public-url URL] [--base-path PATH]` | Start the private loopback web interface. Session mode starts a missing daemon when needed. See [the web guide](docs/WEB.md). |
+| `meshpi web-code [--local]` | Issue a five-minute one-time code over local IPC; revokes existing web sessions. |
+| `meshpi web-configure [--enable\|--disable] [--port PORT] [--public-url URL] [--base-path PATH]` | Save web settings and the fixed sign-in address; restart processes afterward. |
+| `meshpi web-check` | Check the local web listener independently of radio connectivity. |
+| `meshpi web-info` | Show addresses, web activation steps, Tailscale Serve setup and sign-in instructions. |
 | `meshpi new` | Discover, select, or add a connection; F5 rescans. |
 | `meshpi connect TARGET [--name NAME]` | Switch TCP, serial, or BLE connection. |
 | `meshpi connections` | List saved connection profiles. |
 | `meshpi daemon` | Run the daemon in the foreground for debugging/service setup. |
 | `meshpi doctor [--offline]` | Run self-tests; offline needs no available node. |
-| `meshpi export [FILE] [--force]` | Export the database as UTF-8 JSON Lines. |
+| `meshpi export [FILE] [--force]` | Export the selected gateway database as UTF-8 JSON Lines. |
 | `meshpi service {status,start,stop,enable,disable}` | Control service/autostart. |
 | `meshpi update [--check] [--yes] [--beta]` | Check/install a signed update. |
 | `meshpi language [nn\|en]` | Show or save the interface language. |

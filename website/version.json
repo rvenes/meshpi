@@ -1,32 +1,32 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.9.5",
-  "published_at": "2026-10-04T04:18:53Z",
+  "latest_version": "0.9.8",
+  "published_at": "2026-10-25T04:39:02Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.9.5",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.9.8",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.9.5-py3-none-any.whl",
-    "filename": "meshpi-0.9.5-py3-none-any.whl",
-    "sha256": "9978928d9fccaa03f5bffcd69bcc9cd17b613dcc23211618ca501769cf40a7b1",
-    "size": 193243,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.9.8-py3-none-any.whl",
+    "filename": "meshpi-0.9.8-py3-none-any.whl",
+    "sha256": "947df6aaf967b0e0e5b14d7ab479d010a9ec3d51cdc8640bc21e410044dab503",
+    "size": 279169,
     "format": "wheel"
   },
   "locks": {
     "linux": {
       "url": "https://venes.org/meshpi/locks/linux.txt",
-      "sha256": "20ce5c54d650bce076cc577e9e2e2f118fb2da975dfbae8e62461fba0bf66d71",
-      "size": 26107
+      "sha256": "174335c9c25ac9b15cdf489718457e2f20e42e9647da5834dc08602742abcfc9",
+      "size": 39975
     },
     "macos": {
       "url": "https://venes.org/meshpi/locks/macos.txt",
-      "sha256": "9cda7e7e9fd6fca6552edc0d1afcae3f16d4213d6f9a6d9206f53cc0542dd2c4",
-      "size": 24069
+      "sha256": "2d850410fd83d76b495639e1fa306eff50c3213f9f72519f6ebc2ecd2a463122",
+      "size": 38059
     },
     "windows": {
       "url": "https://venes.org/meshpi/locks/windows.txt",
-      "sha256": "85993d411401d676019b9978f9f1f65f6f98c6ce0a6c8b33095937c7abc7a5e6",
-      "size": 35787
+      "sha256": "6cd9df84abcc1e081906277d63fe7f05e91d05b8f76ac52eb45e2dd22f114544",
+      "size": 49735
     }
   },
   "security": {
@@ -37,34 +37,34 @@
   "installers": {
     "linux": {
       "url": "https://venes.org/meshpi/install-linux.sh",
-      "sha256": "9c5caf2bdf69ac710a25d7f97c72c8b1bffaf86de3ff714b2a7e925f6af73319",
-      "size": 25171,
+      "sha256": "27ae4da8219ac010b69386f9d4cff32d78a978f832040d44f9af3b006d0ac3e9",
+      "size": 30958,
       "update_command": "curl -fLO https://venes.org/meshpi/install-linux.sh && sudo sh install-linux.sh"
     },
     "macos": {
       "url": "https://venes.org/meshpi/install-macos.sh",
-      "sha256": "70f304ccbb4a9270036c842460a068f295ce494f2bef8ce42d1b4d9e99d8e22f",
-      "size": 20933,
+      "sha256": "fe5be94c3ff6e35cc5bce826e7e6b4a9323879a9c57e938d5676742a26be1050",
+      "size": 26378,
       "update_command": "curl -fLO https://venes.org/meshpi/install-macos.sh && sh install-macos.sh"
     },
     "windows": {
       "url": "https://venes.org/meshpi/install-windows.ps1",
-      "sha256": "2798e5146a39fd53ad6e57e43184239f5f77cedfe615b63de56180d54b0337bd",
-      "size": 34039,
+      "sha256": "88e443ccfafc0985aeacaa4d30e263a9e5f973021ec98b64f1ab020511c709b6",
+      "size": 41702,
       "update_command": "Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; .\\install-windows.ps1"
     }
   },
   "release_notes": [
-    "F10 opnar lokal nodeinfo med radioregion, modemprofil, rolle, batteri, kanaldetaljar og tal på nodar",
-    "Ei breiare, søkbar nodeliste viser sist sett, GPS-posisjon og batteri; Enter opnar detaljar og kartlenkje",
-    "Slett éin eller fleire valde kontaktar frå den tilkopla radioen, med stadfesting og verifikasjon mot ei nyinnlesen nodeliste",
-    "Gamle og inaktive kanaloppføringar blir skjulte når kanalane på radioen blir endra, medan meldingshistorikken blir bevart",
-    "Profilar, meldingshistorikk og radioinnstillingar blir bevarte; kontaktar kan bli lærte inn att frå ny trafikk"
+    "Kvar gateway har eiga databasefil; eksisterande historikk blir kopiert med originalen bevart.",
+    "Innstillingar i web og F10: lagringstid per gateway og stadfesta opprydding med førehandsvising.",
+    "Nye gatewayar bruker 30 dagar; eksisterande historikk ventar på eit stadfesta lagringsval.",
+    "Nodeoversikta viser namn, maskinvare, rolle, straum og signal. Forenkla webgrensesnitt.",
+    "Pip 26.2.2 og tydeleg informasjon om vedlikehald gjennom meshpi update."
   ],
   "channel": "stable",
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "Dv4lqqbdH1fk5/tVvrMGkr38vBOOOBku0Ioji/An8kPlcrXRXVSAppYV6RuFdmRLuOy3ApAdalDS1pd0/siIC5Z4cmk09AwJWblFVCZrK3EPVsMYZ58aEmqMAOFXxTvgq8pLNfDUDEILJQOwkq5FpBs1RHR0v0lr3XtKtkLg8u97FHuZiUzI+xJDMNtU6Fvkp2ko4G8iSfdoqoTj2Mj1JEpDXWI+S5cdo/1cF130bUN8zHp8j66J85IY/WRb14Hv8uUzxz6Z0KFunZdc5tTjr1e8dLRP38ffy6fgaU9f9y2UQh5Fnsb4Aew/jdiwj0kzE9a6R2ZGkbduo77cX6F43hGzYfOuyii/duSUuw31Eu2nTFb21vFCisHeAcLSRBKwzpo1UdAPA8dPQf7qPFnn5ZFObd70aNCPWZUC55pHs/rvLBamk4t8x9s5tH71RiQCkwct97yE3u2101d1WlzcZcx2QhbHtsQ+WKbJ6qXFjxxeVK2OeqEtUpwHcB2/d9H/"
+    "value": "eky1lNGfrPB1rfcykqHlvRXLql8AbYjIC7TB4cW9IBEvVYGn/emKTcqWb8nb7EgvA0CHrbGdnwZ4oyaD81l9SYZdShFkZ0IYeJEWL3U38ZS5HrgIavo2JiD62FatlKgVZXFPuga+wVauCdfG/d+wPDVe9WtFyFZC2a1Mhfv1QU3kDm2lhFJyRuOanDe4yyX0m/hhNIN3FamMuIUiLjm2OitsPeaYRGoRjEa8yKlyMnVg2L9kMlGE3SrsZXx5SoGrQPPRFbiEDNrLduwmZ4aNkZxxXZbHg7YfkMYZflu4h3X5EgrNj29W3dahZudWoWxY3U/rD5rLIe5i1iremWjekuibUVjrpEYw1xI/kHLP5tjbFibHHIiJ6D2phn1JQK1Sn5UYpVk8RR59VN1hntjR6aYIutf6rsRt/7nkh6thbziotWStMpObreUCSL1qHuUxvU0B6yu9ecbvGoF4tL5OxFIle08Y1UY8dsfgWAOdoCCkPWMTGyUPjGNgiPit7BOg"
   }
 }

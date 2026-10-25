@@ -745,7 +745,7 @@ def test_status_bar_shows_current_meshpi_version_and_host(monkeypatch):
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.9.5" in text
+            assert "MeshPi 0.9.8" in text
             assert "Vert: testvert" in text
 
     run_scenario(scenario)
@@ -1564,7 +1564,9 @@ def test_status_bar_budgets_long_host_and_endpoint_at_all_widths(monkeypatch):
             )
 
 
-def test_node_info_uses_one_screen_for_metrics_position_and_traceroute():
+def test_node_info_uses_one_screen_for_metrics_position_and_traceroute(monkeypatch):
+    monkeypatch.delenv("SSH_CONNECTION", raising=False)
+    monkeypatch.delenv("SSH_TTY", raising=False)
     async def scenario():
         backend = FakeBackend()
         backend.node_actions["!710365c8"] = [

@@ -1,0 +1,16 @@
+include README.md README.en.md DEVELOPMENT.md RELEASING.md
+include SECURITY.md SECURITY.en.md LICENSE pyproject.toml
+include .gitattributes .gitignore
+recursive-include meshpi *.py *.json *.js *.html *.css *.svg *.png
+recursive-include tests *.py
+recursive-include installers *.sh *.ps1
+recursive-include locks *.in *.txt
+recursive-include scripts *.py
+recursive-include website *.html *.css *.js *.json
+include website/.htaccess docs/WEB.md
+exclude AGENTS.md LOCAL_TESTING.md
+prune docs/plans
+prune build
+prune dist
+prune .venv
+global-exclude __pycache__ *.py[cod] .env .env.* *.db *.sqlite *.sqlite3 *.pem *.key

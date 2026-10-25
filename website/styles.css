@@ -680,6 +680,22 @@ kbd {
   flex-direction: column;
 }
 
+.release-section .release-card {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.release-section .release-card > * {
+  min-width: 0;
+  margin-block: 0;
+}
+
+.release-section .release-links {
+  flex-direction: row;
+  column-gap: 1.5rem;
+}
+
 footer {
   display: grid;
   grid-template-columns: 1fr auto;

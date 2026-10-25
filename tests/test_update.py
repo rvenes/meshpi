@@ -294,6 +294,7 @@ def test_apply_update_downloads_verified_private_bundle(monkeypatch):
 
 
 def test_windows_update_passes_updater_process_id(monkeypatch):
+    monkeypatch.setattr("meshpi.update.windows_powershell_path", lambda: "powershell.exe")
     plan = UpdatePlan(
         current_version="0.8.8b4",
         latest_version="0.8.8b5",
@@ -373,6 +374,7 @@ def test_apply_update_rejects_changed_version(monkeypatch):
 
 
 def test_failed_windows_installer_shows_direct_install_command(monkeypatch):
+    monkeypatch.setattr("meshpi.update.windows_powershell_path", lambda: "powershell.exe")
     payloads = {
         "install-windows.ps1": b"exit 1\n",
         "meshpi.whl": b"wheel",
@@ -421,6 +423,7 @@ def test_failed_windows_installer_shows_direct_install_command(monkeypatch):
 
 
 def test_failed_windows_beta_installer_keeps_manual_command_on_beta(monkeypatch):
+    monkeypatch.setattr("meshpi.update.windows_powershell_path", lambda: "powershell.exe")
     payloads = {
         "install-windows.ps1": b"exit 1\n",
         "meshpi.whl": b"wheel",

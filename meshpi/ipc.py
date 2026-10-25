@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+import errno
 import hmac
 import json
 import logging
 import os
 import queue
+import secrets
 import socket
 import socketserver
 import stat
 import threading
+import time
+from collections import OrderedDict
 from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from meshpi import __version__
 from meshpi.channels import (
@@ -24,6 +29,7 @@ from meshpi.channels import (
 from meshpi.config import Settings
 from meshpi.database import Database
 from meshpi.events import EventHub
+from meshpi.gateway_database import GatewayDatabase
 from meshpi.i18n import tr, using_language
 from meshpi.models import normalize_node_id
 from meshpi.service import MeshtasticService
@@ -33,6 +39,8 @@ MAX_REQUEST_BYTES = 1_000_000
 MAX_IPC_CLIENTS = 32
 MAX_IPC_WATCHERS = 8
 MAX_IPC_EXPORTS = 2
+MAX_HISTORY_PREVIEWS = 8
+MAX_HISTORY_SNAPSHOT_ROWS = 1_000_000
 IPC_READ_TIMEOUT = 5.0
 IPC_WATCH_HEARTBEAT = 20.0
 
@@ -51,6 +59,81 @@ class IPCApplication:
         self.service = service
         self.events = events
         self.shutdown_callback = shutdown_callback
+        self._history_lock = threading.Lock()
+        self._history_previews: OrderedDict[str, tuple[float, str, dict[str, Any]]] = (
+            OrderedDict()
+        )
+
+    def _history_request(self, request: dict[str, Any]) -> dict[str, Any]:
+        command = request["command"]
+        local_id = self.history_local_node_id()
+        if not local_id:
+            raise ValueError("Vel ein gateway før du opnar historikkinnstillingane.")
+        if command == "history_settings":
+            return self.database.history_settings(local_id)
+        expected = request.get("expected_local_node_id")
+        if expected != local_id:
+            raise ValueError("Gatewayen er bytt. Opne innstillingane på nytt.")
+        if command == "history_settings_set":
+            days = request.get("retention_days")
+            if type(days) is not int or not 0 <= days <= 36500:
+                raise ValueError("Lagringstida må vere 0–36500 heile dagar.")
+            if request.get("confirmed") is not True:
+                raise ValueError("Stadfest lagringstida før ho blir endra.")
+            result = self.database.set_history_policy(local_id, days)
+            self.events.publish({"type": "history_changed", "local_node_id": local_id})
+            return result
+        if command == "history_cleanup_preview":
+            days = request.get("older_than_days")
+            scope = request.get("scope")
+            if type(days) is not int or not 0 <= days <= 36500:
+                raise ValueError("Vel 0–36500 heile dagar for oppryddinga.")
+            if scope not in {"messages", "history"}:
+                raise ValueError("Vel meldingar eller all historikk.")
+            token = secrets.token_urlsafe(32)
+            # Serialize allocations so concurrent clients cannot each allocate a
+            # full history snapshot on a small Pi.
+            with self._history_lock:
+                preview = self.database.preview_history_cleanup(
+                    local_id, scope=scope, older_than_days=days,
+                )
+                now = time.monotonic()
+                self._history_previews = OrderedDict(
+                    (key, value) for key, value in self._history_previews.items()
+                    if value[0] > now
+                )
+                rows = sum(preview["counts"].values())
+                if rows > MAX_HISTORY_SNAPSHOT_ROWS:
+                    raise ValueError("For mykje historikk i éi opprydding. Vel ein eldre periode.")
+                while self._history_previews and (
+                    len(self._history_previews) >= MAX_HISTORY_PREVIEWS
+                    or rows + sum(sum(value[2]["counts"].values())
+                                  for value in self._history_previews.values())
+                    > MAX_HISTORY_SNAPSHOT_ROWS
+                ):
+                    self._history_previews.popitem(last=False)
+
+                self._history_previews[token] = (now + 300, local_id, preview)
+            return {
+                "cleanup_token": token, "local_node_id": local_id,
+                "scope": scope, "older_than_days": days,
+                "cutoff": preview.get("cutoff"), "counts": preview["counts"],
+                "expires_in": 300,
+            }
+        if request.get("confirmed") is not True:
+            raise ValueError("Stadfest førehandsvisinga før historikken blir sletta.")
+        token = request.get("cleanup_token")
+        if not isinstance(token, str) or not 20 <= len(token) <= 100:
+            raise ValueError("Hent ei ny førehandsvising av oppryddinga.")
+        with self._history_lock:
+            saved = self._history_previews.get(token)
+            if saved is None or saved[0] <= time.monotonic() or saved[1] != local_id:
+                raise ValueError("Førehandsvisinga er utgått. Hent ei ny før du slettar.")
+            # A failed/uncertain operation must never be retried with this token.
+            del self._history_previews[token]
+        deleted = self.database.cleanup_history(saved[2])
+        self.events.publish({"type": "history_changed", "local_node_id": local_id})
+        return {"local_node_id": local_id, "deleted": deleted}
 
     def active_channels(self) -> list[dict[str, Any]]:
         channel_lister = getattr(self.service, "list_channels", None)
@@ -199,6 +282,30 @@ class IPCApplication:
 
     def dispatch(self, request: dict[str, Any]) -> dict[str, Any]:
         command = request.get("command")
+        if command in {
+            "history_settings", "history_settings_set",
+            "history_cleanup_preview", "history_cleanup",
+        }:
+            return {"ok": True, "data": self._history_request(request)}
+        if command == "web_login_code":
+            # Local authenticated IPC only; deliberately absent from the web command allowlist.
+            from meshpi.config import validate_web_config
+            from meshpi.web_auth import AuthStore
+
+            origin = request.get("origin", self.settings.web_origin)
+            if not isinstance(origin, str):
+                raise ValueError("Ugyldig innloggingsadresse.")
+            local = urlsplit(origin)
+            if (local.scheme == "http" and local.hostname == "localhost"
+                    and local.port is not None and 1 <= local.port <= 65535
+                    and origin == f"http://localhost:{local.port}"):
+                pass
+            else:
+                origin = validate_web_config(self.settings.web_port, origin, "")
+                if not origin:
+                    raise ValueError("Innloggingsadressa manglar.")
+            auth = AuthStore(self.settings.web_auth_dir, origin)
+            return {"ok": True, "data": {"code": auth.issue_code()}}
         if command == "status":
             return {
                 "ok": True,
@@ -775,6 +882,14 @@ class _IPCHandler(socketserver.StreamRequestHandler):
         if not self.server._export_slots.acquire(blocking=False):
             raise RuntimeError(tr("backend.ipc.too_many_exports"))
         try:
+            app = self.server.app
+            if isinstance(app.database, GatewayDatabase):
+                gateway_id = app.history_local_node_id()
+                if not gateway_id:
+                    raise ValueError("Vel ein gateway før du eksporterer historikken.")
+                records = app.database.export_records(__version__, local_node_id=gateway_id)
+            else:
+                records = app.database.export_records(__version__)
             self._write(
                 {
                     "ok": True,
@@ -784,7 +899,7 @@ class _IPCHandler(socketserver.StreamRequestHandler):
                     },
                 }
             )
-            for record in self.server.app.database.export_records(__version__):
+            for record in records:
                 self._write(record)
         finally:
             self.server._export_slots.release()
@@ -803,10 +918,13 @@ class _IPCHandler(socketserver.StreamRequestHandler):
             self.request.settimeout(timeout)
 
 class IPCServer:
-    def __init__(self, settings: Settings, app: IPCApplication):
+    def __init__(self, settings: Settings, app: IPCApplication | None = None):
         if len(settings.ipc_token) < 32:
             raise ValueError(tr("backend.ipc.token_too_short"))
         self.settings = settings
+        self._lifecycle_lock = threading.Lock()
+        self._serving = False
+        self._closed = False
         self._unix_identity: tuple[int, int] | None = None
         if settings.ipc_uses_unix:
             path = settings.ipc_socket_path.expanduser().absolute()
@@ -859,7 +977,13 @@ class IPCServer:
         probe.settimeout(0.2)
         try:
             probe.connect(str(path))
-        except OSError:
+        except OSError as exc:
+            # A full listen queue or timeout is not proof of a stale socket.
+            if exc.errno != errno.ECONNREFUSED:
+                raise
+            current = path.lstat()
+            if (current.st_dev, current.st_ino) != (existing.st_dev, existing.st_ino):
+                raise OSError(tr("backend.ipc.socket_path_in_use")) from exc
             path.unlink()
         else:
             raise OSError(tr("backend.ipc.socket_path_in_use"))
@@ -873,15 +997,43 @@ class IPCServer:
         host, port = self._server.server_address
         return str(host), int(port)
 
-    def serve_forever(self) -> None:
-        if self._unix_path is not None:
-            LOG.info("Lokal CLI-teneste lyttar på %s", self._unix_path)
-        else:
-            LOG.info("Lokal CLI-teneste lyttar på %s:%s", *self._server.server_address)
-        self._server.serve_forever(poll_interval=0.5)
+    def set_application(self, app: IPCApplication) -> None:
+        with self._lifecycle_lock:
+            if self._serving or self._closed:
+                raise RuntimeError("IPC-tenesta kan ikkje få ny applikasjon no.")
+            self._server.app = app
 
-    def shutdown(self) -> None:
-        self._server.shutdown()
+    def serve_forever(self) -> None:
+        with self._lifecycle_lock:
+            if self._closed:
+                return
+            if self._server.app is None:
+                raise RuntimeError("IPC-applikasjonen er ikkje klar.")
+            self._serving = True
+        try:
+            if self._unix_path is not None:
+                LOG.info("Lokal CLI-teneste lyttar på %s", self._unix_path)
+            else:
+                LOG.info("Lokal CLI-teneste lyttar på %s:%s", *self._server.server_address)
+            self._server.serve_forever(poll_interval=0.5)
+        finally:
+            with self._lifecycle_lock:
+                self._serving = False
+
+    def shutdown(self, *, close: bool = True) -> None:
+        with self._lifecycle_lock:
+            serving = self._serving
+        if serving:
+            self._server.shutdown()
+        if close:
+            self.close()
+
+    def close(self) -> None:
+        """Release an unstarted or stopped listener without waiting for serve_forever."""
+        with self._lifecycle_lock:
+            if self._closed:
+                return
+            self._closed = True
         self._server.server_close()
         if self._unix_path is not None and self._unix_identity is not None:
             try:

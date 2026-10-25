@@ -1,8 +1,8 @@
 # Utviklingsstatus og vidare plan
 
-Sist oppdatert: 25. august 2026
-Gjeldande stabilutgiving: MeshPi 0.9.0
-Gjeldande betakanal: MeshPi 0.9.0 (same signerte utgiving som stabilkanalen)
+Sist oppdatert: 25. oktober 2026
+Utgåve: MeshPi 0.9.8 i ordinær kanal, med praktisk utprøving fram mot 1.0.0.
+Eksisterande beta-verktøy blir bevart; webutgivinga opprettar ingen ny betakanal.
 
 Denne fila er den varige overleveringa mellom utviklingstrådar. Ho skal
 oppdaterast når ei større funksjon blir ferdig, når eit viktig arkitekturval
@@ -22,6 +22,49 @@ publisere ei utgiving eller endre konfigurasjonen på ein Meshtastic-node.
 
 ## Produktretning
 
+### Privat webgrensesnitt i 0.9.8
+
+Webgrensesnittet blir pakka saman med MeshPi, med valfri aktivering før
+installasjon. Linux/macOS har `--web`/`--no-web`, Windows har
+`-Web Enabled|Disabled|Keep`. Oppdatering bevarer vala. Det er eigne webprosessar
+under systemd/LaunchAgent/Windows-prosessvakta og ingen separat klientpakke.
+
+Berre loopback-binding er støtta. Direkte LAN-lyttar og `--lan-address` er
+fjerna. Tailscale Serve kan gi privat HTTPS på ei fast lagra adresse, men
+installeraren endrar ikkje nettverk eller eksisterande Serve-ruter.
+Innlogging har éin eigar med fleire passkeys. Localhost bruker lokal
+femminutts eingongskode; passkeys bruker den faste HTTPS-adressa. Ny kode
+avsluttar eksisterande sesjonar. `web-auth` ved databasen er privat tilstand.
+
+`meshpi web` bruker eksisterande IPC og eig ikkje radio eller SQLite.
+I sesjonsmodus kan han starte ein manglande daemon og avsluttar berre ein
+slik eigd daemon ved avslutting. Websida kan lastast utan node eller medan
+daemonen er fråkopla. `web-check` testar weblyttaren uavhengig av radio.
+
+Første grensesnitt omfattar chat, nodevising, profilval, oppdaging og eksport.
+Full funksjonslikskap og endeleg HTTP-køyretid står att. Koden bruker framleis
+Python sin HTTP-server og skal ikkje omtalast som ferdig produksjonsherda.
+Sjå [docs/WEB.md](docs/WEB.md) for innlogging, gjenoppretting og testflyt.
+
+0.9.6 samla valfri webinstallasjon, innlogging, klientrettingar og
+tryggleiksoppdateringar av certifi, setuptools og urllib3. 0.9.7 gjer
+terminalrettleiinga tydelegare: `web-info` viser manuell aktivering av
+avslått web og Serve-oppsett med lagra port og sti, vedvarande `--bg` og
+hjelp til HTTPS-aktivering. Oppdatering bevarer avslått web, og rettleiinga
+endrar ikkje Serve-ruter. Nettlesarfana viser òg servernamnet for å skilje
+fleire installasjonar. Vidare testing skal dekke fleire maskiner og
+nettlesarar, fleire samtidige klientar, oppstart etter omstart, adressebyte, passkeys og
+oppdatering/tilbakeføring. Kvar utgiving må framleis følgje `RELEASING.md`;
+denne statusfila er ikkje dokumentasjon på at ein bestemt publiserings- eller
+plattformtest er fullført.
+
+[Kjeldearkivet for 0.9.8](https://venes.org/meshpi/downloads/meshpi-0.9.8.tar.gz)
+er kjeldegrunnlaget for akkurat den utgivinga. GitHub-repoet kan ha ein annan
+revisjon. Feilrapportar og bidrag går gjennom
+[GitHub Issues](https://github.com/rvenes/meshpi/issues) og pull requests.
+Reproduksjonssteg og mocka regresjonstestar er særleg nyttige; private
+meldingar, profilar, token og innloggingskodar skal ikkje følgje bidraget.
+
 MeshPi skal ikkje erstatte ein full Meshtastic-klient. Målet er ein stabil og
 lett terminalklient som kan stå tilkopla over tid, lagre nyttig historikk og
 gi eit godt driftsbilete over SSH.
@@ -35,9 +78,33 @@ Det viktigaste skiljet mot ein vanleg klient er derfor:
 - eitt tydeleg grensesnitt for operatørarbeid, ikkje alle funksjonane i den
   offisielle klienten.
 
+### 0.9.8: fysisk historikkdeling og opprydding
+
+- `GatewayDatabase` er ein daemon-eigd fasade som sender scoped databasekall
+  til `<dbstem>-gateways/<8hex>.sqlite3`, éi fil per lokal radio-ID. Profilar
+  for same radio deler fila; CLI/TUI/web bruker framleis berre IPC.
+- Nye gatewayar har 30 dagars lagring. Migrerte gatewayar har
+  `retention_days=0` og `needs_review=true` til brukaren stadfestar eit val.
+  Automatisk vedlikehald bruker lokal mottakstid (ferdigtid for handlingar),
+  ikkje tidsstempelet frå radioen.
+- F10 → App → Historikk og lagring og web → Innstillingar har 7/30/custom/0.
+  Null slår av aldersgrensa. Meldingsgrensa på 50 000 gjeld framleis, men
+  uavklarte utgåande meldingar blir ikkje kasta av denne grensa.
+- Manuell opprydding gjeld meldingar eller meldingar/telemetri/posisjonar/
+  handlingslogg. Daemonen lagrar ein tidsavgrensa førehandsvising; ein
+  eingongstoken, forventa gateway og eksplisitt stadfesting krevst før sletting.
+  Uavklarte utgåande meldingar og pågåande nodehandlingar blir bevarte.
+- Migreringa publiserer gateway-filer atomisk og bevarer originalfila,
+  `legacy.sqlite3` og `legacy-upgraded.sqlite3`. Desse kopiane blir ikkje
+  rydda av retensjon eller manuell sletting. Ufordelte rader blir verande der.
+  Etter rollback stoppar endringar i originalfila ny oppstart framfor å
+  spele gammal historikk inn att; avklaring/fletting må skje særskilt.
+- CLI-eksporten gjeld den valde gatewayen og tek med identitet og
+  lagringsinnstillingar. Webeksportknappen er fjerna.
+
 ## Arkitektur som skal bevarast
 
-- Berre daemonen eig Meshtastic-sambandet og SQLite-fila.
+- Berre daemonen eig Meshtastic-sambandet og SQLite-filene.
 - CLI og TUI bruker lokal IPC; dei skal ikkje opne eigne radiosamband.
 - IPC skal berre bruke loopback eller ein privat Unix-socket.
 - MeshPi kan ha fleire lagra tilkoplingsprofilar, men berre éin aktiv gateway
@@ -146,8 +213,8 @@ og BLE i Docker, er ikkje ferdig plattformtesta.
   `meshpi update` held fram med å bruke berre stabilkanalen.
 - Releaseverktøyet støttar PEP 440-førehandsversjonar som `0.9.0b1` utan at
   den stabile manifestpeikaren blir endra.
-- `meshpi export [FIL] [--force]` eksporterer heile databasen som UTF-8 JSON
-  Lines via daemonen.
+- `meshpi export [FIL] [--force]` innførte UTF-8 JSON Lines-eksport via
+  daemonen. Med fysisk gateway-deling gjeld han berre den valde gatewayen.
 - Eksporten omfattar meldingar, nodar, kanalar, telemetri, posisjonar,
   nodehandlingar og arkiveringsstatus, med format-, program- og
   databaseskjemaversjon og kontrollerbare radtal.
@@ -163,8 +230,9 @@ og BLE i Docker, er ikkje ferdig plattformtesta.
 - Schema-migreringa avstemmer radtala før ho blir committa. Historikk som
   ikkje trygt kan bindast til ein lokal node, blir bevart som leseorienterte
   legacy-rader i staden for å bli sletta.
-- Legacy-radene er med i databaseeksporten, men blir ikkje gjorde sendbare
-  eller blanda inn i eit nodeområde utan ei eksplisitt seinare gjenoppretting.
+- Legacy-radene blei tekne med i den opphavlege databaseeksporten. Etter
+  fysisk gateway-deling ligg ufordelte rader i legacy-kopiane; dei blir ikkje
+  gjorde sendbare eller blanda inn i eit nodeområde automatisk.
 - Daemonen oppdagar både ein stoppa Meshtastic-lesetråd og eit lengre gap
   mellom veggklokka og den monotone klokka etter suspend. Det gamle sambandet
   blir lukka før eit serialisert reconnect-forsøk startar.
@@ -222,7 +290,10 @@ og BLE i Docker, er ikkje ferdig plattformtesta.
 | 0.8.8b7 | Kompakte, kanalgrupperte direkte samtalar |
 | 0.8.8b8 | Dato i Nodeinfo-loggar og synleg cooldown-nedtelling |
 | 0.8.9 | Stabil samling av dataskilje-, chat-, Nodeinfo- og Windows-rettingane frå 0.8.8-betaane |
-| 0.9.0 | Komplett nynorsk/engelsk grensesnitt med lagra språkval og direkte språkbyte |
+| 0.9.0 | Komplett nynorsk/engelsk terminalgrensesnitt med lagra språkval og direkte språkbyte |
+| 0.9.8 | Eiga databasefil per gateway, lagringsval og stadfesta opprydding i TUI/web, nodedetaljar og pip 26.2.2 |
+| 0.9.7 | Tydeleg web-info-hjelp for avslått web, Tailscale Serve og HTTPS-aktivering; servernamn i nettlesarfana |
+| 0.9.6 | Valfri webserver i installatørane, localhost-/Tailscale-innlogging, passkeys og betre webchat/nodevising |
 
 ## Avklaringar som alt er tekne
 
@@ -232,7 +303,8 @@ Nodeliste, public, DM, ulest-status, telemetri, posisjon og nodehandlingar blir
 viste innanfor éin lokal node-ID. Dette gjeld òg standardkanalen LongFast.
 Profilen er berre transportspor og hugsar siste kjende lokale node-ID, slik at
 rett historikk kan visast under reconnect. Profilar med same lokale node-ID
-deler datasett; ulike lokale nodar blir aldri slått saman automatisk.
+deler éi fysisk databasefil; ulike lokale nodar blir aldri slått saman automatisk.
+Sjå den nye lagrings- og migreringskontrakten ovanfor.
 
 ### Miljødata
 
@@ -358,25 +430,25 @@ daemon-eigde samband er spesifiserte og testa.
 Aktuelle, men lågare prioriterte forbetringar:
 
 - filtrering og sideinndeling for lange telemetri- og posisjonsloggar;
-- nodeavgrensa eksport til CSV eller JSON. Heile databasen kan alt
-  eksporterast trygt som JSON Lines med `meshpi export`;
+- eksport av utvalde fjernnodar til CSV eller JSON. Den valde gatewayen sin
+  database kan eksporterast som JSON Lines med `meshpi export`;
 - kartlenkje for eit valt tidsrom eller ei enkel ruteframstilling;
 - min/maks for utvalde målingar; siste verdi finst alt i nodeoversikta;
 - tydelegare vising av datakvalitet og manglande GPS-fix. Satellittal,
   GPS-presisjon og PDOP blir alt viste, medan lagra fix-type og fix-kvalitet
   ikkje er synlege i tabellen;
-- eventuelt eit leseorientert webgrensesnitt over den lokale IPC-en.
+- vidareutvikling av webgrensesnittet over den lokale IPC-en, mellom anna
+  språkbyte og betre filtrering av lange loggar.
 
 ## Tilrådd neste arbeid
 
-1. La 0.9.0 samle reelle data over tid og noter databasevekst, felt eller
+1. La 0.9.8 samle reelle data over tid og noter databasevekst, felt eller
    nodetypar som blir viste feil.
 2. Legg tidsfilter, telemetritypefilter og sideinndeling til nodeinfo, og mål
    spørjetid med mange tusen observasjonar.
 3. Gjennomfør BLE-test frå systemtenesta på Linux og LaunchAgent på macOS.
-4. Bruk den signerte betakanalen til neste større datamodell- eller
-   grensesnittendring, og ta `meshpi export` før ei testutgåve som kan endre
-   databaseskjemaet.
+4. Utvid webtestane på fleire klientar fram mot 1.0.0. Ta
+   `meshpi export` før ei testutgåve som kan endre databaseskjemaet.
 5. Vent med fleire samtidige gatewayar til tenestelivssyklusen er spesifisert
    og testa.
 

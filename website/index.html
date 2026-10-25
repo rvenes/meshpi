@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="MeshPi er ein terminalklient for Meshtastic på Linux, Raspberry Pi, macOS og Windows.">
+  <meta name="description" content="MeshPi 0.9.8 for Linux, Raspberry Pi, macOS og Windows, med valfri privat webserver og passkeys.">
   <meta name="theme-color" content="#090d0e">
-  <title>MeshPi – Meshtastic i terminalen</title>
-  <link rel="stylesheet" href="styles.css">
-  <script src="script.js?v=0.9.5" defer></script>
+  <title data-en="MeshPi – Meshtastic in your terminal and browser">MeshPi – Meshtastic i terminal og nettlesar</title>
+  <link rel="stylesheet" href="styles.css?v=0.9.8">
+  <script src="script.js?v=0.9.8" defer></script>
 </head>
-<body>
+<body data-title-nn="MeshPi – Meshtastic i terminal og nettlesar" data-title-en="MeshPi – Meshtastic in your terminal and browser" data-description-nn="MeshPi 0.9.8 for Linux, Raspberry Pi, macOS og Windows, med valfri privat webserver og passkeys." data-description-en="MeshPi 0.9.8 for Linux, Raspberry Pi, macOS and Windows, with an optional private web server and passkeys.">
   <a class="skip-link" href="#installasjon" data-en="Skip to installation">Gå til installasjon</a>
 
   <header class="site-header">
@@ -20,6 +20,7 @@
     <nav aria-label="Hovudmeny" data-aria-en="Main menu">
       <a href="#funksjonar" data-en="Features">Funksjonar</a>
       <a href="#installasjon" data-en="Install">Installer</a>
+      <a href="#web" data-en="Web interface">Webgrensesnitt</a>
       <a href="#oppdatering" data-en="Update">Oppdater</a>
       <a href="#drift" data-en="Operations">Drift</a>
       <a href="#kommandoar" data-en="Commands">Kommandoar</a>
@@ -34,16 +35,17 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> <span data-en="Version 0.9.5">Versjon 0.9.5</span></div>
-        <h1><span class="heading-line" data-en="Meshtastic chat.">Meshtastic-chat.</span><br><span data-en="Right in your terminal.">Rett i terminalen.</span></h1>
-        <p class="lead" data-en="MeshPi keeps the radio connection open in the background, receives messages in real time, and gives you public chat, direct messages, history, and a node list in a fast terminal interface.">
+        <div class="eyebrow"><span class="status-dot"></span> <span data-en="Version 0.9.8">Versjon 0.9.8</span></div>
+        <h1><span class="heading-line" data-en="Meshtastic chat.">Meshtastic-chat.</span><br><span data-en="Terminal and browser.">Terminal og nettlesar.</span></h1>
+        <p class="lead" data-en="MeshPi keeps the radio connection open in the background, receives messages in real time, and gives you public chat, direct messages, history, and a node list in the terminal or optional private web interface.">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
           sanntid og gir deg public chat, DM, historikk og nodeliste i eit
-          raskt terminalgrensesnitt.
+          terminalgrensesnitt eller eit valfritt privat webgrensesnitt.
         </p>
+        <p data-en-html="0.9.8 uses the ordinary channel for evaluation on the way to 1.0.0. No separate beta channel is needed. Bug reports and real-world feedback are welcome.">0.9.8 kjem i ordinær kanal for utprøving fram mot 1.0.0. Ingen eigen betakanal er nødvendig. Meld gjerne feil og erfaringar.</p>
         <div class="hero-actions">
           <a class="button primary" href="#installasjon" data-en="Install MeshPi">Installer MeshPi</a>
-          <a class="button secondary" href="https://github.com/rvenes/meshpi" data-en="View source code">Sjå kjeldekoden</a>
+          <a class="button secondary" href="downloads/meshpi-0.9.8.tar.gz" data-en="Download 0.9.8 source">Last ned kjeldekode for 0.9.8</a>
         </div>
         <ul class="badges" aria-label="Teknisk informasjon" data-aria-en="Technical information">
           <li>Linux</li>
@@ -59,7 +61,7 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.9.5</b><i>●</i> <span data-en="Connected">Tilkopla</span>
+          <b>MeshPi 0.9.8</b><i>●</i> <span data-en="Connected">Tilkopla</span>
           <span>BLE Meshtastic</span>
         </div>
         <div class="terminal-grid">
@@ -118,6 +120,16 @@
           <span class="feature-number">04</span>
           <h3 data-en="Local history">Lokal historikk</h3>
           <p data-en="Messages, traceroute results, unread status, and node information are stored locally in SQLite. Archiving deletes nothing, and the CLI can clear messages by scope.">Meldingar, traceroute-resultat, ulest-status og nodeinformasjon blir lagra lokalt i SQLite. Arkivering slettar ingenting, og meldingar kan tømmast etter omfang med CLI-en.</p>
+        </article>
+        <article>
+          <span class="feature-number">05</span>
+          <h3 data-en="Optional web server">Valfri webserver</h3>
+          <p data-en-html="Choose web access during installation. The same daemon and history serve the terminal and multiple browsers; phones and PCs need no separate MeshPi client.">Vel web under installasjonen. Same daemon og historikk kan brukast frå terminalen og fleire nettlesarar; mobil og PC treng ingen separat MeshPi-klient.</p>
+        </article>
+        <article>
+          <span class="feature-number">06</span>
+          <h3 data-en="Private sign-in">Privat innlogging</h3>
+          <p data-en-html="Use a one-time code on localhost, or multiple passkeys at a fixed Tailscale HTTPS address. The web server listens on loopback and opens no direct LAN port.">Bruk eingongskode på localhost, eller fleire passkeys på ei fast Tailscale HTTPS-adresse. Webserveren lyttar berre lokalt og opnar ingen port direkte på LAN-et.</p>
         </article>
       </div>
     </section>
@@ -212,6 +224,11 @@
       </div>
 
       <div class="after-install">
+        <h3 data-en="Choose whether to enable web">Vel om web skal vere med</h3>
+        <p data-en-html="Fresh interactive installations ask first; the default is no. Use &lt;code&gt;--web&lt;/code&gt; or &lt;code&gt;--no-web&lt;/code&gt; on Linux/macOS and &lt;code&gt;-Web Enabled&lt;/code&gt; or &lt;code&gt;-Web Disabled&lt;/code&gt; on Windows. Omit the option on upgrades to preserve your settings. See the &lt;a href=&quot;#web&quot;&gt;Pi setup with web&lt;/a&gt;.">Fersk interaktiv installasjon spør først; standard er nei. Bruk <code>--web</code> eller <code>--no-web</code> på Linux/macOS, og <code>-Web Enabled</code> eller <code>-Web Disabled</code> på Windows. Utelat valet ved oppdatering for å bevare oppsettet. Sjå <a href="#web">Pi-oppskrifta med web</a>.</p>
+      </div>
+
+      <div class="after-install">
         <h3 data-en="After installation">Etter installasjon</h3>
         <ol>
           <li data-en="Open a new terminal.">Opne ein ny terminal.</li>
@@ -248,6 +265,44 @@
       </div>
     </section>
 
+    <section id="web" class="section">
+      <div class="section-heading">
+        <span data-en="Optional web interface">Valfritt webgrensesnitt</span>
+        <h2 data-en="A fresh Pi, ready for your browser">Ein fersk Pi, klar for nettlesaren</h2>
+        <p data-en-html="Run these commands on 64-bit Raspberry Pi OS with Python 3.11 or newer. Only the Pi needs the installation. The web interface currently uses Nynorsk; the terminal client also supports English.">Køyr kommandoane på 64-bits Raspberry Pi OS med Python 3.11 eller nyare. Berre Pi-en treng installasjonen. Webgrensesnittet er på nynorsk; terminalklienten støttar òg engelsk.</p>
+      </div>
+      <div class="after-install">
+        <h3 data-en="1. Install with web">1. Installer med web</h3>
+        <div class="command-box"><code id="pi-packages-command">sudo apt update &amp;&amp; sudo apt install curl python3-venv</code><button data-copy-target="pi-packages-command" data-en="Copy">Kopier</button></div>
+        <div class="command-box"><code id="pi-web-install-command">curl -fLO https://venes.org/meshpi/install-linux.sh &amp;&amp; sudo sh install-linux.sh --web</code><button data-copy-target="pi-web-install-command" data-en="Copy">Kopier</button></div>
+        <p data-en-html="Open a new terminal after installation. &lt;code&gt;meshpi web-info&lt;/code&gt; shows the address, the correct code command and manual setup steps. An upgrade preserves disabled web access; follow the activation steps shown if you want to enable it. &lt;code&gt;meshpi web-code&lt;/code&gt; creates a one-time code valid for five minutes. A new code logs out existing web sessions.">Opne ein ny terminal etter installasjonen. <code>meshpi web-info</code> viser adressa, rett kodekommando og manuelle oppsettssteg. Oppdatering bevarer avslått web; følg aktiveringsstega som blir viste dersom du vil slå det på. <code>meshpi web-code</code> lagar ein eingongskode som varer i fem minutt. Ein ny kode loggar ut eksisterande websesjonar.</p>
+        <div class="command-box"><code id="web-info-command">meshpi web-info</code><button data-copy-target="web-info-command" data-en="Copy">Kopier</button></div>
+        <div class="command-box"><code id="web-code-command">meshpi web-code</code><button data-copy-target="web-code-command" data-en="Copy">Kopier</button></div>
+        <p data-en-html="On the Pi, open &lt;code&gt;http://localhost:8780/meshpi/&lt;/code&gt; and enter the code. No node is preselected. Select or add a profile under &lt;strong&gt;Tilkoplingar&lt;/strong&gt; (Connections).">På Pi-en opnar du <code>http://localhost:8780/meshpi/</code> og skriv inn koden. Ingen node er førehandsvald. Vel eller legg til ein profil under <strong>Tilkoplingar</strong>.</p>
+      </div>
+      <div class="after-install">
+        <h3 data-en="2. Headless Pi: use an SSH tunnel">2. Pi utan skjerm: bruk ein SSH-tunnel</h3>
+        <p data-en-html="Run this in a new terminal on your PC and keep the tunnel open. Replace &lt;code&gt;USER@PI-HOST&lt;/code&gt; with your SSH username and Pi hostname. Then open &lt;code&gt;http://localhost:8780/meshpi/&lt;/code&gt; on the PC and use the code from the Pi.">Køyr dette i ein ny terminal på PC-en og lat tunnelen stå open. Byt <code>USER@PI-HOST</code> med din SSH-brukar og Pi-vert. Opne deretter <code>http://localhost:8780/meshpi/</code> på PC-en og bruk koden frå Pi-en.</p>
+        <div class="command-box"><code id="pi-web-tunnel-command">ssh -N -L 8780:127.0.0.1:8780 USER@PI-HOST</code><button data-copy-target="pi-web-tunnel-command" data-en="Copy">Kopier</button></div>
+        <p data-en-html="Port 8780 must be available on the PC. Local and remote ports must match the saved sign-in address. This recipe is for the localhost setup; no LAN port needs opening.">Port 8780 må vere ledig på PC-en. Lokal og fjern port skal samsvare med den lagra innloggingsadressa. Oppskrifta gjeld localhost-oppsett; du treng ikkje opne ein LAN-port.</p>
+      </div>
+      <div class="after-install">
+        <h3 data-en="3. Optional: Tailscale HTTPS and passkeys">3. Valfritt: Tailscale HTTPS og passkeys</h3>
+        <p data-en-html="Install and sign in to Tailscale on the Pi and clients first. Find the Pi address with &lt;code&gt;meshpi web-info&lt;/code&gt;. Replace the placeholder below with its actual &lt;code&gt;*.ts.net&lt;/code&gt; address. Inspect &lt;code&gt;tailscale serve status&lt;/code&gt; and use &lt;code&gt;/meshpi&lt;/code&gt; only if that route is free. Preserve existing routes.">Installer og logg inn i Tailscale på Pi-en og klientane først. Finn Pi-adressa med <code>meshpi web-info</code>. Byt plasshaldaradressa under med den faktiske <code>*.ts.net</code>-adressa. Kontroller <code>tailscale serve status</code>, og bruk berre <code>/meshpi</code> dersom ruta er ledig. Eksisterande ruter skal bevarast.</p>
+        <div class="command-box"><code id="web-tailscale-config-command">sudo meshpi web-configure --enable --public-url https://HOST.TAILNET.ts.net --base-path /meshpi</code><button data-copy-target="web-tailscale-config-command" data-en="Copy">Kopier</button></div>
+        <div class="command-box"><code id="web-tailscale-restart-command">sudo meshpi service enable &amp;&amp; sudo meshpi service stop &amp;&amp; sudo meshpi service start</code><button data-copy-target="web-tailscale-restart-command" data-en="Copy">Kopier</button></div>
+        <div class="command-box"><code id="web-tailscale-status-command">tailscale serve status</code><button data-copy-target="web-tailscale-status-command" data-en="Copy">Kopier</button></div>
+        <div class="command-box"><code id="web-tailscale-serve-command">sudo tailscale serve --bg --set-path /meshpi http://127.0.0.1:8780</code><button data-copy-target="web-tailscale-serve-command" data-en="Copy">Kopier</button></div>
+        <p data-en-html="&lt;code&gt;--bg&lt;/code&gt; keeps Serve active after closing the terminal and across restarts. If Tailscale asks you to enable HTTPS, open the link printed by the command and follow its instructions. Then check &lt;code&gt;tailscale serve status&lt;/code&gt; again. These commands are manual; MeshPi does not change your Serve routes."><code>--bg</code> held Serve aktivt etter at terminalen blir lukka og etter omstart. Dersom Tailscale ber om HTTPS-aktivering, opnar du lenkja frå kommandoen og følgjer rettleiinga. Kontroller deretter <code>tailscale serve status</code> igjen. Kommandoane er manuelle; MeshPi endrar ikkje Serve-rutene dine.</p>
+        <p data-en-html="Restarting services briefly interrupts open clients. Then open &lt;code&gt;https://HOST.TAILNET.ts.net/meshpi/&lt;/code&gt;, generate a new &lt;code&gt;meshpi web-code&lt;/code&gt;, sign in and select &lt;strong&gt;Innlogging og nøklar → Legg til passkey&lt;/strong&gt; (Sign-in and keys → Add passkey). Use the same HTTPS address on the Pi too. A new code or removing a key logs out all browsers.">Tenesteomstart bryt sambandet kortvarig for opne klientar. Opne så <code>https://HOST.TAILNET.ts.net/meshpi/</code>, lag ein ny <code>meshpi web-code</code>, logg inn og vel <strong>Innlogging og nøklar → Legg til passkey</strong>. Bruk same HTTPS-adresse også på Pi-en. Ny kode eller fjerning av ein nøkkel loggar ut alle nettlesarar.</p>
+        <p data-en-html="You can save multiple named keys using, for example, Bitwarden, Apple Passwords or Windows Hello. Access belongs to one owner; separate roles are not included. Passkeys are bound to the hostname. Keep access private through Tailscale Serve; do not use Funnel. Consult the &lt;a href=&quot;https://tailscale.com/docs/features/tailscale-serve&quot;&gt;Tailscale guide&lt;/a&gt; during setup.">Du kan lagre fleire namngjevne nøklar i til dømes Bitwarden, Apple Passord eller Windows Hello. Éin eigar har tilgang; separate roller er ikkje med. Passkeys følgjer domenenamnet. Hald tilgangen privat gjennom Tailscale Serve; ikkje bruk Funnel. Les <a href="https://tailscale.com/docs/features/tailscale-serve">Tailscale-rettleiinga</a> ved oppsett.</p>
+      </div>
+      <div class="after-install">
+        <h3 data-en="4. Choose how long to keep history">4. Vel kor lenge historikken skal lagrast</h3>
+        <p data-en-html="Open &lt;strong&gt;Innstillingar&lt;/strong&gt; (Settings) in the web interface, or press &lt;kbd&gt;F10&lt;/kbd&gt; in the terminal. Each connected gateway has a separate database. New gateways use 30 days; existing gateways wait for your confirmation before applying an age limit. You can preview and confirm manual cleanup of messages or all history for that gateway.">Opne <strong>Innstillingar</strong> i webgrensesnittet, eller trykk <kbd>F10</kbd> i terminalen. Kvar tilkopla gateway har eigen database. Nye gatewayar bruker 30 dagar; eksisterande gatewayar ventar på stadfestinga di før ei aldersgrense blir teken i bruk. Du kan sjå og stadfeste manuell rydding av meldingar eller all historikk for gatewayen.</p>
+      </div>
+    </section>
+
     <section id="oppdatering" class="section split-section">
       <div>
         <span class="section-kicker" data-en="Updates">Oppdatering</span>
@@ -258,13 +313,8 @@
           Eksisterande konfigurasjon, tilkoplingsprofilar og SQLite-historikk
           blir tekne vare på.
         </p>
-        <p data-en-html="Anyone can choose the signed beta channel with &lt;code&gt;meshpi update --beta&lt;/code&gt;. This command requires MeshPi 0.8.6 or newer. Older installations use the full installation path on the &lt;a href=&quot;beta/&quot;&gt;beta page&lt;/a&gt;. Beta releases may contain bugs; without &lt;code&gt;--beta&lt;/code&gt;, only the stable channel is used.">
-          Alle kan velje den signerte betakanalen med
-          <code>meshpi update --beta</code>. Kommandoen krev MeshPi 0.8.6 eller
-          nyare. Eldre installasjonar bruker den fulle installasjonsvegen på
-          <a href="beta/">betasida</a>. Beta kan innehalde feil; utan
-          <code>--beta</code> blir berre den stabile kanalen brukt.
-        </p>
+        <p data-en-html="0.9.8 uses the ordinary channel. Update without &lt;code&gt;--beta&lt;/code&gt;; no separate beta channel is being created for the web interface. We welcome bug reports and feedback before 1.0.0.">0.9.8 bruker ordinær kanal. Oppdater utan <code>--beta</code>; det blir ikkje laga ein eigen betakanal for webgrensesnittet. Me tek imot feilrapportar og erfaringar før 1.0.0.</p>
+        <p data-en-html="pip and the Python libraries inside MeshPi are updated through signed MeshPi releases. Use &lt;code&gt;meshpi update&lt;/code&gt; instead of upgrading them manually with pip. Keep Python, the operating system and Tailscale updated separately.">pip og Python-biblioteka inne i MeshPi blir oppdaterte gjennom signerte MeshPi-utgivingar. Bruk <code>meshpi update</code> i staden for å oppgradere dei manuelt med pip. Hald Python, operativsystemet og Tailscale oppdaterte separat.</p>
         <p data-en-html="MeshPi checks &lt;a href=&quot;version.json&quot;&gt;version.json&lt;/a&gt; at startup. When a new version is available, the update command appears as a local system message in the chat log. It is never sent to the mesh network.">
           MeshPi sjekkar <a href="version.json">version.json</a> ved oppstart.
           Når ein ny versjon finst, blir oppdateringskommandoen vist som ei lokal
@@ -328,6 +378,11 @@
       <div class="command-reference">
         <div><code>meshpi</code><span data-en="Start the full-screen interface.">Start fullskjermsgrensesnittet.</span></div>
         <div><code>meshpi tui</code><span data-en="Explicitly start the full-screen interface.">Start fullskjermsgrensesnittet uttrykkeleg.</span></div>
+        <div><code>meshpi web [--port PORT] [--public-url URL] [--base-path STI]</code><span data-en="Start the private loopback web interface with sign-in; session mode starts a missing daemon.">Start privat webgrensesnitt på loopback med innlogging; sesjonsmodus startar ein manglande daemon.</span></div>
+        <div><code>meshpi web-code [--local]</code><span data-en="issue a five-minute one-time sign-in code; revokes existing web sessions.">lag ein femminutts eingongskode for innlogging; avsluttar eksisterande websesjonar.</span></div>
+        <div><code>meshpi web-configure [--enable|--disable] [--port PORT] [--public-url URL] [--base-path STI]</code><span data-en="save optional web activation and the fixed sign-in address. Restart services afterward.">lagre valfri webdrift og fast innloggingsadresse. Start tenestene på nytt etterpå.</span></div>
+        <div><code>meshpi web-check</code><span data-en="check the local web listener independently of radio connectivity.">kontroller den lokale weblyttaren uavhengig av radiosambandet.</span></div>
+        <div><code>meshpi web-info</code><span data-en="show addresses, web activation steps, Tailscale Serve setup and sign-in instructions.">vis adresser, steg for webaktivering, Tailscale Serve-oppsett og innloggingshjelp.</span></div>
         <div><code>meshpi new</code><span data-en="Discover or choose a connection. F4 shows all Linux ports, and F5 starts a new BLE scan.">Oppdag eller vel ei tilkopling. F4 viser alle Linux-portar, og F5 startar eit nytt BLE-søk.</span></div>
         <div><code data-en="meshpi connect TARGET [--name NAME]">meshpi connect MÅL [--name NAMN]</code><span data-en-html="Switch to TCP, a serial path, a COM port, or &lt;code&gt;ble://IDENTIFIER&lt;/code&gt;.">Byt til TCP, seriellsti, COM-port eller <code>ble://IDENTIFIKATOR</code>.</span></div>
         <div><code>meshpi connections</code><span data-en="Show saved connection profiles.">Vis lagra tilkoplingsprofilar.</span></div>
@@ -335,7 +390,7 @@
         <div><code>meshpi doctor [--offline]</code><span data-en="Run the self-test; offline does not require an available node.">Køyr sjølvtest; offline krev ikkje ein tilgjengeleg node.</span></div>
         <div><code data-en="meshpi export [FILE] [--force]">meshpi export [FIL] [--force]</code><span data-en="Export the entire database as UTF-8 JSON Lines without stopping the service.">Eksporter heile databasen som UTF-8 JSON Lines utan å stoppe tenesta.</span></div>
         <div><code>meshpi service {status,start,stop,enable,disable}</code><span data-en="Show or control the service and automatic startup.">Vis eller styr tenesta og autostart.</span></div>
-        <div><code>meshpi update [--check] [--yes] [--beta]</code><span data-en-html="Check for or install a signed update; &lt;code&gt;--beta&lt;/code&gt; selects the open beta channel available since MeshPi 0.8.6.">Sjekk eller installer ei signert oppdatering; <code>--beta</code> vel den opne betakanalen frå MeshPi 0.8.6.</span></div>
+        <div><code>meshpi update [--check] [--yes] [--beta]</code><span data-en-html="Check for or install a signed update. 0.9.8 uses the ordinary channel; &lt;code&gt;--beta&lt;/code&gt; remains for older beta workflows.">Sjekk eller installer ei signert oppdatering. 0.9.8 bruker ordinær kanal; <code>--beta</code> er bevart for eldre betaflytar.</span></div>
         <div><code>meshpi language [nn|en]</code><span data-en="Show or choose the interface language.">Vis eller vel språk for brukargrensesnittet.</span></div>
         <div><code>meshpi status</code><span data-en="Show connection and transport status.">Vis sambands- og tilkoplingsstatus.</span></div>
         <div><code data-en="meshpi nodes [--search TEXT] [--sort name|seen|id]">meshpi nodes [--search TEKST] [--sort name|seen|id]</code><span data-en="Show, filter, and sort known nodes.">Vis, filtrer og sorter kjende nodar.</span></div>
@@ -387,6 +442,7 @@
         <div><kbd>F10</kbd><span data-en="Local node information and app settings">Lokal nodeinfo og appinnstillingar</span></div>
         <div><kbd>Shift+F10</kbd><span data-en="Open actions for the selected node">Opne handlingar for markert node</span></div>
         <div><kbd>Delete</kbd><span data-en="Close the selected DM without deleting its history">Lukk vald DM utan å slette historikken</span></div>
+        <div><kbd>F10</kbd><span data-en="Open settings for history retention and cleanup">Opne innstillingar for lagring og opprydding av historikk</span></div>
         <div><kbd>Ctrl+R</kbd><span data-en="Refresh status, conversations, and nodes">Oppdater status, samtalar og nodar</span></div>
         <div><kbd>Ctrl+U</kbd><span data-en="Copy the update command when a new version is available">Kopier oppdateringskommandoen når ein ny versjon finst</span></div>
         <div><kbd>Ctrl+Q</kbd><span data-en="Quit MeshPi and choose what happens to the daemon">Avslutt MeshPi og vel kva som skjer med daemonen</span></div>
@@ -394,23 +450,59 @@
       </div>
     </section>
 
-    <section id="release-0.9.5" class="section release-section">
+    <section id="release-0.9.8" class="section release-section">
       <div class="section-heading">
         <span data-en="Latest version">Siste versjon</span>
-        <h2>MeshPi 0.9.5</h2>
+        <h2>MeshPi 0.9.8</h2>
       </div>
       <div class="release-card">
         <ul>
-          <li data-en="F10 opens local node information with radio region, modem preset, role, battery, channel details and node counts">F10 opnar lokal nodeinfo med radioregion, modemprofil, rolle, batteri, kanaldetaljar og tal på nodar</li>
-          <li data-en="A wider, searchable node list shows last-seen times, GPS positions and battery; Enter opens details and a map link">Ei breiare, søkbar nodeliste viser sist sett, GPS-posisjon og batteri; Enter opnar detaljar og kartlenkje</li>
-          <li data-en="Remove one or more selected contacts from the connected radio, with confirmation and verification against a freshly read node list">Slett éin eller fleire valde kontaktar frå den tilkopla radioen, med stadfesting og verifikasjon mot ei nyinnlesen nodeliste</li>
-          <li data-en="Old and inactive channel entries are hidden when the radio's channels change, while message history is preserved">Gamle og inaktive kanaloppføringar blir skjulte når kanalane på radioen blir endra, medan meldingshistorikken blir bevart</li>
-          <li data-en="Profiles, message history and radio settings are preserved; contacts can be learned again from new traffic">Profilar, meldingshistorikk og radioinnstillingar blir bevarte; kontaktar kan bli lærte inn att frå ny trafikk</li>
+          <li data-en="Each gateway now has its own database. Existing history is migrated by gateway, with the original database preserved.">Kvar gateway har no sin eigen database. Eksisterande historikk blir flytta til rett gateway, medan den opphavlege databasen blir bevart.</li>
+          <li data-en="New gateways retain history for 30 days. Choose a week, a month, a custom number of days or no age limit. Existing gateways keep their history until you confirm a retention policy.">Nye gatewayar lagrar historikk i 30 dagar. Vel ei veke, ein månad, eige tal på dagar eller inga aldersgrense. Eksisterande gatewayar bevarer historikken fram til du stadfestar eit lagringsval.</li>
+          <li data-en="Open Settings in the web interface or press F10 in the terminal. Preview and confirm deletion of messages or all history for the active gateway, by age or regardless of age.">Opne Innstillingar i web eller trykk F10 i terminalen. Sjå og stadfest sletting av meldingar eller all historikk for aktiv gateway, etter alder eller uansett alder.</li>
+          <li data-en="Node details show long and short names, ID, hardware, role, last heard, external power or battery level, voltage, SNR, RSSI and hops.">Nodedetaljar viser langt namn, kortnamn, ID, maskinvare, rolle, sist høyrd, ekstern straum eller batterinivå, spenning, SNR, RSSI og hopp.</li>
+          <li data-en="Removed the prototype footer and history export button from the web interface. Terminal export remains available.">Fjerna prototypefoten og knappen for historieksport frå webgrensesnittet. Eksport i terminalen er framleis tilgjengeleg.</li>
+          <li data-en="pip is updated to 26.2.2 in all platform locks. Installers explain that MeshPi manages these components and suppress the misleading manual pip upgrade notice.">pip er oppdatert til 26.2.2 i alle plattformlåsene. Installatørane forklarer at MeshPi vedlikeheld desse komponentane og skjuler det misvisande varselet om manuell pip-oppgradering.</li>
         </ul>
+        <p data-en="Deleting history cannot be undone. Profiles, node information, sign-in keys and radio settings are preserved. Age limits apply to messages, telemetry, positions and node actions; the existing message count limit still applies when no age limit is selected.">Sletting av historikk kan ikkje angrast. Profilar, nodeinformasjon, innloggingsnøklar og radioinnstillingar blir bevarte. Aldersgrensa gjeld meldingar, telemetri, posisjonar og nodehandlingar; den eksisterande meldingsgrensa gjeld òg utan aldersgrense.</p>
         <div class="release-links">
-          <a href="downloads/meshpi-0.9.5-py3-none-any.whl" data-en="Download the Python package">Last ned Python-pakken</a>
-          <a href="https://github.com/rvenes/meshpi" data-en="Source code on GitHub">Kjeldekode på GitHub</a>
+          <a href="downloads/meshpi-0.9.8-py3-none-any.whl" data-en="Download the Python package">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.9.8.tar.gz" data-en="Download the exact 0.9.8 source">Last ned kjeldekode for nøyaktig 0.9.8</a>
+          <a href="https://github.com/rvenes/meshpi/issues" data-en="Report a bug or suggest an improvement">Meld feil eller foreslå forbetringar</a>
         </div>
+        <p data-en="MeshPi 0.9.8 uses the ordinary channel for testing on the way to 1.0.0. The source archive contains the exact GPL-3.0-only release sources, documentation and tests.">MeshPi 0.9.8 bruker ordinær kanal for utprøving fram mot 1.0.0. Kjeldearkivet inneheld nøyaktig utgivingskode, dokumentasjon og testar under GPL-3.0-only.</p>
+      </div>
+    </section>
+    <section id="release-0.9.7" class="section release-section">
+      <div class="section-heading">
+        <span data-en="Previous version">Førre versjon</span>
+        <h2>MeshPi 0.9.7</h2>
+      </div>
+      <div class="release-card">
+        <ul>
+          <li data-en="web-info now shows copyable Tailscale Serve commands using the saved port and path, with guidance for persistent operation and HTTPS activation.">web-info viser no kopierbare Tailscale Serve-kommandoar med lagra port og sti, og hjelp til vedvarande drift og HTTPS-aktivering.</li>
+          <li data-en="Clear manual activation steps when web is disabled. Upgrading preserves disabled web access and existing Serve routes.">Tydelege steg for manuell aktivering når web er avslått. Oppdatering bevarer avslått web og eksisterande Serve-ruter.</li>
+          <li data-en="The browser tab shows the MeshPi server name, making multiple installations easier to distinguish.">Nettlesarfana viser namnet på MeshPi-serveren, slik at fleire installasjonar er lettare å skilje.</li>
+          <li data-en="Sign in with a local one-time code or multiple named passkeys at a fixed Tailscale HTTPS address.">Innlogging med lokal eingongskode og fleire namngjevne passkeys på fast Tailscale HTTPS-adresse.</li>
+          <li data-en="Web chat with per-conversation drafts, uncertain-send reconciliation and no automatic message replay.">Webchat med samtaleutkast, kontroll av usikker sendestatus og vern mot automatisk ny sending.</li>
+          <li data-en="Browser node details, telemetry, positions and traceroute, with light/dark mode and installable web app.">Nodevising, telemetri, posisjon og traceroute i nettlesaren, med lys/mørk modus og installasjon som webapp.</li>
+        </ul>
+        <p data-en-html="0.9.7 is an evolving release on the ordinary channel on the way to 1.0.0. Web access is optional and limited to private use. Test sign-in, restarts and multiple clients in your own setup.">0.9.7 er ei utviklingsutgåve i ordinær kanal på vegen mot 1.0.0. Web er valfritt og avgrensa til privat bruk. Test innlogging, omstart og fleire klientar i ditt eige oppsett.</p>
+        <div class="release-links">
+          <a href="downloads/meshpi-0.9.7-py3-none-any.whl" data-en="Download the Python package">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.9.7.tar.gz" data-en="Download the exact 0.9.7 source">Last ned kjeldekode for nøyaktig 0.9.7</a>
+          <a href="https://github.com/rvenes/meshpi/issues" data-en="Report a bug or suggest an improvement">Meld feil eller foreslå forbetringar</a>
+        </div>
+        <p data-en-html="MeshPi is GPL-3.0-only. The source archive contains the program, web assets, documentation, tests and build inputs for this release. Contribute through the &lt;a href=&quot;https://github.com/rvenes/meshpi&quot;&gt;GitHub repository&lt;/a&gt; and pull requests; the repository may be at a different revision from the release archive. Include the version, platform and reproduction steps without private messages, tokens or keys.">MeshPi er GPL-3.0-only. Kjeldearkivet inneheld programmet, webfilene, dokumentasjon, testar og byggjegrunnlaget for denne utgåva. Bidra gjennom <a href="https://github.com/rvenes/meshpi">GitHub-repoet</a> og pull requests; repoet kan ha ein annan revisjon enn utgivingsarkivet. Oppgi versjon, plattform og reproduksjonssteg utan private meldingar, token eller nøklar.</p>
+      </div>
+    </section>
+    <section id="release-0.9.6" class="section release-section">
+      <div class="section-heading">
+        <span data-en="Previous version">Førre versjon</span>
+        <h2>MeshPi 0.9.6</h2>
+      </div>
+      <div class="release-card">
+        <p data-en="0.9.6 introduced the optional web server, local one-time codes, named passkeys and browser chat/node views, alongside security updates to certifi, setuptools and urllib3. These features continue in 0.9.7.">0.9.6 innførte valfri webserver, lokale eingongskodar, namngjevne passkeys og chat/nodevising i nettlesaren, saman med tryggleiksoppdateringar av certifi, setuptools og urllib3. Funksjonane er vidareførte i 0.9.7.</p>
       </div>
     </section>
   </main>

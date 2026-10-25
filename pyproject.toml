@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools==83.0.0"]
+requires = ["setuptools==84.1.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "meshpi"
-version = "0.9.5"
+version = "0.9.8"
 description = "Ein stabil Meshtastic-klient for terminalen"
 readme = "README.md"
 license = "GPL-3.0-only"
@@ -12,6 +12,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "meshtastic==2.7.11",
+    "fido2==2.2.1",
     "prompt-toolkit==3.0.52",
     "textual==8.2.8",
 ]
@@ -24,7 +25,7 @@ test = [
 dev = [
     "meshpi[test]",
     "build>=1.2,<2",
-    "cryptography>=45,<47",
+    "cryptography>=45,<51",
     "ruff>=0.12,<1",
 ]
 
@@ -35,7 +36,7 @@ meshpi = "meshpi.cli:main"
 include = ["meshpi*"]
 
 [tool.setuptools.package-data]
-meshpi = ["locales/*.json"]
+meshpi = ["locales/*.json", "web_assets/*"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

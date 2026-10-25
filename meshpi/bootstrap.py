@@ -68,7 +68,11 @@ def main() -> None:
         wheel.write_bytes(payload)
         sys.path.insert(0, str(wheel))
         os.environ["PIP_CONFIG_FILE"] = os.devnull
-        sys.argv = ["pip", "--isolated", "install", "--only-binary=:all:",
+        # Our installer owns launchers/PATH. Avoid pip resolving unrelated PATH
+        # entries just to warn about script locations (Windows mount points can fail).
+        sys.argv = ["pip", "--isolated", "--disable-pip-version-check",
+                    "install", "--no-warn-script-location",
+                    "--only-binary=:all:",
                     "--require-hashes", "--index-url", "https://pypi.org/simple", "-r", str(lock)]
         # Match `python -m pip`: this is Python, not a running pip.exe launcher.
         runpy.run_module("pip", run_name="__main__", alter_sys=True)

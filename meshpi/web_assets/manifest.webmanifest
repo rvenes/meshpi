@@ -1,0 +1,16 @@
+{
+  "id": "__MESHPI_BASE_PATH__/",
+  "name": "MeshPi",
+  "short_name": "MeshPi",
+  "description": "Privat meshklient for kanalar, direkte meldingar og nodeinformasjon.",
+  "lang": "nn",
+  "start_url": "__MESHPI_BASE_PATH__/",
+  "scope": "__MESHPI_BASE_PATH__/",
+  "display": "standalone",
+  "background_color": "#162d3e",
+  "theme_color": "#162d3e",
+  "icons": [
+    {"src": "__MESHPI_BASE_PATH__/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "__MESHPI_BASE_PATH__/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ]
+}

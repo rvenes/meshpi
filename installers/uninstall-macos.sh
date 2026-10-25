@@ -66,8 +66,9 @@ BIN_DIR="${MESHPI_BIN_DIR:-$HOME/.local/bin}"
 PLIST_FILE="${MESHPI_PLIST_FILE:-$HOME/Library/LaunchAgents/org.venes.meshpi.plist}"
 DOMAIN="gui/$(id -u)"
 
+launchctl bootout "$DOMAIN/org.venes.meshpi.web" >/dev/null 2>&1 || true
 launchctl bootout "$DOMAIN/org.venes.meshpi" >/dev/null 2>&1 || true
-rm -f "$PLIST_FILE" "$BIN_DIR/meshpi"
+rm -f "$PLIST_FILE" "$(dirname "$PLIST_FILE")/org.venes.meshpi.web.plist" "$BIN_DIR/meshpi"
 rm -rf "$APP_ROOT/releases" "$APP_ROOT/current" "$APP_ROOT/previous" "$APP_ROOT/venv"
 
 PATH_MARKER="$APP_ROOT/path-added-by-meshpi"

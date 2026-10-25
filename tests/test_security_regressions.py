@@ -139,12 +139,16 @@ def test_bootstrap_checks_hash_before_executing_pip(tmp_path, monkeypatch, valid
     monkeypatch.setattr(sys, "argv", ["bootstrap", str(lock)])
     monkeypatch.setattr(sys, "path", list(sys.path))
     monkeypatch.setenv("PIP_CONFIG_FILE", "synthetic")
+    inherited_path = os.environ.get("PATH", "")
     calls = []
     def execute(module, **options):
         assert module == "pip"
         assert options == {"run_name": "__main__", "alter_sys": True}
         assert Path(sys.path[0]).read_bytes() == payload
         assert "--require-hashes" in sys.argv and "--only-binary=:all:" in sys.argv
+        assert "--no-warn-script-location" in sys.argv
+        assert "--disable-pip-version-check" in sys.argv
+        assert os.environ.get("PATH", "") == inherited_path
         calls.append(module)
     monkeypatch.setattr("meshpi.bootstrap.runpy.run_module", execute)
     if valid_hash:

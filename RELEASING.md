@@ -11,6 +11,12 @@ operatørflyten for miljøet og den konkrete bestillinga.
 
 ## Releasegrenser
 
+Webarbeidet frå oktober 2026 er planlagt for ordinær kanal. Det skal ikkje
+opprettast ein ny betakanal for denne funksjonen. Eksisterande beta-verktøy
+og prosedyrane nedanfor blir bevarte for uttrykkeleg bestilte beta-utgivingar.
+Endra utviklingsfiler er ikkje ei ferdig signert utgiving; alle vanlege
+plattform-, integritets- og publiseringsportar gjeld framleis.
+
 - Stabilkanalen bruker ein endeleg PEP 440-versjon og
   `website/version.json`.
 - Betakanalen bruker ei PEP 440-førehandsutgåve som `X.Y.ZbN` og
@@ -153,6 +159,20 @@ Releaseverktøyet:
 
 Genererte filer under `build/` skal ikkje commitast.
 
+Bygg også eit kjeldearkiv for den nøyaktige utgivinga etter signering:
+
+```text
+python -m build --sdist --no-isolation --outdir build/release-<versjon>
+```
+
+`MANIFEST.in` tek med kode, webfiler, testar og offentleg dokumentasjon, men
+utelèt private instruksjonar, lokale planar, konfigurasjon og data. Kontroller
+arkivinnhaldet før publisering. Bygg ein wheel frå det utpakka kjeldearkivet
+og samanlikn filinnhaldet med utgivings-wheel-en; ZIP-tidsstempel treng ikkje
+vere identiske. Kjeldearkivet er ei offentleg følgjefil og inngår ikkje i dei
+sju signerte artefaktane. Nettsida skal lenkje til arkivet for rett versjon,
+sjølv om GitHub-repoet enno ikkje er oppdatert.
+
 ## Kontroll etter signering
 
 1. Køyr full testsuite og Ruff på nytt. Signaturtestane skal vere grøne.
@@ -194,6 +214,7 @@ locks/linux.txt
 locks/macos.txt
 locks/windows.txt
 downloads/meshpi-<versjon>-py3-none-any.whl
+downloads/meshpi-<versjon>.tar.gz
 ```
 
 Nettsidefilene og manifestet kjem frå `website/`, skripta frå `installers/`,

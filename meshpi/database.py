@@ -373,11 +373,11 @@ class Database:
     ):
         self.path = Path(path)
         self.max_messages = max(1_000, max_messages)
-        self.observation_retention_days = max(1, observation_retention_days)
+        self.observation_retention_days = max(0, observation_retention_days)
         self._inserts_since_prune = 0
         self._observations_since_prune = 0
 
-    def initialize(self) -> None:
+    def initialize(self, *, prune: bool = True) -> None:
         # Check before chmod, WAL changes, DDL or retention maintenance.
         if self.path.exists():
             uri = self.path.resolve().as_uri() + "?mode=ro"
@@ -411,8 +411,9 @@ class Database:
                 "UPDATE messages SET status = ? WHERE status = 'stadfesta'",
                 (str(MessageStatus.ACKNOWLEDGED),),
             )
-            self._prune_messages(connection)
-            self._prune_observations(connection)
+            if prune:
+                self._prune_messages(connection)
+                self._prune_observations(connection)
             connection.execute(f"PRAGMA user_version={DATABASE_SCHEMA_VERSION}")
 
     @staticmethod
@@ -1076,13 +1077,16 @@ class Database:
                         PARTITION BY local_node_id ORDER BY id DESC
                     ) AS scope_row
                     FROM messages
+                    WHERE NOT (direction='ut' AND (status=? OR (status=? AND want_ack=1)))
                 ) WHERE scope_row > ?
             )
             """,
-            (self.max_messages,),
+            (str(MessageStatus.UNCERTAIN), str(MessageStatus.QUEUED), self.max_messages),
         )
 
     def _prune_observations(self, connection: sqlite3.Connection) -> None:
+        if self.observation_retention_days == 0:
+            return
         cutoff = (
             datetime.now(timezone.utc)
             - timedelta(days=self.observation_retention_days)

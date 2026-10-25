@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from meshpi.i18n import tr
 
@@ -27,8 +29,26 @@ SETTING_ENV_KEYS = frozenset(
         "UPDATE_URL",
         "UPDATE_TIMEOUT",
         "BACKGROUND_MODE",
+        "WEB_ENABLED", "WEB_PORT", "WEB_PUBLIC_URL", "WEB_BASE_PATH",
     }
 )
+
+
+def validate_web_config(port: int, public_url: str, base_path: str) -> str:
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ValueError("Webporten må vere mellom 1 og 65535.")
+    if not re.fullmatch(r"(?:/[a-zA-Z0-9_-]+)*", base_path):
+        raise ValueError("Ugyldig websti.")
+    if not public_url:
+        return ""
+    parsed = urlsplit(public_url)
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+            or parsed.password or parsed.path not in {"", "/"} or parsed.query
+            or parsed.fragment or parsed.port not in {None, 443}
+            or not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", parsed.hostname)
+            or not parsed.hostname.endswith(".ts.net")):
+        raise ValueError("Bruk den faste HTTPS-rotadressa frå Tailscale (*.ts.net).")
+    return f"https://{parsed.hostname}"
 
 
 def _load_env_file(path: Path) -> dict[str, str]:
@@ -95,6 +115,18 @@ class Settings:
     update_url: str = "https://venes.org/meshpi/version.json"
     update_timeout: float = 3.0
     background_mode: str = "always"
+    web_enabled: bool = False
+    web_port: int = 8780
+    web_public_url: str = ""
+    web_base_path: str = "/meshpi"
+
+    @property
+    def web_auth_dir(self) -> Path:
+        return self.database_path.parent / "web-auth"
+
+    @property
+    def web_origin(self) -> str:
+        return self.web_public_url or f"http://localhost:{self.web_port}"
 
     @property
     def ipc_uses_unix(self) -> bool:
@@ -123,6 +155,14 @@ class Settings:
         background_mode = values.get("BACKGROUND_MODE", "always").strip().lower()
         if background_mode not in {"always", "session"}:
             raise ValueError(tr("config.background_mode"))
+        web_enabled = values.get("WEB_ENABLED", "false").strip().lower()
+        if web_enabled not in {"true", "false"}:
+            raise ValueError("WEB_ENABLED må vere true eller false.")
+        web_port = _env_int(values, "WEB_PORT", 8780, 1, 65535)
+        web_base_path = values.get("WEB_BASE_PATH", "/meshpi").strip()
+        web_public_url = validate_web_config(
+            web_port, values.get("WEB_PUBLIC_URL", "").strip(), web_base_path,
+        )
         database_path = Path(
             values.get("DATABASE_PATH", "./data/meshtastic.db")
         ).expanduser()
@@ -187,4 +227,8 @@ class Settings:
             ).strip(),
             update_timeout=_env_float(values, "UPDATE_TIMEOUT", 3, 0.5, 30),
             background_mode=background_mode,
+            web_enabled=web_enabled == "true",
+            web_port=web_port,
+            web_public_url=web_public_url,
+            web_base_path=web_base_path,
         )

@@ -129,11 +129,12 @@ if [ "$MODE" = "session" ] && [ -x "$BIN_FILE" ]; then
     "$BIN_FILE" service stop
 fi
 if [ "$SKIP_SERVICE" != "1" ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl disable --now meshpi-web.service >/dev/null 2>&1 || true
     systemctl disable --now meshpi.service >/dev/null 2>&1 || true
 fi
 rm -f "$BIN_FILE"
 if [ "$SKIP_SERVICE" != "1" ]; then
-    rm -f "$UNIT_FILE"
+    rm -f "$UNIT_FILE" "${MESHPI_WEB_UNIT_FILE:-$(dirname "$UNIT_FILE")/meshpi-web.service}"
 fi
 if [ "$SKIP_SERVICE" != "1" ] && command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload

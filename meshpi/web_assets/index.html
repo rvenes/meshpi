@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="nn" data-base-path="__MESHPI_BASE_PATH__" data-server-name="__MESHPI_SERVER_NAME__">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#162d3e">
+  <meta name="apple-mobile-web-app-title" content="MeshPi">
+  <title>MeshPi · __MESHPI_PAGE_LABEL__</title>
+  <link rel="manifest" href="__MESHPI_BASE_PATH__/manifest.webmanifest">
+  <link rel="icon" href="__MESHPI_BASE_PATH__/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="__MESHPI_BASE_PATH__/apple-touch-icon.png">
+  <script src="__MESHPI_BASE_PATH__/theme.js"></script>
+  <link rel="stylesheet" href="__MESHPI_BASE_PATH__/style.css">
+  <script src="__MESHPI_BASE_PATH__/traceroute.js" defer></script>
+  <script src="__MESHPI_BASE_PATH__/auth.js" defer></script>
+  <script src="__MESHPI_BASE_PATH__/app.js" defer></script>
+  <script src="__MESHPI_BASE_PATH__/install.js" defer></script>
+</head>
+<body data-auth="locked">
+  <header class="topbar">
+    <div class="brand"><span class="brand-icon" aria-hidden="true">M</span><div class="brand-text"><strong id="host-name">MeshPi</strong><small id="gateway-name">Privat meshklient</small></div></div>
+    <div id="status" role="status">Koplar til daemonen …</div>
+    <button id="theme-toggle" class="quiet" type="button" aria-label="Mørk modus" aria-pressed="false" title="Byt til mørk modus">
+      <svg class="theme-moon" aria-hidden="true" viewBox="0 0 24 24"><path d="M20.9 13a9 9 0 0 1-9.9-9.9A9 9 0 1 0 20.9 13Z"/></svg>
+      <svg class="theme-sun" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+    <button id="nodes-button" class="quiet mobile-nodes">Nodar</button>
+    <button id="auth-button" class="quiet" type="button">Innlogging og nøklar</button>
+    <button id="connections-button" class="quiet">Tilkoplingar</button>
+    <button id="settings-button" class="quiet" type="button">Innstillingar</button>
+    <button id="install-button" class="quiet" type="button" hidden>Installer app</button>
+  </header>
+  <div id="notice" hidden>
+    <span id="notice-text" role="alert"></span>
+    <button id="dismiss-notice" type="button" aria-label="Lukk varsel" title="Lukk varsel">×</button>
+  </div>
+  <main>
+    <aside class="sidebar conversations-panel">
+      <div class="section-title"><h2>Samtalar</h2><button id="new-dm" title="Ny direkte melding" aria-label="Ny direkte melding">＋</button></div>
+      <nav id="conversations" aria-label="Samtalar"><p class="empty">Hentar samtalar …</p></nav>
+    </aside>
+    <section class="chat-panel" aria-label="Chat">
+      <div class="chat-head"><div><h1 id="chat-title">Vel ei samtale</h1><p id="chat-subtitle">Kanalar og direkte meldingar</p></div><button id="archive" class="quiet" hidden>Arkiver</button></div>
+      <div id="messages" role="log" aria-live="polite" aria-label="Meldingshistorikk"><p class="empty">Vel ein kanal eller start ein DM.</p></div>
+      <button id="new-messages" class="quiet" type="button" hidden>Nye meldingar ↓</button>
+      <div id="send-resolution" hidden>
+        <p id="send-resolution-text" role="status"></p>
+        <button id="check-send" type="button">Kontroller sendestatus</button>
+        <button id="release-send" type="button" class="quiet">Eg har kontrollert historikken</button>
+      </div>
+      <form id="send-form">
+        <label class="sr-only" for="message-text">Melding</label>
+        <textarea id="message-text" rows="2" placeholder="Skriv ei melding …" maxlength="1000" aria-describedby="send-hint message-bytes" disabled></textarea>
+        <div class="composer-foot"><span class="composer-info"><span id="send-hint">Vel ei sendbar samtale.</span><span id="message-bytes">0 / 237 byte</span></span><button id="send-button" type="submit" disabled>Send melding <span aria-hidden="true">↗</span></button></div>
+      </form>
+    </section>
+    <aside class="sidebar nodes-panel">
+      <div class="section-title"><h2>Nodar <span id="node-count"></span></h2></div>
+      <div id="node-browser">
+        <label class="sr-only" for="node-search">Søk etter node</label><input id="node-search" type="search" placeholder="Søk etter node …">
+        <div class="node-controls">
+          <label class="sr-only" for="node-transport-filter">Filtrer nodar etter transport</label>
+          <select id="node-transport-filter" title="Registrerte mottak via den aktive gatewayen. RF + MQTT tyder observert via begge.">
+            <option value="all">Alle</option><option value="rf">Via RF</option><option value="mqtt">Via MQTT</option><option value="both">RF + MQTT</option>
+          </select>
+          <label class="sr-only" for="node-sort">Sorter nodar</label>
+          <select id="node-sort"><option value="seen">Sist høyrd</option><option value="name">Alfabetisk</option><option value="id">Node-ID</option></select>
+        </div>
+        <div id="nodes"><p class="empty">Hentar nodar …</p></div>
+      </div>
+    </aside>
+  </main>
+  <dialog id="auth-dialog" aria-labelledby="auth-title">
+    <div class="dialog-head"><h2 id="auth-title">Logg inn i MeshPi</h2><button id="auth-close" class="quiet" type="button" hidden>Lukk ×</button></div>
+    <p id="auth-error" role="status" aria-live="polite"></p>
+    <a id="auth-canonical" hidden></a>
+    <section id="auth-login">
+      <button id="auth-passkey" type="button" disabled>Logg inn med passkey</button>
+      <form id="auth-code-form">
+        <label for="auth-code">Eingongskode</label>
+        <input id="auth-code" type="password" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" required maxlength="128" aria-describedby="auth-code-help">
+        <p id="auth-code-help" class="auth-help">På MeshPi-maskina: køyr <code>meshpi web-code</code> i terminalen. Koden gir tilgang til denne installasjonen, varer i fem minutt og kan brukast éin gong.</p>
+        <button id="auth-code-submit" type="submit">Logg inn med kode</button>
+      </form>
+    </section>
+    <section id="auth-manage" hidden>
+      <h3>Nøklane dine</h3><div id="auth-keys"></div>
+      <form id="auth-register-form">
+        <label for="auth-name">Namn på ny nøkkel</label><input id="auth-name" maxlength="80" placeholder="Til dømes Windows-PC eller iPhone" required>
+        <button id="auth-register" type="submit" disabled>Legg til passkey</button>
+      </form>
+      <p class="auth-help">For å endre nøklar må du ha logga inn dei siste fem minutta. Logg ut og inn igjen om økta er eldre. Lokal eingongskode kan òg brukast dersom du mistar nøklane.</p>
+      <button id="auth-logout" class="quiet" type="button">Logg ut</button>
+    </section>
+    <p id="auth-passkey-note" class="auth-help"></p>
+  </dialog>
+  <dialog id="node-dialog" aria-labelledby="node-title">
+    <div class="dialog-head"><div><small>NODEINFORMASJON</small><h2 id="node-title">Node</h2></div><button id="close-node" class="quiet" aria-label="Lukk nodeinformasjon">Lukk ×</button></div>
+    <nav id="node-tabs" class="tabs" aria-label="Nodeinformasjon">
+      <button data-tab="overview">Oversikt</button><button data-tab="telemetry">Telemetri</button><button data-tab="positions">Posisjon</button><button data-tab="traceroutes">Traceroute</button>
+    </nav>
+    <div id="node-data"></div>
+    <div class="dialog-actions"><button id="node-dm" class="quiet">Send DM</button><button id="position-exchange" class="quiet">Utveksle posisjon</button><button id="traceroute">Start traceroute</button></div>
+  </dialog>
+  <dialog id="nodes-dialog"><div class="dialog-head"><h2>Nodar</h2><button id="close-nodes" class="quiet">Lukk ×</button></div><div id="mobile-nodes"></div></dialog>
+  <dialog id="dm-dialog">
+    <div class="dialog-head"><h2>Ny direkte melding</h2><button id="close-dm" class="quiet">Lukk ×</button></div>
+    <form id="dm-form">
+      <label for="dm-node">Mottakar · full node-ID</label><input id="dm-node" placeholder="!1234abcd" pattern="![0-9a-fA-F]{8}" required list="known-nodes"><datalist id="known-nodes"></datalist>
+      <label for="dm-channel">Kanal</label><select id="dm-channel" required></select>
+      <button type="submit">Opne samtale</button>
+    </form>
+  </dialog>
+  <dialog id="connections-dialog">
+    <div class="dialog-head"><h2>Tilkoplingar</h2><button id="close-connections" class="quiet">Lukk ×</button></div>
+    <p>Éin aktiv gateway. Byte gjeld også terminalklienten.</p>
+    <div id="profiles"></div>
+    <button id="discover" class="quiet">Finn TCP- og USB-einingar</button><button id="discover-ble" class="quiet">Søk etter BLE</button>
+    <div id="discovery"></div>
+    <form id="connect-form"><label for="connect-target">Manuelt mål på vertsmaskina</label><input id="connect-target" placeholder="Vertsnamn, seriellsti eller ble://identifikator" required><button type="submit">Kople til</button></form>
+  </dialog>
+  <dialog id="install-dialog" aria-labelledby="install-title">
+    <div class="dialog-head"><h2 id="install-title">Installer MeshPi</h2><button id="close-install" class="quiet" type="button" aria-label="Lukk installasjonsrettleiinga">Lukk ×</button></div>
+    <p>Få MeshPi som eigen app med ikon på heimskjermen eller skrivebordet.</p>
+    <p id="install-status" role="status"></p>
+    <button id="install-native" type="button" hidden>Installer MeshPi</button>
+    <ul class="install-help">
+      <li><strong>Android, Windows og Linux:</strong> Bruk «Installer MeshPi» når knappen er tilgjengeleg, eller installasjonsvalet i nettlesarmenyen i Chrome eller Edge.</li>
+      <li><strong>iPhone og iPad:</strong> Opne sida i Safari, trykk på delingsknappen og vel «Legg til på heimskjermen». Vel å opne som webapp dersom du får det valet.</li>
+      <li><strong>Mac:</strong> I Safari vel du «Arkiv» → «Legg til i Dock». Chrome og Edge har òg eit installasjonsval.</li>
+    </ul>
+    <p class="install-note">Appen treng samband til MeshPi-tenaren og tilgang gjennom Tailscale. Meldingar og nodeinformasjon blir ikkje lagra for bruk utan nett.</p>
+  </dialog>
+  <dialog id="settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog-head"><h2 id="settings-title">Innstillingar</h2><button id="close-settings" class="quiet" type="button">Lukk ×</button></div>
+    <p id="settings-gateway">Hentar aktiv gateway …</p>
+    <p id="settings-status" role="status" aria-live="polite"></p>
+    <section class="settings-section" aria-labelledby="retention-title">
+      <h3 id="retention-title">Lagring av historikk</h3>
+      <p>Kvar gateway har sin eigen database. Desse vala gjeld den aktive gatewayen i både web- og terminalklienten. Nye gatewayar lagrar historikk i 30 dagar.</p>
+      <p id="retention-review" hidden>Eksisterande historikk har inga ny aldersgrense før du vel og stadfestar ei innstilling.</p>
+      <label for="retention-days">Ta vare på historikk</label>
+      <select id="retention-days"><option value="7">Ei veke (7 dagar)</option><option value="30">Ein månad (30 dagar)</option><option value="custom">Vel tal på dagar</option><option value="0">Utan aldersgrense</option></select>
+      <div id="retention-custom-wrap" hidden><label for="retention-custom">Tal på dagar (1–36500)</label><input id="retention-custom" type="number" min="1" max="36500" step="1" value="30" inputmode="numeric"></div>
+      <p id="retention-limit" class="node-help"></p>
+      <button id="save-retention" type="button" disabled>Lagre lagringsval</button>
+    </section>
+    <section class="settings-section" aria-labelledby="cleanup-title">
+      <h3 id="cleanup-title">Tøm lagra historikk</h3>
+      <p>Sletting kan ikkje angrast. Nodeoversikta, profilar, innlogging og radioinnstillingar blir bevarte. Uavklarte utgåande meldingar og pågåande nodehandlingar blir òg bevarte.</p>
+      <label for="cleanup-scope">Kva vil du rydde?</label>
+      <select id="cleanup-scope"><option value="messages">Berre meldingar</option><option value="history">All historikk: meldingar, telemetri, posisjonar og nodehandlingar</option></select>
+      <label for="cleanup-days">Kva tidsrom vil du slette?</label>
+      <select id="cleanup-days"><option value="7">Eldre enn ei veke (7 dagar)</option><option value="30" selected>Eldre enn ein månad (30 dagar)</option><option value="custom">Eldre enn valt tal på dagar</option><option value="0">Alt, uansett alder</option></select>
+      <div id="cleanup-custom-wrap" hidden><label for="cleanup-custom">Tal på dagar (1–36500)</label><input id="cleanup-custom" type="number" min="1" max="36500" step="1" value="30" inputmode="numeric"></div>
+      <button id="preview-cleanup" type="button" class="quiet" disabled>Vis kva som blir sletta</button>
+      <div id="cleanup-preview" hidden><p id="cleanup-summary"></p><button id="confirm-cleanup" class="danger" type="button" disabled>Stadfest sletting</button></div>
+    </section>
+  </dialog>
+</body>
+</html>

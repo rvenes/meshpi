@@ -2,7 +2,7 @@
 
 **Nynorsk** | [English](README.en.md)
 
-MeshPi er ein liten og stabil Meshtastic-klient for terminalen. Han held eitt
+MeshPi er ein liten Meshtastic-klient for terminal og nettlesar. Han held eitt
 samband til ein Meshtastic-node ope i bakgrunnen, lagrar meldingar i SQLite
 og gir eit nynorsk fullskjermsgrensesnitt og vanlege CLI-kommandoar over SSH.
 
@@ -14,8 +14,12 @@ og gir eit nynorsk fullskjermsgrensesnitt og vanlege CLI-kommandoar over SSH.
 Sjå [DEVELOPMENT.md](DEVELOPMENT.md) for utviklingshistorikk, arkitekturval og
 prioritert roadmap for mellom anna fleirkanalar og Blåtann/BLE.
 
-Første utgåve har ikkje webgrensesnitt. Kjernen og den lokale IPC-protokollen er
-likevel skilde frå CLI-en, slik at eit webgrensesnitt kan leggjast til seinare.
+**MeshPi 0.9.8** har eit valfritt privat webgrensesnitt over same lokale IPC som
+terminalklienten. Det lyttar berre lokalt og kan nåast frå andre einingar
+gjennom Tailscale Serve. Innlogging bruker lokal eingongskode eller passkeys
+på ei fast privat HTTPS-adresse. Sjå [webrettleiinga](docs/WEB.md) for oppsett,
+installasjonsval og testgrenser. Utgåva går gjennom den ordinære kanalen,
+utan ein ny betakanal. Me samlar praktiske erfaringar fram mot 1.0.0.
 
 ## Funksjonar
 
@@ -64,7 +68,8 @@ BLE-einingar. Du kan òg skrive IP, vertsnamn, COM-port, seriellsti eller
 
 ## Språk
 
-MeshPi har komplette brukargrensesnitt på nynorsk og engelsk. Vis gjeldande
+Terminalklienten har komplette brukargrensesnitt på nynorsk og engelsk.
+Webgrensesnittet i 0.9.8 er førebels på nynorsk. Vis gjeldande
 språk eller lagre eit nytt val med:
 
 ```bash
@@ -168,6 +173,68 @@ SHA-256. Alle Python-avhengigheiter har eksakt versjon og hash og blir
 installerte med `pip --require-hashes`. Eksisterande konfigurasjon og data blir
 bevarte.
 
+### Valfritt webgrensesnitt i 0.9.8
+
+Installatørane spør ved fersk interaktiv installasjon om web
+skal aktiverast; standard er nei. Bruk `--web`/`--no-web` på Linux og macOS,
+eller `-Web Enabled`/`-Web Disabled`/`-Web Keep` på Windows. Utelat valet for
+å bevare eksisterande oppsett; fersk installasjon utan terminalspørsmål har
+web avslått. Ei oppdatering slår ikkje på web dersom det var avslått.
+Serveren og terminalklienten blir installerte i same versjon.
+
+Berre MeshPi-maskina treng installasjonen. Andre klientar bruker nettlesar.
+Lokal innlogging på `http://localhost:8780/meshpi/` bruker ein femminutts
+eingongskode frå `meshpi web-code`. På ei fast Tailscale HTTPS-adresse kan
+eigaren registrere fleire passkeys. Det er éin eigar, utan eigne brukarroller.
+Ein ny eingongskode avsluttar eksisterande websesjonar. Dersom daemonen
+er utilgjengeleg, kan same OS-konto som webprosessen bruke
+`meshpi web-code --local` til gjenoppretting; sjå webrettleiinga.
+
+I 0.9.8 viser `meshpi web-info` kopierbare steg for å slå på web som er
+avslått, og for å setje opp Tailscale Serve med den lagra porten og stien.
+Rettleiinga endrar ingenting før du sjølv køyrer kommandoane.
+
+`meshpi web-configure --enable` eller `--disable` lagrar valet; `--port`,
+`--public-url` og `--base-path` styrer adressa. Ved aktivering køyrer du òg `meshpi service enable` for autostart.
+Start prosessane på nytt etter endring. Linux systeminstallasjon krev administratorrettar for konfigurering
+og tenestestopp/start. I sesjonsmodus køyrer du `meshpi web`; han startar ein
+manglande daemon og stoppar berre daemonen han sjølv eig når web blir avslutta.
+Sjå [docs/WEB.md](docs/WEB.md) for full oppskrift og Tailscale-rute.
+
+### Fersk Raspberry Pi med webgrensesnitt
+
+På 64-bits Raspberry Pi OS med Python 3.11 eller nyare, køyr dette på Pi-en:
+
+```sh
+sudo apt update
+sudo apt install curl python3-venv
+curl -fLO https://venes.org/meshpi/install-linux.sh
+sudo sh install-linux.sh --web
+meshpi web-info
+meshpi web-code
+```
+
+Opne `http://localhost:8780/meshpi/` i ein nettlesar på Pi-en, og logg inn med
+koden. Ingen node er førehandsvald; vel ein profil under **Tilkoplingar**.
+Berre Pi-en treng MeshPi-installasjonen.
+
+Har Pi-en ingen skjerm, opnar du ein ny terminal på PC-en og lèt denne
+SSH-tunnelen stå open. Byt plasshaldarane med din brukar og vert:
+
+```sh
+ssh -N -L 8780:127.0.0.1:8780 BRUKAR@PI-VERT
+```
+
+Opne deretter `http://localhost:8780/meshpi/` på PC-en og bruk koden frå Pi-en.
+Port 8780 må vere ledig på PC-en; bruk same port i tunnelen som i den lagra
+innloggingsadressa. Tunnelen er for localhost-oppsettet. For mobil og fleire
+klientar kan du setje opp ei fast Tailscale HTTPS-adresse og passkeys etter
+[webrettleiinga](docs/WEB.md#fast-privat-https-adresse-gjennom-tailscale).
+Kontroller eksisterande ruter med `tailscale serve status` først. `--bg` held
+Serve-oppsettet aktivt etter at terminalen blir lukka og etter omstart. Dersom
+Tailscale ber om HTTPS-aktivering, opnar du lenkja frå kommandoen og følgjer
+rettleiinga. Ikkje overskriv ei rute som allereie er i bruk.
+
 ### Transparent installasjon
 
 Direkte piping til `bash`, `sudo bash` eller `iex` betyr at du stoler på
@@ -227,28 +294,9 @@ Bruk `meshpi update --check` for berre å sjekke. Sjølve installasjonen krev at
 du skriv `OPPDATER`, eller at du legg til `--yes` for ei uttrykkeleg
 ikkje-interaktiv stadfesting.
 
-Alle som vil prøve komande forbetringar, kan uttrykkeleg velje den separate
-betakanalen på venes.org. Beta kan innehalde feil og bør ikkje brukast der
-stabil drift er avgjerande:
-
-```bash
-# Linux, always-modus
-sudo meshpi update --beta
-
-# Linux session-modus og macOS
-meshpi update --beta
-```
-
-```powershell
-# Windows
-meshpi update --beta
-```
-
-`--beta` finst frå MeshPi 0.8.6. Eldre installasjonar må først bruke den fulle
-beta-installatøren frå `https://venes.org/meshpi/beta/`. Beta er eit eingongsval
-for kvar oppdatering. TUI-en og `meshpi update` utan `--beta` sjekkar alltid
-berre den stabile kanalen. Betautgåver bruker versjonar som `0.9.0b1`; den
-endelege `0.9.0` blir rekna som nyare enn alle 0.9.0-betaer.
+0.9.8 blir distribuert gjennom den ordinære kanalen. Bruk oppdateringskommandoane
+ovanfor utan `--beta`. Den eldre beta-mekanismen er bevart for kompatibilitet,
+men blir ikkje brukt til denne utrullinga.
 
 TUI-en sjekkar `https://venes.org/meshpi/version.json` ved oppstart og viser
 `meshpi update` i ei lokal systemmelding når ein ny versjon finst. Kommandoen
@@ -261,6 +309,23 @@ manifestet blir aldri køyrde.
 Oppdateringa blir bygd i ei ny versjonsmappe og testa offline før daemonen blir
 stoppa. Etter eit atomisk byte blir den nye daemonen helsesjekka. Dersom
 helsesjekken feilar, blir førre fungerande versjon sett tilbake automatisk.
+
+## Kjeldekode og bidrag
+
+MeshPi er fri programvare under GPL-3.0-only. Last ned
+[kjeldearkivet for nøyaktig 0.9.8](https://venes.org/meshpi/downloads/meshpi-0.9.8.tar.gz)
+for å undersøkje eller byggje denne utgåva. Arkivet inneheld òg webrettleiing,
+installatørar, låsefiler og testar. Utviklingsrepoet på
+[GitHub](https://github.com/rvenes/meshpi) kan ha ein annan revisjon enn
+utgivingsarkivet.
+
+Feilrapportar, forslag og bidrag er velkomne gjennom
+[GitHub Issues](https://github.com/rvenes/meshpi/issues) og pull requests.
+Oppgi versjon, operativsystem, installasjonsmodus, nettlesar og korleis feilen
+kan gjenskapast. Ikkje legg ved eingongskodar, token, private nøklar,
+konfigurasjon med løyndomar eller private meldingar. Les `AGENTS.md` og
+`DEVELOPMENT.md`; automatiske testar skal mocke radioen. Køyr full pytest og
+Ruff før eit kodebidrag.
 
 ## Lokal utvikling
 
@@ -354,15 +419,47 @@ meshpi connections
 
 Daemonen eig framleis berre eitt radiosamband om gongen. Profilbyte lukkar det
 gamle sambandet kontrollert og koplar til det nye utan systemd-omstart.
-Meldingshistorikken ligg i éin database. Kanalar blir berre samla når ein trygg
+Meldingshistorikken ligg i ei eiga databasefil per lokal gateway. Kanalar blir
+berre samla når ein trygg
 Meshtastic-kanal-ID viser at dei er den same logiske kanalen på same lokale
 node. Nodeliste, samtalar, ulest-status, telemetri, posisjon og nodehandlingar
 er skilde per lokal node, også for standardkanalen LongFast. Same radio via
 TCP, USB eller BLE bruker det same datasettet. Profilen hugsar siste kjende
 lokale node og viser denne historikken medan sambandet blir kopla til att.
 
-Eksporter heile databasen som UTF-8-tekst før til dømes testing av ei
-betautgåve som kan krevje ny database:
+### Historikk per gateway og lagringstid
+
+Kvar lokal gateway har si eiga SQLite-fil i
+`<dbstem>-gateways/<8hex>.sqlite3`, ved sida av den konfigurerte databasefila.
+Til dømes gir `meshpi.db` mappa `meshpi-gateways`. Dette er éi fil per tilkopla
+radio sin node-ID, ikkje éi fil per mottakarnode. Berre daemonen opnar filene;
+CLI, TUI og web bruker IPC. Same radio via USB, TCP eller BLE deler historikk.
+
+Opne **F10 → App → Historikk og lagring** i terminalen eller **Innstillingar**
+i web. Nye gatewayar har 30 dagars lagringstid. Migrert historikk har inga
+aldersgrense før du vel og stadfestar ei innstilling. Vel 7, 30 eller eit eige
+tal dagar; 0 tyder inga aldersgrense. Meldingsgrensa er framleis 50 000, med
+unntak for uavklarte utgåande meldingar som må bevarast.
+
+Manuell rydding kan gjelde berre meldingar eller også telemetri, posisjonar
+og handlingslogg, eldre enn 7/30/eigendefinerte dagar eller alt (0).
+Førehandsvisinga viser kva gateway og kor mange postar som blir sletta;
+du må stadfeste før sletting. Uavklarte utgåande meldingar og pågåande
+nodehandlingar blir bevarte, saman med nodar, profilar, innloggingsnøklar og
+radioinnstillingar. Sletting kan ikkje angrast.
+
+Ved oppdeling blir den opphavlege databasefila, `legacy.sqlite3` og
+`legacy-upgraded.sqlite3` bevarte for gjenoppretting. Dei to siste ligg i
+gateway-mappa. Historikkoppryddinga slettar ikkje desse kopiane, som kan
+innehalde eldre private data. Dersom ei eldre MeshPi-utgåve seinare skriv til
+den opphavlege databasen, stoppar den nye utgåva og krev avklaring/fletting;
+ho spelar ikkje den gamle historikken inn att automatisk.
+
+### Databaseeksport
+
+Eksporter databasen for den valde gatewayen som UTF-8-tekst før til dømes
+testing av ei utgåve som kan endre databaseskjemaet. Vel kvar gateway og
+eksporter separat dersom du treng historikken frå fleire:
 
 ```bash
 meshpi export
@@ -378,9 +475,10 @@ konsistent SQLite-øyeblikksbilete medan daemonen køyrer. Ei eksisterande fil
 blir ikkje overskriven utan `--force`, og ei avbroten eksportfil blir ikkje
 lagd att som ein ferdig eksport.
 
-Frå 0.8.8b3 er òg ufordelte legacy-rader med i eksporten. Slike rader blir
-bevarte dersom ei eldre database ikkje kan bindast trygt til éin lokal node;
-dei er leseorienterte og blir aldri gjorde sendbare automatisk.
+Eksporten gjeld berre den valde gatewayen og tek med gateway-ID og
+lagringsinnstillingar. Ufordelte legacy-rader ligg framleis i dei bevarte
+legacy-kopiane; dei blir ikkje blanda inn i ein gateway-eksport eller gjorde
+sendbare automatisk.
 
 Eksporten er meint for å ta vare på og lese data, ikkje som eit lova
 importformat. Fila kan innehalde private meldingar og nøyaktige posisjonar og
@@ -542,14 +640,19 @@ Alle CLI-kommandoane:
 | Kommando | Kva han gjer |
 |---|---|
 | `meshpi` eller `meshpi tui` | Start fullskjermsgrensesnittet. |
+| `meshpi web [--port PORT] [--public-url URL] [--base-path STI]` | Start privat webgrensesnitt på loopback. I sesjonsmodus blir ein manglande daemon starta ved behov. Sjå [webrettleiinga](docs/WEB.md). |
+| `meshpi web-code [--local]` | Lag ein femminutts eingongskode via lokal IPC; avsluttar eksisterande websesjonar. |
+| `meshpi web-configure [--enable\|--disable] [--port PORT] [--public-url URL] [--base-path STI]` | Lagre webval og fast innloggingsadresse; start prosessane på nytt etterpå. |
+| `meshpi web-check` | Kontroller lokal webserver, uavhengig av radiosamband. |
+| `meshpi web-info` | Vis adresser, steg for webaktivering, Tailscale Serve-oppsett og innloggingshjelp. |
 | `meshpi new` | Oppdag, vel eller legg til ei tilkopling; F5 søkjer på nytt. |
 | `meshpi connect MÅL [--name NAMN]` | Byt til ei TCP-, seriell- eller BLE-tilkopling. |
 | `meshpi connections` | Vis lagra tilkoplingsprofilar. |
 | `meshpi daemon` | Køyr bakgrunnstenesta i framgrunnen; mest for feilsøking og tenesteoppsett. |
 | `meshpi doctor [--offline]` | Køyr sjølvtest; `--offline` krev ikkje ein tilgjengeleg node. |
-| `meshpi export [FIL] [--force]` | Eksporter heile databasen som UTF-8 JSON Lines. |
+| `meshpi export [FIL] [--force]` | Eksporter den valde gateway-databasen som UTF-8 JSON Lines. |
 | `meshpi service {status,start,stop,enable,disable}` | Vis eller styr bakgrunnstenesta og autostart. |
-| `meshpi update [--check] [--yes] [--beta]` | Sjekk eller installer ei signert oppdatering; `--beta` vel den opne betakanalen. |
+| `meshpi update [--check] [--yes] [--beta]` | Sjekk eller installer ei signert oppdatering; `--beta` er bevart for eldre betaflytar; 0.9.8 bruker ordinær kanal. |
 | `meshpi language [nn\|en]` | Vis eller lagre språkvalet for brukargrensesnittet. |
 | `meshpi status` | Vis sambands- og tilkoplingsstatus. |
 | `meshpi nodes [--search TEKST] [--sort name\|seen\|id]` | Vis, filtrer og sorter kjende nodar. |

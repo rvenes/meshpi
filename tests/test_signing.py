@@ -47,16 +47,20 @@ def test_beta_manifest_is_signed_and_keeps_stable_manifest_isolated():
         assert version_key(beta["latest_version"]) > version_key(stable["latest_version"])
         assert "/beta/downloads/" in beta["package"]["url"]
     else:
-        assert beta["latest_version"] == stable["latest_version"]
-        assert beta["package"] == stable["package"]
-        assert beta["locks"] == stable["locks"]
-        for platform_name in stable["installers"]:
-            stable_installer = stable["installers"][platform_name]
-            beta_installer = beta["installers"][platform_name]
-            assert beta_installer["url"] == stable_installer["url"]
-            assert beta_installer["sha256"] == stable_installer["sha256"]
-            assert beta_installer["size"] == stable_installer["size"]
+        # A completed beta can stay on its last stable release while stable advances.
+        assert version_key(beta["latest_version"]) <= version_key(stable["latest_version"])
+        assert "/beta/downloads/" not in beta["package"]["url"]
+        assert beta["latest_version"] in beta["package"]["filename"]
+        for beta_installer in beta["installers"].values():
             assert beta_installer["update_command"].endswith(" --beta")
+        if beta["latest_version"] == stable["latest_version"]:
+            assert beta["package"] == stable["package"]
+            assert beta["locks"] == stable["locks"]
+            for platform_name in stable["installers"]:
+                stable_installer = stable["installers"][platform_name]
+                beta_installer = beta["installers"][platform_name]
+                for key in ("url", "sha256", "size"):
+                    assert beta_installer[key] == stable_installer[key]
     assert "/beta/" not in stable["package"]["url"]
 
 

@@ -9,8 +9,8 @@ from pathlib import Path
 
 from meshpi.config import Settings
 from meshpi.connections import ConnectionProfile, ConnectionStore
-from meshpi.database import Database
 from meshpi.events import EventHub
+from meshpi.gateway_database import GatewayDatabase
 from meshpi.ipc import IPCApplication, IPCServer
 from meshpi.private_logging import PrivateRotatingFileHandler
 from meshpi.service import MeshtasticService
@@ -70,56 +70,75 @@ def run_daemon(settings: Settings, parent_pid: int | None = None) -> None:
         log_max_bytes=settings.log_max_bytes,
         log_backup_count=settings.log_backup_count,
     )
-    database = Database(
-        settings.database_path,
-        observation_retention_days=settings.observation_retention_days,
-    )
-    database.initialize()
-    default_profile = (
-        ConnectionProfile.tcp(settings.meshtastic_host, settings.meshtastic_port)
-        if settings.meshtastic_host
-        else None
-    )
-    connections = ConnectionStore(settings.connections_path, default_profile)
-    events = EventHub()
-    service = MeshtasticService(settings, database, events, connections=connections)
+    # Reserve the single-owner endpoint before any migration or database writes.
+    server = IPCServer(settings)
     stopping = threading.Event()
+    service: MeshtasticService | None = None
+    maintenance: threading.Thread | None = None
 
     def request_stop() -> None:
         if stopping.is_set():
             return
         stopping.set()
-        threading.Thread(target=server.shutdown, daemon=True).start()
+        threading.Thread(target=lambda: server.shutdown(close=False), daemon=True).start()
 
-    app = IPCApplication(
-        settings,
-        database,
-        service,
-        events,
-        shutdown_callback=request_stop,
-    )
-    server = IPCServer(settings, app)
-
-    def stop_handler(signum: int, frame: object) -> None:
-        del signum, frame
-        request_stop()
-
-    for signum in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(signum, stop_handler)
-
-    if parent_pid is not None:
-        def watch_parent() -> None:
-            while not stopping.wait(2):
-                if not _pid_exists(parent_pid):
-                    LOG.info("Foreldreprosessen er borte; stoppar session-daemonen")
-                    request_stop()
-                    return
-
-        threading.Thread(target=watch_parent, name="parent-watch", daemon=True).start()
-
-    service.start()
     try:
-        server.serve_forever()
+        database = GatewayDatabase(settings.database_path)
+        database.initialize()
+        default_profile = (
+            ConnectionProfile.tcp(settings.meshtastic_host, settings.meshtastic_port)
+            if settings.meshtastic_host
+            else None
+        )
+        connections = ConnectionStore(settings.connections_path, default_profile)
+        events = EventHub()
+        service = MeshtasticService(settings, database, events, connections=connections)
+        app = IPCApplication(
+            settings, database, service, events, shutdown_callback=request_stop,
+        )
+        server.set_application(app)
+
+        def stop_handler(signum: int, frame: object) -> None:
+            del signum, frame
+            request_stop()
+
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            signal.signal(signum, stop_handler)
+
+        if parent_pid is not None:
+            def watch_parent() -> None:
+                while not stopping.wait(2):
+                    if not _pid_exists(parent_pid):
+                        LOG.info("Foreldreprosessen er borte; stoppar session-daemonen")
+                        request_stop()
+                        return
+
+            threading.Thread(target=watch_parent, name="parent-watch", daemon=True).start()
+
+        service.start()
+
+        def maintain_history() -> None:
+            while not stopping.is_set():
+                try:
+                    results = database.maintain_history()
+                    if any(any(counts.values()) for counts in results.values()):
+                        events.publish({"type": "history_changed"})
+                except Exception:
+                    LOG.exception("Automatisk historikkopprydding feila; prøver igjen neste time")
+                stopping.wait(3600)
+
+        maintenance = threading.Thread(
+            target=maintain_history, name="history-maintenance", daemon=True,
+        )
+        maintenance.start()
+        if not stopping.is_set():
+            server.serve_forever()
     finally:
-        service.stop()
-        server.shutdown()
+        stopping.set()
+        if maintenance is not None:
+            maintenance.join(timeout=15)
+        try:
+            if service is not None:
+                service.stop()
+        finally:
+            server.close()

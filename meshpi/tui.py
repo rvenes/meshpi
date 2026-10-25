@@ -21,7 +21,7 @@ from rich.text import Text
 from textual import events, on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.events import Resize
 from textual.message import Message as TextualMessage
@@ -1831,6 +1831,274 @@ class RemoveNodeScreen(ModalScreen[bool]):
         self.dismiss(False)
 
 
+class HistoryConfirmScreen(ModalScreen[bool]):
+    BINDINGS = [Binding("escape", "cancel", "", priority=True)]
+    DEFAULT_CSS = """
+    HistoryConfirmScreen { align: center middle; background: rgba(0,0,0,0.8); }
+    #history-confirm-dialog {
+        width: 76; max-width: 96%; height: auto; max-height: 94%;
+        padding: 1 2; border: round #e7ac57; background: #0d1112;
+    }
+    #history-confirm-text { height: auto; margin-bottom: 1; }
+    #history-confirm-buttons { height: 3; }
+    #history-confirm-buttons Button { width: 1fr; }
+    """
+
+    def __init__(self, text: str):
+        super().__init__()
+        self.text = text
+        self.finished = False
+
+    def compose(self) -> ComposeResult:
+        with VerticalScroll(id="history-confirm-dialog"):
+            yield Static(self.text, id="history-confirm-text", markup=False)
+            with Horizontal(id="history-confirm-buttons"):
+                yield Button(_t("common.cancel"), id="history-confirm-cancel")
+                yield Button(_t("history.confirm"), id="history-confirm-yes", variant="error")
+
+    def on_mount(self) -> None:
+        self.query_one("#history-confirm-cancel", Button).focus()
+
+    @on(Button.Pressed)
+    def choose(self, event: Button.Pressed) -> None:
+        event.stop()
+        if not self.finished:
+            self.finished = True
+            self.dismiss(event.button.id == "history-confirm-yes")
+
+    def action_cancel(self) -> None:
+        if not self.finished:
+            self.finished = True
+            self.dismiss(False)
+
+
+class HistorySettingsScreen(ModalScreen[None]):
+    """History controls use daemon IPC and bind confirmations to one gateway."""
+
+    BINDINGS = [Binding("escape", "cancel", "", priority=True)]
+    DEFAULT_CSS = """
+    HistorySettingsScreen { align: center middle; background: rgba(0,0,0,0.8); }
+    #history-dialog {
+        width: 92; max-width: 98%; height: auto; max-height: 94%;
+        padding: 1 2; border: round $accent; background: $panel;
+    }
+    #history-dialog Static { height: auto; margin-bottom: 1; }
+    #history-dialog Select, #history-dialog Input { margin-bottom: 1; }
+    #history-dialog Button { width: 100%; margin-bottom: 1; }
+    #history-message { color: #e7ac57; }
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.data: dict[str, Any] | None = None
+        self.busy = False
+        self.generation = 0
+
+    def compose(self) -> ComposeResult:
+        with VerticalScroll(id="history-dialog"):
+            yield Static(_t("history.title"))
+            yield Static(_t("history.loading"), id="history-context", markup=False)
+            yield Static(_t("history.policy_label"))
+            yield Select(self._periods(policy=True), value=30, allow_blank=False,
+                         id="history-retention")
+            yield Input("30", placeholder=_t("history.custom_days"), type="integer",
+                        id="history-retention-custom")
+            yield Button(_t("history.save"), id="history-save", disabled=True)
+            yield Static(_t("history.cleanup_label"))
+            yield Select([(_t("history.messages"), "messages"),
+                          (_t("history.all_history"), "history")], value="messages",
+                         allow_blank=False, id="history-scope")
+            yield Select(self._periods(policy=False), value=30, allow_blank=False,
+                         id="history-age")
+            yield Input("30", placeholder=_t("history.custom_days"), type="integer",
+                        id="history-age-custom")
+            yield Button(_t("history.preview"), id="history-preview", disabled=True)
+            yield Static(_t("history.preserved"), markup=False)
+            yield Static("", id="history-message", markup=False)
+            yield Button(_t("common.close"), id="history-close")
+
+    @staticmethod
+    def _periods(*, policy: bool) -> list[tuple[str, int]]:
+        return [(_t("history.week"), 7), (_t("history.month"), 30),
+                (_t("history.custom"), -1),
+                (_t("history.unlimited" if policy else "history.everything"), 0)]
+
+    def on_mount(self) -> None:
+        self._custom_fields()
+        self._request({"command": "history_settings"}, self._loaded)
+
+    @on(Select.Changed)
+    def selection_changed(self) -> None:
+        self._custom_fields()
+
+    def _custom_fields(self) -> None:
+        for field in ("retention", "age"):
+            self.query_one(f"#history-{field}-custom", Input).display = (
+                self.query_one(f"#history-{field}", Select).value == -1
+            )
+
+    def _days(self, field: str) -> int:
+        value = self.query_one(f"#history-{field}", Select).value
+        if value == -1:
+            value = int(self.query_one(f"#history-{field}-custom", Input).value)
+            if value < 1:
+                raise ValueError(_t("history.invalid_days"))
+        if not isinstance(value, int) or not 0 <= value <= 36500:
+            raise ValueError(_t("history.invalid_days"))
+        return value
+
+    def _message(self, text: str) -> None:
+        self.query_one("#history-message", Static).update(sanitize_terminal_text(text))
+
+    def _set_busy(self, busy: bool) -> None:
+        self.busy = busy
+        for button in ("save", "preview"):
+            self.query_one(f"#history-{button}", Button).disabled = busy or not self.data
+
+    def _gateway_current(self, gateway: str) -> bool:
+        current = (self.app.status_data.get("local_node_id")
+                   or self.app.status_data.get("history_local_node_id"))
+        return bool(gateway) and current == gateway
+
+    def _request(self, payload: dict[str, Any], callback: Callable[[dict[str, Any]], None]) -> None:
+        if self.busy:
+            return
+        self._set_busy(True)
+        self.generation += 1
+        generation = self.generation
+        app = self.app
+
+        def load() -> None:
+            try:
+                result, error = app._call(payload)["data"], None
+            except Exception as exc:
+                result, error = {}, str(exc)
+
+            def apply() -> None:
+                if not self.is_mounted or generation != self.generation:
+                    return
+                self._set_busy(False)
+                if error:
+                    self._message(error)
+                elif app.screen is self:
+                    callback(result)
+
+            app.call_from_thread(apply)
+
+        app.run_worker(load, thread=True, exit_on_error=False)
+
+    def _loaded(self, data: dict[str, Any]) -> None:
+        gateway = str(data.get("local_node_id") or "")
+        if not self._gateway_current(gateway):
+            self.data = None
+            self._set_busy(False)
+            self._message(_t("history.stale"))
+            return
+        self.data = data
+        self._set_busy(False)
+        days = data.get("retention_days")
+        days = 30 if days is None else int(days)
+        self.query_one("#history-retention", Select).value = days if days in (0, 7, 30) else -1
+        self.query_one("#history-retention-custom", Input).value = str(days)
+        context = _t("history.context", gateway=gateway, cap=data.get("max_messages", 50000))
+        context += "\n" + self._counts(data.get("counts", {}))
+        if data.get("needs_review"):
+            context += "\n" + _t("history.review")
+        self.query_one("#history-context", Static).update(sanitize_terminal_text(context))
+
+    @staticmethod
+    def _counts(counts: dict[str, Any]) -> str:
+        return _t("history.counts", **{key: counts.get(key, 0) for key in
+                  ("messages", "telemetry_samples", "positions", "node_actions")})
+
+    @on(Button.Pressed)
+    def choose(self, event: Button.Pressed) -> None:
+        event.stop()
+        action = event.button.id
+        if action == "history-close":
+            self.action_cancel()
+        elif action in {"history-save", "history-preview"}:
+            self._prepare(policy=action == "history-save")
+
+    def _prepare(self, *, policy: bool) -> None:
+        if self.busy or not self.data:
+            return
+        gateway = str(self.data["local_node_id"])
+        if not self._gateway_current(gateway):
+            self._message(_t("history.stale"))
+            return
+        try:
+            days = self._days("retention" if policy else "age")
+        except (ValueError, TypeError):
+            self._message(_t("history.invalid_days"))
+            return
+        scope = "history" if policy else str(self.query_one("#history-scope", Select).value)
+        if policy and days == 0:
+            self._confirm(gateway, days, scope, policy=True, preview=None)
+            return
+        self._request({"command": "history_cleanup_preview", "expected_local_node_id": gateway,
+                       "scope": scope, "older_than_days": days},
+                      lambda preview: self._confirm(gateway, days, scope, policy=policy,
+                                                    preview=preview))
+
+    def _confirm(self, gateway: str, days: int, scope: str, *, policy: bool,
+                 preview: dict[str, Any] | None) -> None:
+        if not self._gateway_current(gateway):
+            self._message(_t("history.stale"))
+            return
+        if preview is not None and preview.get("local_node_id") != gateway:
+            self._message(_t("history.stale"))
+            return
+        text = _t("history.confirm_context", gateway=gateway)
+        if policy:
+            text += "\n\n" + _t(
+                "history.policy_unlimited" if days == 0 else "history.policy_confirm", days=days,
+            )
+        else:
+            period = _t("history.everything") if days == 0 else _t("history.older", days=days)
+            text += "\n\n" + _t("history.cleanup_confirm", period=period,
+                                   scope=_t("history.messages" if scope == "messages"
+                                            else "history.all_history"))
+        if preview is not None:
+            text += "\n\n" + self._counts(preview.get("counts", {}))
+            text += "\n" + _t("history.preview_expires")
+        text += "\n\n" + _t("history.preserved")
+        self._set_busy(True)
+        deadline = time.monotonic() + (preview or {}).get("expires_in", 300)
+
+        def confirmed(yes: bool) -> None:
+            if not self.is_mounted:
+                return
+            self._set_busy(False)
+            if not yes:
+                return
+            if not self._gateway_current(gateway) or time.monotonic() >= deadline:
+                self._message(_t("history.stale"))
+                return
+            if policy:
+                payload = {"command": "history_settings_set", "expected_local_node_id": gateway,
+                           "retention_days": days, "confirmed": True}
+            else:
+                payload = {"command": "history_cleanup", "expected_local_node_id": gateway,
+                           "cleanup_token": (preview or {})["cleanup_token"], "confirmed": True}
+            self._request(payload, lambda result: self._finished(result, policy=policy))
+
+        self.app.push_screen(HistoryConfirmScreen(sanitize_terminal_text(text)), confirmed)
+
+    def _finished(self, result: dict[str, Any], *, policy: bool) -> None:
+        if policy:
+            self._loaded(result)
+            self._message(_t("history.saved"))
+        else:
+            self._message(_t("history.deleted") + "\n" + self._counts(result.get("deleted", {})))
+            self._request({"command": "history_settings"}, self._loaded)
+        self.app.history_changed()
+
+    def action_cancel(self) -> None:
+        self.generation += 1
+        self.dismiss(None)
+
+
 class SettingsScreen(ModalScreen[str | None]):
     TABS = ("overview", "radio", "status", "nodes", "network", "app")
     BINDINGS = [
@@ -1888,6 +2156,7 @@ class SettingsScreen(ModalScreen[str | None]):
                 yield Static(_t("settings.language"), id="settings-language-label")
                 yield Button("Nynorsk", id="settings-nn")
                 yield Button("English", id="settings-en")
+                yield Button(_t("history.title"), id="settings-history")
             yield Button(_t("common.close"), id="settings-cancel")
             yield Static(_t("settings.help"), id="settings-help")
 
@@ -1920,6 +2189,9 @@ class SettingsScreen(ModalScreen[str | None]):
             return
         if button_id == "local-nodes-select":
             self.action_toggle_node()
+            return
+        if button_id == "settings-history":
+            self.app.push_screen(HistorySettingsScreen())
             return
         results = {
             "settings-nn": "nn",
@@ -4053,6 +4325,13 @@ class MeshPiTUI(App[str | None]):
     def live_event(self, message: LiveEvent) -> None:
         event = message.event
         event_type = event.get("type")
+        if event_type == "history_changed":
+            gateway = event.get("local_node_id") or event.get("data", {}).get("local_node_id")
+            current = (self.status_data.get("local_node_id")
+                       or self.status_data.get("history_local_node_id"))
+            if gateway is None or gateway == current:
+                self.history_changed()
+            return
         if event_type == "status":
             self._set_status(event.get("data", {}))
             return
@@ -4732,6 +5011,17 @@ class MeshPiTUI(App[str | None]):
         self.query_one("#conversation-list", ListView).focus()
         self.notify(_t("notice.conversation_closed"), timeout=5)
 
+    def history_changed(self) -> None:
+        self._message_history.clear()
+        self._message_history_loaded.clear()
+        self._pending_message_history.clear()
+        self.query_one("#message-input", MessageInput).set_history([])
+        self.node_action_entries = {
+            key: value for key, value in self.node_action_entries.items()
+            if value.get("status") == "started"
+        }
+        self.action_refresh()
+
     def action_refresh(self) -> None:
         self._schedule_status_refresh()
         self.run_worker(
@@ -4752,7 +5042,8 @@ class MeshPiTUI(App[str | None]):
         self.notify(_t("notice.update_command_copied"))
 
     def action_settings(self) -> None:
-        if isinstance(self.screen, (StoredNodeScreen, RemoveNodeScreen)):
+        if isinstance(self.screen, (StoredNodeScreen, RemoveNodeScreen,
+                                    HistorySettingsScreen, HistoryConfirmScreen)):
             return
         if isinstance(self.screen, SettingsScreen):
             self.screen.action_cancel()
