@@ -30,7 +30,7 @@ from meshpi.config import Settings
 from meshpi.database import Database
 from meshpi.events import EventHub
 from meshpi.gateway_database import GatewayDatabase
-from meshpi.i18n import tr, using_language
+from meshpi.i18n import SUPPORTED_LANGUAGES, tr, using_language
 from meshpi.models import normalize_node_id
 from meshpi.service import MeshtasticService
 
@@ -68,18 +68,18 @@ class IPCApplication:
         command = request["command"]
         local_id = self.history_local_node_id()
         if not local_id:
-            raise ValueError("Vel ein gateway før du opnar historikkinnstillingane.")
+            raise ValueError(tr('backend.history.gateway_required'))
         if command == "history_settings":
             return self.database.history_settings(local_id)
         expected = request.get("expected_local_node_id")
         if expected != local_id:
-            raise ValueError("Gatewayen er bytt. Opne innstillingane på nytt.")
+            raise ValueError(tr('backend.history.gateway_changed'))
         if command == "history_settings_set":
             days = request.get("retention_days")
             if type(days) is not int or not 0 <= days <= 36500:
-                raise ValueError("Lagringstida må vere 0–36500 heile dagar.")
+                raise ValueError(tr('backend.history.retention_range'))
             if request.get("confirmed") is not True:
-                raise ValueError("Stadfest lagringstida før ho blir endra.")
+                raise ValueError(tr('backend.history.confirm_retention'))
             result = self.database.set_history_policy(local_id, days)
             self.events.publish({"type": "history_changed", "local_node_id": local_id})
             return result
@@ -87,9 +87,9 @@ class IPCApplication:
             days = request.get("older_than_days")
             scope = request.get("scope")
             if type(days) is not int or not 0 <= days <= 36500:
-                raise ValueError("Vel 0–36500 heile dagar for oppryddinga.")
+                raise ValueError(tr('backend.history.cleanup_range'))
             if scope not in {"messages", "history"}:
-                raise ValueError("Vel meldingar eller all historikk.")
+                raise ValueError(tr('backend.history.scope'))
             token = secrets.token_urlsafe(32)
             # Serialize allocations so concurrent clients cannot each allocate a
             # full history snapshot on a small Pi.
@@ -104,7 +104,7 @@ class IPCApplication:
                 )
                 rows = sum(preview["counts"].values())
                 if rows > MAX_HISTORY_SNAPSHOT_ROWS:
-                    raise ValueError("For mykje historikk i éi opprydding. Vel ein eldre periode.")
+                    raise ValueError(tr('backend.history.too_large'))
                 while self._history_previews and (
                     len(self._history_previews) >= MAX_HISTORY_PREVIEWS
                     or rows + sum(sum(value[2]["counts"].values())
@@ -121,14 +121,14 @@ class IPCApplication:
                 "expires_in": 300,
             }
         if request.get("confirmed") is not True:
-            raise ValueError("Stadfest førehandsvisinga før historikken blir sletta.")
+            raise ValueError(tr('backend.history.confirm_cleanup'))
         token = request.get("cleanup_token")
         if not isinstance(token, str) or not 20 <= len(token) <= 100:
-            raise ValueError("Hent ei ny førehandsvising av oppryddinga.")
+            raise ValueError(tr('backend.history.preview_required'))
         with self._history_lock:
             saved = self._history_previews.get(token)
             if saved is None or saved[0] <= time.monotonic() or saved[1] != local_id:
-                raise ValueError("Førehandsvisinga er utgått. Hent ei ny før du slettar.")
+                raise ValueError(tr('backend.history.preview_expired'))
             # A failed/uncertain operation must never be retried with this token.
             del self._history_previews[token]
         deleted = self.database.cleanup_history(saved[2])
@@ -294,7 +294,7 @@ class IPCApplication:
 
             origin = request.get("origin", self.settings.web_origin)
             if not isinstance(origin, str):
-                raise ValueError("Ugyldig innloggingsadresse.")
+                raise ValueError(tr('backend.web.invalid_origin'))
             local = urlsplit(origin)
             if (local.scheme == "http" and local.hostname == "localhost"
                     and local.port is not None and 1 <= local.port <= 65535
@@ -303,7 +303,7 @@ class IPCApplication:
             else:
                 origin = validate_web_config(self.settings.web_port, origin, "")
                 if not origin:
-                    raise ValueError("Innloggingsadressa manglar.")
+                    raise ValueError(tr('backend.web.missing_origin'))
             auth = AuthStore(self.settings.web_auth_dir, origin)
             return {"ok": True, "data": {"code": auth.issue_code()}}
         if command == "status":
@@ -384,6 +384,10 @@ class IPCApplication:
                 "ok": True,
                 "data": {
                     "node": node,
+                    "node_info_exchanges": self.database.list_node_actions(
+                        node_id, action="node_info_exchange", limit=1,
+                        local_node_id=local_node_id,
+                    ),
                     **self.database.node_observation_summary(
                         node_id,
                         local_node_id=local_node_id,
@@ -705,11 +709,15 @@ class IPCApplication:
                 ),
             }
         if command == "node_action":
+            action_options = {}
+            if "expected_local_node_id" in request:
+                action_options["expected_local_node_id"] = str(request["expected_local_node_id"])
             return {
                 "ok": True,
                 "data": self.service.start_node_action(
                     str(request.get("action", "")),
                     str(request.get("node_id", "")),
+                    **action_options,
                 ),
             }
         if command == "node_action_status":
@@ -829,7 +837,7 @@ class _IPCHandler(socketserver.StreamRequestHandler):
             if not isinstance(request, dict):
                 raise ValueError(tr("backend.ipc.request_not_object"))
             language = str(request.get("language") or "nn")
-            if language not in {"nn", "en"}:
+            if language not in SUPPORTED_LANGUAGES:
                 language = "nn"
             with using_language(language):
                 if not self.server.app.is_authenticated(request):
@@ -886,7 +894,7 @@ class _IPCHandler(socketserver.StreamRequestHandler):
             if isinstance(app.database, GatewayDatabase):
                 gateway_id = app.history_local_node_id()
                 if not gateway_id:
-                    raise ValueError("Vel ein gateway før du eksporterer historikken.")
+                    raise ValueError(tr('backend.history.export_gateway_required'))
                 records = app.database.export_records(__version__, local_node_id=gateway_id)
             else:
                 records = app.database.export_records(__version__)
@@ -1000,7 +1008,7 @@ class IPCServer:
     def set_application(self, app: IPCApplication) -> None:
         with self._lifecycle_lock:
             if self._serving or self._closed:
-                raise RuntimeError("IPC-tenesta kan ikkje få ny applikasjon no.")
+                raise RuntimeError(tr('backend.ipc.cannot_replace_app'))
             self._server.app = app
 
     def serve_forever(self) -> None:
@@ -1008,7 +1016,7 @@ class IPCServer:
             if self._closed:
                 return
             if self._server.app is None:
-                raise RuntimeError("IPC-applikasjonen er ikkje klar.")
+                raise RuntimeError(tr('backend.ipc.app_not_ready'))
             self._serving = True
         try:
             if self._unix_path is not None:

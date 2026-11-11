@@ -7,6 +7,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
+from web_helpers import javascript_asset
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -53,7 +54,7 @@ scenario().then(() => {
   else console.log("lan-http-ok");
 });
 """
-    source = (ROOT / "meshpi/web_assets/app.js").read_text().split("async function safe", 1)[0]
+    source = javascript_asset("app.js").split("async function safe", 1)[0]
     flag = "-e" if Path(engine).name == "node" else "-c"
     result = subprocess.run([engine, flag, environment + source + checks],
                             capture_output=True, text=True, timeout=10)
@@ -118,9 +119,104 @@ scenario().then(() => {
   else console.log("controls-ok");
 });
 """
-    source = (ROOT / "meshpi/web_assets/app.js").read_text()
+    source = javascript_asset("app.js")
     flag = "-e" if Path(engine).name == "node" else "-c"
     result = subprocess.run([engine, flag, setup + environment + source + checks],
                             capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
     assert "controls-ok" in result.stdout, result.stderr
+
+
+@pytest.mark.parametrize("action", ["traceroute", "position_exchange", "node_info_exchange"])
+def test_node_action_notice_expires_without_hiding_newer_notices(action):
+    engine = shutil.which("node") or shutil.which("gjs")
+    if engine is None:
+        pytest.skip("Ingen lokal JavaScript-motor for varselkontrollen")
+    environment = r"""
+const elements = new Map();
+const document = {
+  documentElement: {dataset: {basePath: "/meshpi"}},
+  getElementById(id) {
+    if (!elements.has(id)) elements.set(id, {
+      hidden: true, textContent: "", listeners: {},
+      addEventListener(event, callback) {this.listeners[event] = callback;},
+    });
+    return elements.get(id);
+  },
+  addEventListener() {},
+};
+const meshpiTheme = {bindToggle() {}};
+const fetch = () => new Promise(() => {});
+const confirm = () => true;
+let now = 0, timerId = 0;
+const timers = new Map();
+function setTimeout(callback, delay) {
+  const id = ++timerId;
+  timers.set(id, {callback, deadline: now + delay});
+  return id;
+}
+function clearTimeout(id) {timers.delete(id);}
+function advance(ms) {
+  now += ms;
+  for (const [id, timer] of [...timers]) {
+    if (timer.deadline <= now) {timers.delete(id); timer.callback();}
+  }
+}
+function check(condition, message) {if (!condition) throw new Error(message);}
+"""
+    checks = "const action = " + json.dumps(action) + ";\n" + r"""
+async function scenario() {
+  const requests = [];
+  api = async (command, fields) => {requests.push({command, ...fields}); return {};};
+  renderNode = async () => {};
+  state.node = {node_id: "!00000002"};
+  state.nodeGatewayId = "!aaaaaaaa";
+  const banner = $("notice"), text = $("notice-text");
+  await nodeAction(action);
+  check(requests[0].command === "node_action" && requests[0].action === action,
+    "Wrong node action");
+  check(!banner.hidden && text.textContent.includes("Handling starta"), "Notice missing");
+  advance(9999);
+  check(!banner.hidden, "Notice disappeared too soon");
+  advance(1);
+  check(banner.hidden && text.textContent === "", "Notice did not expire after ten seconds");
+
+  await nodeAction(action);
+  advance(5000);
+  await nodeAction(action);
+  advance(5000);
+  check(!banner.hidden, "Previous timer hid the next action notice");
+  advance(5000);
+  check(banner.hidden, "Repeated action notice did not expire");
+
+  await nodeAction(action);
+  advance(500);
+  await safe(async () => {throw new Error("Sambandet blei brote.");});
+  advance(9500);
+  check(!banner.hidden && text.textContent === "Sambandet blei brote.",
+    "Action timer hid a newer error");
+  advance(500);check(banner.hidden,"Error notice did not expire after ten seconds");
+
+  await nodeAction(action);
+  $("dismiss-notice").listeners.click();
+  check(banner.hidden && noticeTimer === null, "Manual dismissal did not cancel expiry");
+  notice("Eit nytt varsel");
+  advance(9999);
+  check(!banner.hidden && text.textContent === "Eit nytt varsel", "Dismissed timer survived");
+  advance(1);check(banner.hidden,"New notice did not expire");
+  check(requests.length === 5, "Expiry retried a node action");
+}
+scenario().then(() => {
+  if (typeof print === "function") print("notice-expiry-ok");
+  else console.log("notice-expiry-ok");
+}).catch(error => {
+  if (typeof printerr === "function") printerr(error.stack || error.message);
+  else console.error(error);
+});
+"""
+    source = javascript_asset("app.js")
+    flag = "-e" if Path(engine).name == "node" else "-c"
+    result = subprocess.run([engine, flag, environment + source + checks],
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert "notice-expiry-ok" in result.stdout, result.stderr

@@ -6,12 +6,14 @@ from contextvars import copy_context
 import pytest
 
 from meshpi.i18n import (
+    SUPPORTED_LANGUAGES,
     catalog,
     choose_language,
     detect_system_language,
     format_fields,
     get_language,
     load_saved_language,
+    normalize_language,
     save_language,
     set_language,
     tr,
@@ -19,17 +21,21 @@ from meshpi.i18n import (
 )
 
 
-def test_catalogs_have_identical_keys_and_format_fields():
-    nn = catalog("nn")
+@pytest.mark.parametrize("language", SUPPORTED_LANGUAGES)
+def test_catalogs_have_identical_keys_and_format_fields(language):
+    translated = catalog(language)
     en = catalog("en")
-    assert nn.keys() == en.keys()
-    for key in nn:
-        assert format_fields(nn[key]) == format_fields(en[key]), key
+    assert translated.keys() == en.keys()
+    for key in en:
+        assert translated[key], key
+        assert format_fields(translated[key]) == format_fields(en[key]), key
 
 
-@pytest.mark.parametrize("locale_name", ["nn_NO", "nb-NO", "no", "NO_no.UTF-8"])
-def test_norwegian_system_languages_choose_nynorsk(locale_name):
-    assert detect_system_language(locale_name) == "nn"
+@pytest.mark.parametrize(("locale_name", "expected"), [
+    ("nn_NO", "nn"), ("nb-NO", "nb"), ("no", "nb"), ("NO_no.UTF-8", "nb"),
+])
+def test_norwegian_system_languages_choose_matching_language(locale_name, expected):
+    assert detect_system_language(locale_name) == expected
 
 
 @pytest.mark.parametrize("locale_name", ["en_GB", "de_DE", "sv-SE", ""])
@@ -107,3 +113,58 @@ def test_english_catalog_is_fallback(monkeypatch):
 def test_missing_key_returns_stable_key():
     with using_language("en"):
         assert tr("missing.stable.key") == "missing.stable.key"
+
+
+@pytest.mark.parametrize("language", SUPPORTED_LANGUAGES)
+def test_all_language_choices_are_saved_and_reused(tmp_path, monkeypatch, language):
+    monkeypatch.delenv("MESHPI_LANGUAGE", raising=False)
+    path = tmp_path / "language.json"
+    save_language(language, path=path)
+    assert choose_language(path=path) == language
+
+
+@pytest.mark.parametrize("value", ["nb", "NB", "nb-NO", "nb_NO"])
+def test_bokmal_regional_language_codes(value):
+    assert normalize_language(value) == "nb"
+
+
+def test_bokmal_explicit_environment_choice_takes_priority(tmp_path, monkeypatch):
+    path = tmp_path / "language.json"
+    save_language("nn", path=path)
+    monkeypatch.setenv("MESHPI_LANGUAGE", "nb")
+    assert choose_language(path=path) == "nb"
+
+
+def test_client_translates_older_daemon_errors_and_preserves_request_data(monkeypatch):
+    import json
+
+    from meshpi.client import CLIError, request
+    from meshpi.config import Settings
+
+    captured = []
+
+    class Stream:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def write(self, raw):
+            captured.append(json.loads(raw))
+
+        def flush(self):
+            pass
+
+        def readline(self, maximum):
+            return json.dumps({'ok': False, 'error': 'Meshtastic-noden er ikkje tilkopla'}).encode()
+
+    class Connection(Stream):
+        def makefile(self, mode):
+            return Stream()
+
+    monkeypatch.setattr('meshpi.client._connect', lambda *_: Connection())
+    with using_language('nb'), pytest.raises(CLIError) as error:
+        request(Settings(ipc_token='test-only-token'), {'command': 'status'})
+    assert str(error.value) == 'Meshtastic-noden er ikke tilkoblet'
+    assert captured == [{'command': 'status', 'token': 'test-only-token', 'language': 'nb'}]

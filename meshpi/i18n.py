@@ -3,20 +3,22 @@ from __future__ import annotations
 import json
 import locale
 import os
+import re
 import string
 import sys
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
+from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-SUPPORTED_LANGUAGES = ("nn", "en")
+SUPPORTED_LANGUAGES = ("nb", "nn", "en")
 FALLBACK_LANGUAGE = "en"
 NORWEGIAN_LANGUAGE_PREFIXES = frozenset({"nn", "nb", "no"})
-LANGUAGE_NAMES = {"nn": "Nynorsk", "en": "English"}
+LANGUAGE_NAMES = {"nb": "Bokmål", "nn": "Nynorsk", "en": "English"}
 
 _active_language: ContextVar[tuple[str, int] | None] = ContextVar(
     "meshpi_active_language", default=None
@@ -82,7 +84,9 @@ def detect_system_language(system_language: str | None = None) -> str:
     if not value:
         value = locale.getlocale()[0]
     prefix = str(value or "").strip().lower().replace("_", "-").split("-", 1)[0]
-    return "nn" if prefix in NORWEGIAN_LANGUAGE_PREFIXES else "en"
+    if prefix == "nn":
+        return "nn"
+    return "nb" if prefix in NORWEGIAN_LANGUAGE_PREFIXES else "en"
 
 
 def language_file() -> Path:
@@ -228,3 +232,52 @@ def format_fields(text: str) -> frozenset[str]:
         for _literal, field_name, _format_spec, _conversion in string.Formatter().parse(text)
         if field_name
     )
+
+
+@lru_cache(maxsize=3)
+def _known_translations(language: str):
+    """Recognize catalogued daemon errors from an older installed runtime."""
+    target = catalog(language)
+    translations = []
+    formatter = string.Formatter()
+    for source_language in ("nn", "en", "nb"):
+        if source_language == language:
+            continue
+        for key, source in catalog(source_language).items():
+            if key not in target or source == target[key]:
+                continue
+            fields, pattern = [], ""
+            for literal, name, _spec, _conversion in formatter.parse(source):
+                pattern += re.escape(literal)
+                if name is not None:
+                    fields.append(name)
+                    pattern += "([\\s\\S]*?)"
+            translations.append((re.compile(pattern), fields, target[key]))
+    return translations
+
+
+def translate_known_text(text: str) -> str:
+    # Translate known error/reason templates only; preserve substituted names and IDs.
+    routing = re.fullmatch(r"(.+) \(([A-Z][A-Z_]+)\)", text)
+    if routing:
+        translated = translate_known_text(routing[1])
+        if translated != routing[1]:
+            return f"{translated} ({routing[2]})"
+    for pattern, fields, target in _known_translations(get_language()):
+        match = pattern.fullmatch(text)
+        if match is not None:
+            values = dict(zip(fields, match.groups(), strict=True))
+            return "".join(literal + (values[name] if name is not None else "")
+                           for literal, name, _spec, _conversion
+                           in string.Formatter().parse(target))
+    return text
+
+
+def localize_response(value: Any) -> Any:
+    if isinstance(value, list):
+        return [localize_response(item) for item in value]
+    if isinstance(value, dict):
+        return {key: (translate_known_text(item) if key in {"error", "reason"}
+                      and isinstance(item, str) else localize_response(item))
+                for key, item in value.items()}
+    return value

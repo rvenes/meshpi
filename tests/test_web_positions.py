@@ -7,6 +7,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
+from web_helpers import javascript_asset
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -131,14 +132,14 @@ renderNode().then(()=>{
   check(nodes($("node-data"),"a").length===2,"Position tab did not render map links");
   check(requests[0].command==="node_positions"&&requests[0].limit===100
     &&requests[0].node_id==="!1234abcd","Wrong position history request");
-  check(requests.length===3,"Rendering triggered a write or unexpected request");
+  check(requests.length===4,"Rendering triggered a write or unexpected request");
   if(typeof print==="function")print("positions checked");
   else console.log("positions checked");
 });
 """
     flag = "-e" if Path(engine).name == "node" else "-c"
     result = subprocess.run([
-        engine, flag, environment + (ROOT / "meshpi/web_assets/app.js").read_text() + checks,
+        engine, flag, environment + javascript_asset("app.js") + checks,
     ], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
     assert "positions checked" in result.stdout, result.stderr

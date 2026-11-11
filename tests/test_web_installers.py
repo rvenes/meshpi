@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def source(platform: str) -> str:
-    return (ROOT / "installers" / f"install-{platform}.sh").read_text()
+    return (ROOT / "installers" / f"install-{platform}.sh").read_text(encoding="utf-8")
 
 
 def function(text: str, name: str) -> str:
@@ -21,12 +21,15 @@ def function(text: str, name: str) -> str:
 
 
 def run(script: str, directory: Path, **settings: str) -> subprocess.CompletedProcess[str]:
+    if os.name != "posix":
+        pytest.skip("Krev POSIX-shell på Linux eller macOS")
     return subprocess.run(
         ["sh", "-c", script],
         text=True,
         capture_output=True,
         env={
             **os.environ,
+            "LANGUAGE": "nn",
             "CONFIG_FILE": str(directory / "meshpi.env"),
             "TMP_DIR": str(directory / "temporary"),
             **settings,
@@ -87,7 +90,10 @@ def test_web_install_choice_is_optional_and_preserves_settings(
 def test_saved_web_config_cannot_execute_shell(tmp_path: Path, platform: str) -> None:
     (tmp_path / "meshpi.env").write_text("WEB_ENABLED=$(touch forbidden)\n")
     text = source(platform)
-    script = "\n".join(function(text, name) for name in ("get_env_value", "choose_web"))
+    script = "\n".join(
+        function(text, name)
+        for name in ("message", "say", "say_error", "get_env_value", "choose_web")
+    )
     result = run(script + "\nchoose_web\n", tmp_path, WEB_CHOICE="keep", FRESH_INSTALL="0")
     assert result.returncode != 0
     assert "WEB_ENABLED" in result.stderr
@@ -298,7 +304,7 @@ def test_windows_manager_never_forces_daemon_shutdown():
         '} elseif (`$Action -eq "start") {', 1
     )[0]
     assert "`$daemons.Count -gt 0" in block
-    assert "throw 'MeshPi-daemonen" in block
+    assert "throw $daemonNotStoppedLiteral" in block
     assert "Get-MeshPiChildren | Where-Object" in block
     assert "\\sweb\\s*$" in block
     assert block.index("Get-MeshPiSupervisor") < block.index("Get-MeshPiChildren")
@@ -314,7 +320,10 @@ def test_completion_explains_optional_web_access(
         "WEB_PORT=9123\nWEB_BASE_PATH=/radio\nWEB_PUBLIC_URL=\n"
     )
     text = source(platform)
-    script = "\n".join(function(text, name) for name in ("get_env_value", "show_web_access"))
+    script = "\n".join(
+        function(text, name)
+        for name in ("message", "say", "get_env_value", "show_web_access")
+    )
     result = run(script + "\nshow_web_access\n", tmp_path, WEB_ENABLED=enabled, MODE=mode)
     assert result.returncode == 0, result.stderr
     assert "meshpi web-info" in result.stdout
@@ -355,7 +364,8 @@ def test_windows_completion_explains_enabled_and_disabled_web_access() -> None:
         text.index("    Write-InstallStep 8 complete") : text.index("} catch {\n    $installError")
     ]
     enabled, disabled = completion.split('    } else {', 1)
-    assert "Tailscale Serve må setjast opp separat" in enabled
-    assert "Webgrensesnittet er avslått" in disabled
-    assert "meshpi web-info" in enabled
-    assert "meshpi web-info" in disabled
+    assert "Get-Message web_serve" in enabled
+    assert "Get-Message web_off" in disabled
+    assert "Get-Message web_code" in enabled
+    assert "Get-Message web_code" not in disabled
+    assert "meshpi web-info" in text

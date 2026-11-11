@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from typing import Any, Protocol
 
 from meshpi.config import Settings
-from meshpi.i18n import get_language, tr
+from meshpi.i18n import get_language, localize_response, tr
 from meshpi.ipc_identity import verify_windows_peer
 
 MAX_RESPONSE_BYTES = 2_000_000
@@ -122,7 +122,7 @@ def request(
         raise CLIError(tr("client.closed_without_response"))
     if len(raw) > MAX_RESPONSE_BYTES:
         raise CLIError(tr("client.response_too_large"))
-    response = json.loads(raw)
+    response = localize_response(json.loads(raw))
     if not response.get("ok"):
         raise CLIError(str(response.get("error", tr("common.unknown_error"))))
     return response

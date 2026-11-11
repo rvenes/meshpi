@@ -5,16 +5,16 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
-APP = Path(__file__).resolve().parents[1] / "meshpi/web_assets/app.js"
+from web_helpers import javascript_asset
 
 
 def run_javascript(checks, *, startup=False):
     engine = shutil.which("node") or shutil.which("gjs")
     if engine is None:
         pytest.skip("Ingen lokal JavaScript-motor for nettverkskontrollen")
-    source = APP.read_text()
+    source = javascript_asset("app.js")
     prefix = source.split("async function safe", 1)[0]
+    prefix += "\nfunction stopNodeAvailability() {}\n"
     environment = r"""
 const controls = new Map();
 const document = {documentElement: {dataset: {basePath: "/meshpi"}},
@@ -84,6 +84,38 @@ check(counter === 0, "Recovery allocated write IDs");
 """)
 
 
+@pytest.mark.parametrize("renew_during_request", [False, True])
+def test_incomplete_session_json_is_localized_and_recovers_without_reloading(renew_during_request):
+    run_javascript("const duringRequest = " + str(renew_during_request).lower() + ";\n" + r"""
+state.csrf = duringRequest ? "expired-session" : "";
+let incomplete = true; let reads = 0;
+fetch = async url => {
+  if (url.endsWith("/session")) {
+    if (incomplete) return {ok:true,status:200,json() {
+      throw new SyntaxError("Failed to execute 'json' on 'Response': Unexpected end of JSON input");
+    }};
+    return reply(200,{ok:true,data:{csrf:"restored-session"}});
+  }
+  reads++;
+  return state.csrf === "expired-session"
+    ? reply(403,{ok:false}) : reply(200,{ok:true,data:{restored:true}});
+};
+const error = await failure(() => duringRequest ? api("status") : renewSession());
+check(error.transient && !error.message.includes("JSON") && !error.message.includes("Response"),
+  "Raw browser parsing error escaped session recovery");
+reportError(error);
+check(!$("notice").hidden && noticeKind === "connection","Connection notice missing");
+incomplete = false;
+const data = await api("status");
+check(data.restored && state.csrf === "restored-session","Session did not recover");
+connectionRestored();
+check($("notice").hidden,"Recovered connection retained its error");
+notice("Eit anna varsel");connectionRestored();
+check(!$("notice").hidden,"Recovery erased a different notice");
+check(reads === (duringRequest ? 3 : 1),"Recovery retried unexpectedly");
+""")
+
+
 def test_header_identifies_host_and_current_gateway_without_stale_node_names():
     run_javascript(r"""
 fetch = async () => reply(200, {ok: true, data: {csrf: "session", hostname: "test-host"}});
@@ -130,6 +162,21 @@ const error = await failure(() => api("send_dm", {text: "mock"}));
 check(!error.uncertain && writes === 1, "Rejected send was replayed or marked in flight");
 check(state.csrf === "new-session", "Session was not renewed");
 check(!error.message.includes("Last sida på nytt"), "Recovery asked user to discard their draft");
+""")
+
+
+def test_daemon_restart_read_warning_clears_but_uncertain_write_warning_does_not():
+    run_javascript(r"""
+state.csrf="session";
+fetch=async()=>reply(503,{ok:false,error:"Daemonen er mellombels utilgjengeleg"});
+const readError=await failure(()=>api("status"));
+check(readError.transient&&!readError.uncertain,"Daemon restart read was not transient");
+reportError(readError);connectionRestored();
+check($("notice").hidden,"Daemon restart warning remained after recovery");
+const writeError=await failure(()=>api("send_dm",{text:"mock"}));
+check(writeError.uncertain&&!writeError.transient,"Uncertain write lost its review requirement");
+reportError(writeError);connectionRestored();
+check(!$("notice").hidden,"Connection recovery hid an uncertain write warning");
 """)
 
 

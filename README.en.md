@@ -13,13 +13,17 @@ Nynorsk and English, including over SSH.
 > in critical or production-like environments.
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for development history, architecture
-decisions, and the prioritized roadmap. **MeshPi 0.9.8** includes an optional
+decisions, and the prioritized roadmap. **MeshPi 0.9.12** includes an optional
 private web interface using the same local IPC as the terminal client. It
 listens on loopback only; other devices connect through Tailscale Serve.
 Sign-in uses a local one-time code or passkeys at a fixed private HTTPS
 address. See the [web guide](docs/WEB.md) for setup and test limitations.
 This release uses the ordinary update channel, without creating another beta
 channel. We are collecting real-world feedback on the way to 1.0.0.
+
+0.9.12 fixes gateway switches during reception and node actions, concurrent
+installations, terminal history recovery, and web/traceroute cooldowns. It is
+a stabilization release for evaluation before 1.0.0.
 
 ## Features
 
@@ -67,27 +71,28 @@ an IP address, hostname, COM port, serial path, or `ble://IDENTIFIER` manually.
 
 ## Language
 
-The terminal client includes complete Nynorsk (`nn`) and English (`en`)
-interfaces. The web interface in 0.9.8 currently uses Nynorsk.
+MeshPi 0.9.12 supports Bokmål (`nb`), Nynorsk (`nn`) and English (`en`)
+in the terminal and web app.
 
 ```bash
 meshpi language       # show the current language
+meshpi language nb    # use Bokmål
 meshpi language nn    # use Nynorsk
 meshpi language en    # use English
 ```
 
 Press `F10` in the full-screen interface, open the **App** tab and choose
-**Nynorsk** or **English**.
+**Bokmål**, **Nynorsk** or **English**.
 Visible TUI text changes immediately without restarting the application or
 daemon. The saved choice is reused on the next run.
 
 An existing installation that has no saved language choice continues to use
 Nynorsk. A genuinely fresh installation defaults to English regardless of
 the system/browser language. Saved and explicit choices take priority. English is
-the runtime fallback if an English translation is unexpectedly missing.
+the runtime fallback if a selected translation is unexpectedly missing.
 
 The installers default to English. Override it explicitly with
-`--language=nn|en` on Linux and macOS, or `-Language nn|en` in PowerShell:
+`--language=nb|nn|en` on Linux and macOS, or `-Language nb|nn|en` in PowerShell:
 
 ```bash
 sh install-linux.sh --language=en
@@ -101,10 +106,14 @@ sh uninstall-macos.sh --language=nn
 .\uninstall-windows.ps1 -Language nn
 ```
 
-`MESHPI_LANGUAGE=nn|en` also selects the language for the app and scripts. A
+`MESHPI_LANGUAGE=nb|nn|en` also selects the language for the app and scripts. A
 fresh installer stores its selected language in the private per-user
 `language.json`. An upgrade or reinstall with existing MeshPi configuration or
 data does not create this file, preserving the Nynorsk legacy default.
+
+In the web app, choose a language on the sign-in page or under **Settings → Language**.
+The choice is saved only in this browser and does not affect other clients.
+Switching languages preserves unsent drafts and starts no radio action.
 
 ## Installation
 
@@ -167,7 +176,7 @@ and SHA-256 values. Every Python dependency has an exact version and hash and
 is installed with `pip --require-hashes`. Existing configuration and data are
 preserved.
 
-### Optional web interface in 0.9.8
+### Optional web interface in 0.9.12
 
 The installers ask whether to activate web access on a fresh
 interactive installation; the default is no. Linux/macOS accept `--web` or
@@ -184,7 +193,7 @@ code revokes existing web sessions. If the daemon is unavailable, the same
 OS account as the web process can use `meshpi web-code --local` for recovery;
 see the web guide.
 
-In 0.9.8, `meshpi web-info` shows copyable steps for enabling disabled web
+In 0.9.12, `meshpi web-info` shows copyable steps for enabling disabled web
 access and setting up Tailscale Serve with the saved port and path. It does
 not change anything until you run the commands yourself.
 
@@ -211,7 +220,7 @@ meshpi web-code
 Open `http://localhost:8780/meshpi/` in a browser on the Pi and enter the code.
 No node is preselected; select a profile under **Tilkoplingar** (Connections).
 Only the Pi needs the MeshPi installation. The web interface currently uses
-Nynorsk; terminal interfaces support Nynorsk and English.
+Bokmål, Nynorsk and English in the development version.
 
 For a headless Pi, open another terminal on your PC and keep this SSH tunnel
 running. Replace the placeholders with your username and Pi hostname:
@@ -280,7 +289,7 @@ Use `meshpi update --check` to check only. Installation requires typing the
 localized confirmation token (`UPDATE` in English or `OPPDATER` in Nynorsk),
 or explicit non-interactive confirmation with `--yes`.
 
-0.9.8 uses the ordinary update channel. Use the commands above without
+0.9.12 uses the ordinary update channel. Use the commands above without
 `--beta`. The older beta mechanism remains for compatibility but is not used
 for this rollout.
 
@@ -296,7 +305,7 @@ automatically restores the previous working release on failure.
 ## Source code and contributions
 
 MeshPi is free software under GPL-3.0-only. Download the
-[exact 0.9.8 source archive](https://venes.org/meshpi/downloads/meshpi-0.9.8.tar.gz)
+[exact 0.9.12 source archive](https://venes.org/meshpi/downloads/meshpi-0.9.12.tar.gz)
 to inspect or build this release. It also includes the web guide, installers,
 lock files, and tests. The development repository on
 [GitHub](https://github.com/rvenes/meshpi) may be at a different revision from
@@ -508,7 +517,7 @@ text with the mouse; releasing copies it automatically through OSC52 where
 supported. `Ctrl+C` repeats the copy. Other terminals may require their native
 selection, often with `Shift` while dragging.
 
-Press `F10`, open the **App** tab and switch between Nynorsk and English. The
+Press `F10`, open the **App** tab and switch between Bokmål, Nynorsk and English. The
 current conversation, node selection, and draft are retained while visible
 labels, dialogs, bindings, and notifications update immediately.
 
@@ -792,7 +801,7 @@ the service while quitting, the next `meshpi` starts it again.
 `BACKGROUND_MODE=session` starts on demand and lets `Ctrl+Q` stop it on exit.
 
 The saved interface language is per user and separate from `.env` and the
-SQLite database. `MESHPI_LANGUAGE=nn|en` temporarily overrides the saved
+SQLite database. `MESHPI_LANGUAGE=nb|nn|en` temporarily overrides the saved
 choice. `MESHPI_LANGUAGE_FILE` is intended for controlled testing or custom
 packaging; normal users should use `meshpi language` or `F10`.
 

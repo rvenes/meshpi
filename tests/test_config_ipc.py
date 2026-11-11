@@ -278,6 +278,23 @@ def test_settings_reject_unknown_background_mode(monkeypatch):
         Settings.load("missing")
 
 
+def test_ipc_forwards_expected_gateway_for_node_actions(tmp_path):
+    database = Database(tmp_path / "db.sqlite")
+    database.initialize()
+    calls = []
+    service = FakeService()
+
+    def start(action, node_id, **kwargs):
+        calls.append((action, node_id, kwargs))
+        return {"status": "started"}
+
+    service.start_node_action = start
+    app = IPCApplication(Settings(database_path=database.path), database, service, EventHub())
+    app.dispatch({"command": "node_action", "action": "position_exchange",
+                  "node_id": "!11112222", "expected_local_node_id": "!aaaaaaaa"})
+    assert calls == [("position_exchange", "!11112222", {"expected_local_node_id": "!aaaaaaaa"})]
+
+
 def test_ipc_dispatch_and_validation(tmp_path):
     database = Database(tmp_path / "db.sqlite")
     database.initialize()

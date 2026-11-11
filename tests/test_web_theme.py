@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from web_helpers import javascript_asset
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -40,15 +41,20 @@ const window = {
     removeItem() {if (settings.blocked) throw new Error("Restricted storage"); stored = null;},
   },
 };
-const document = {documentElement: {dataset: {}}};
+const themeMeta = {setAttribute(key,value) {this[key]=value;}};
+const document = {documentElement: {dataset: {}},querySelector:()=>themeMeta};
 function check(condition, message) {if (!condition) throw new Error(message);}
 """
     checks = r"""
 const initial = !settings.blocked && ["light", "dark"].includes(settings.saved)
   ? settings.saved : (settings.dark ? "dark" : "light");
 check(document.documentElement.dataset.theme === initial, "Wrong initial theme");
+check(themeMeta.content === (initial === "dark" ? "#101f2d" : "#eaf1f6"),
+  "Browser frame did not follow initial theme");
 let click;
+const visibleLabel = {textContent:""};
 const button = {
+  querySelector() {return visibleLabel;},
   setAttribute(key, value) {this[key] = value;},
   addEventListener(event, callback) {if (event === "click") click = callback;},
 };
@@ -63,8 +69,10 @@ click();
 check(document.documentElement.dataset.theme === initial, "Second click did not restore theme");
 meshpiTheme.setPreference("dark");
 check(document.documentElement.dataset.theme === "dark", "Dark theme not applied");
+check(themeMeta.content === "#101f2d","Browser frame did not switch to dark");
 check(button["aria-pressed"] === "true", "Dark button state not applied");
 check(button.title === "Byt til lys modus", "Dark button action not updated");
+check(visibleLabel.textContent === button.title,"Visible theme action was not updated");
 check(meshpiTheme.getPreference() === "dark", "Preference was not remembered in memory");
 if (!settings.blocked) check(stored === "dark", "Preference was not persisted");
 media.matches = false;
@@ -72,6 +80,7 @@ changed();
 check(document.documentElement.dataset.theme === "dark", "System overrode an explicit choice");
 meshpiTheme.setPreference("light");
 check(document.documentElement.dataset.theme === "light", "Light theme not applied");
+check(themeMeta.content === "#eaf1f6","Browser frame did not switch to light");
 meshpiTheme.setPreference("system");
 check(document.documentElement.dataset.theme === "light", "System theme not restored");
 check(button["aria-pressed"] === "false", "Button did not follow system theme");
@@ -83,7 +92,7 @@ check(button["aria-pressed"] === "true", "Button did not follow system theme cha
 meshpiTheme.setPreference("invalid");
 check(meshpiTheme.getPreference() === "system", "Invalid preference was accepted");
 """
-    source = (ROOT / "meshpi/web_assets/theme.js").read_text()
+    source = javascript_asset("theme.js")
     flag = "-e" if Path(engine).name == "node" else "-c"
     result = subprocess.run([engine, flag, setup + environment + source + checks],
                             capture_output=True, text=True, timeout=10)

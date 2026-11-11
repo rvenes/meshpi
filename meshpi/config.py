@@ -36,9 +36,9 @@ SETTING_ENV_KEYS = frozenset(
 
 def validate_web_config(port: int, public_url: str, base_path: str) -> str:
     if type(port) is not int or not 1 <= port <= 65535:
-        raise ValueError("Webporten må vere mellom 1 og 65535.")
+        raise ValueError(tr('backend.config.web_port'))
     if not re.fullmatch(r"(?:/[a-zA-Z0-9_-]+)*", base_path):
-        raise ValueError("Ugyldig websti.")
+        raise ValueError(tr('backend.config.web_path'))
     if not public_url:
         return ""
     parsed = urlsplit(public_url)
@@ -47,7 +47,7 @@ def validate_web_config(port: int, public_url: str, base_path: str) -> str:
             or parsed.fragment or parsed.port not in {None, 443}
             or not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", parsed.hostname)
             or not parsed.hostname.endswith(".ts.net")):
-        raise ValueError("Bruk den faste HTTPS-rotadressa frå Tailscale (*.ts.net).")
+        raise ValueError(tr('backend.config.web_origin'))
     return f"https://{parsed.hostname}"
 
 
@@ -157,7 +157,7 @@ class Settings:
             raise ValueError(tr("config.background_mode"))
         web_enabled = values.get("WEB_ENABLED", "false").strip().lower()
         if web_enabled not in {"true", "false"}:
-            raise ValueError("WEB_ENABLED må vere true eller false.")
+            raise ValueError(tr('backend.config.web_enabled'))
         web_port = _env_int(values, "WEB_PORT", 8780, 1, 65535)
         web_base_path = values.get("WEB_BASE_PATH", "/meshpi").strip()
         web_public_url = validate_web_config(

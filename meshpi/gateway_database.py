@@ -48,7 +48,7 @@ CREATE INDEX IF NOT EXISTS actions_finished_history ON node_actions(finished_at)
 
 def _days(value: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 36500:
-        raise ValueError("Vel eit heilt tal dagar mellom 0 og 36500.")
+        raise ValueError(tr('backend.history.days_range'))
     return value
 
 
@@ -91,7 +91,7 @@ def _snapshot(source: Path, target: Path) -> None:
             original.backup(copy)
             copy.execute("PRAGMA journal_mode=DELETE")
             if copy.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
-                raise ValueError("Databasesikringa kunne ikkje kontrollerast.")
+                raise ValueError(tr('backend.database.snapshot_invalid'))
         os.replace(temporary, target)
     finally:
         temporary.unlink(missing_ok=True)
@@ -136,9 +136,7 @@ class GatewayDatabase:
             if (self.path.exists() and self.snapshot_path.exists()
                     and _content_digest(self.path) != _content_digest(self.snapshot_path)):
                 raise ValueError(
-                    "Den gamle databasen er endra etter oppdelinga. "
-                    "Begge historikkane er bevarte. Stopp eldre MeshPi og få hjelp "
-                    "til å flette dei før du startar denne versjonen igjen."
+                    tr('backend.database.legacy_changed')
                 )
             if self.snapshot_path.exists() and not self.migration_path.exists():
                 _check_schema(self.snapshot_path)
@@ -194,7 +192,7 @@ class GatewayDatabase:
                 "SELECT local_node_id FROM history_settings"
             ).fetchall()
             if len(settings) != 1 or settings[0][0] != gateway_id:
-                raise ValueError("Gateway-databasen har feil eller manglande nodeidentitet.")
+                raise ValueError(tr('backend.database.gateway_identity'))
         self._databases[gateway_id] = database
         return database
 
@@ -231,13 +229,13 @@ class GatewayDatabase:
                     (gateway_id, 0 if migrated else 30, int(migrated)),
                 )
                 if destination.execute("PRAGMA foreign_key_check").fetchone() is not None:
-                    raise ValueError("Gateway-historikken inneheld ugyldige referansar.")
+                    raise ValueError(tr('backend.database.invalid_references'))
             # Checkpoint into a standalone private file before the atomic rename.
             with closing(sqlite3.connect(temporary)) as connection:
                 connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                 connection.execute("PRAGMA journal_mode=DELETE")
                 if connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
-                    raise ValueError("Gateway-databasen kunne ikkje kontrollerast.")
+                    raise ValueError(tr('backend.database.gateway_invalid'))
             os.replace(temporary, target)
         finally:
             for suffix in ("", "-wal", "-shm"):
@@ -278,7 +276,7 @@ class GatewayDatabase:
                     if gateway_id:
                         break
             if not gateway_id:
-                raise ValueError("Vel ein gateway før du opnar historikken.")
+                raise ValueError(tr('backend.history.open_gateway_required'))
             return getattr(self.for_gateway(gateway_id), name)(*args, **kwargs)
         return routed
 
@@ -342,7 +340,7 @@ class GatewayDatabase:
     ) -> dict[str, Any]:
         days = _days(older_than_days)
         if scope not in {"messages", "history"}:
-            raise ValueError("Vel meldingar eller all historikk.")
+            raise ValueError(tr('backend.history.scope'))
         gateway_id = normalize_node_id(local_node_id)
         database = self.for_gateway(gateway_id)
         now = now or datetime.now(timezone.utc)
@@ -382,9 +380,7 @@ class GatewayDatabase:
                 for row in rows:
                     if remaining == 0:
                         raise ValueError(
-                            "Utvalet har meir enn éin million historikkpostar. "
-                            "Vel ein eldre periode eller rydd meldingar først. "
-                            "Automatisk opprydding tek store utval i mindre omgangar."
+                            tr('backend.history.large_selection')
                         )
                     if table == "node_actions":
                         ids.append(row["history_rowid"])
@@ -415,7 +411,7 @@ class GatewayDatabase:
                 if table == "node_actions":
                     fingerprints = preview.get("_action_fingerprints", b"")
                     if len(fingerprints) != 16 * len(ids):
-                        raise ValueError("Førehandsvisinga av nodehandlingane er ugyldig.")
+                        raise ValueError(tr('backend.history.actions_preview_invalid'))
                     for index, identity in enumerate(ids):
                         row = connection.execute(
                             "SELECT action_id, started_at, finished_at FROM node_actions "

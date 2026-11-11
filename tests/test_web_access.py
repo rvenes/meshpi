@@ -11,6 +11,7 @@ from test_web_auth import SoftwareAuthenticator
 
 from meshpi.config import Settings
 from meshpi.web import WebServer
+from meshpi.web_auth import AuthStore
 
 PUBLIC_URL = "https://meshpi.example.test"
 
@@ -101,6 +102,7 @@ def test_preauth_cookie_and_health_reveal_no_private_data(servers, public_url):
     assert cookie["httponly"] and cookie["samesite"] == "Strict"
     assert cookie["path"] == "/meshpi/"
     assert bool(cookie["secure"]) is bool(public_url)
+    assert cookie["max-age"] == ""
     assert headers["Cache-Control"] == "no-store"
     assert browser.request("health")[2] == {"ok": True, "service": "meshpi-web"}
     assert calls == []
@@ -130,7 +132,9 @@ def test_code_login_requires_origin_and_csrf_before_consuming_code(servers, bad_
     server, browser, calls = servers()
     code = server.auth.issue_code()
     browser.request("session")
-    assert browser.request("auth/code", {"code": code}, headers=bad_headers)[0] == 403
+    # Host is rejected before reading a body; unread bytes can reset Winsock.
+    payload = None if "Host" in bad_headers else {"code": code}
+    assert browser.request("auth/code", payload, headers=bad_headers, method="POST")[0] == 403
     assert browser.request("auth/code", {"code": code})[2]["data"]["authenticated"] is True
     assert calls == []
 
@@ -157,8 +161,13 @@ def test_code_rotates_cookie_and_logout_revokes_it(servers, public_url):
     code = server.auth.issue_code()
     browser.request("session")
     preauth_cookie, preauth_csrf = browser.cookie, browser.csrf
-    status, _, result = browser.request("auth/code", {"code": code})
+    status, headers, result = browser.request("auth/code", {"code": code})
     assert status == 200 and result["data"]["authenticated"] is True
+    cookie = SimpleCookie(headers["Set-Cookie"])[server.cookie_name]
+    assert server.auth.SESSION_TTL - 2 <= int(cookie["max-age"]) <= server.auth.SESSION_TTL
+    assert cookie["httponly"] and cookie["samesite"] == "Strict"
+    assert bool(cookie["secure"]) is bool(public_url)
+    assert cookie["path"] == "/meshpi/"
     assert browser.cookie != preauth_cookie and browser.csrf != preauth_csrf
     owner_cookie, owner_csrf = browser.cookie, browser.csrf
     assert browser.request("request", {"command": "status"})[0] == 200
@@ -166,8 +175,9 @@ def test_code_rotates_cookie_and_logout_revokes_it(servers, public_url):
     assert browser.request("request", {"command": "status"}, headers={
         "Cookie": preauth_cookie, "X-MeshPi-CSRF": preauth_csrf,
     })[0] == 401
-    status, _, result = browser.request("auth/logout", {})
+    status, headers, result = browser.request("auth/logout", {})
     assert status == 200 and result["data"]["authenticated"] is False
+    assert SimpleCookie(headers["Set-Cookie"])[server.cookie_name]["max-age"] == ""
     assert browser.cookie != owner_cookie and browser.csrf != owner_csrf
     assert browser.request("request", {"command": "status"}, headers={
         "Cookie": owner_cookie, "X-MeshPi-CSRF": owner_csrf,
@@ -193,6 +203,25 @@ def test_local_recovery_revokes_other_browser_and_does_not_reuse_code(servers):
     assert calls == []
 
 
+def test_remembered_browser_resumes_after_auth_store_restart_and_can_logout(servers):
+    server, browser, calls = servers()
+    browser.login()
+    owner_cookie, owner_csrf = browser.cookie, browser.csrf
+    previous = server.auth
+    server.auth = AuthStore(previous.directory, server.auth_origin)
+    status, _, result = browser.request("session")
+    assert status == 200 and result["data"]["authenticated"] is True
+    assert browser.cookie == owner_cookie and browser.csrf == owner_csrf
+    assert browser.request("request", {"command": "status"})[0] == 200
+    assert browser.request("auth/logout", {})[0] == 200
+    assert previous.session(owner_cookie.split("=", 1)[1]) is None
+    server.auth = AuthStore(previous.directory, server.auth_origin)
+    assert browser.request("request", {"command": "status"}, headers={
+        "Cookie": owner_cookie, "X-MeshPi-CSRF": owner_csrf,
+    })[0] == 401
+    assert calls == [{"command": "status"}]
+
+
 def test_http_registration_assertion_and_key_revocation_with_software_authenticator(servers):
     server, browser, calls = servers()
     browser.login()
@@ -210,10 +239,12 @@ def test_http_registration_assertion_and_key_revocation_with_software_authentica
     browser.request("auth/logout", {})
     begin = browser.request("auth/login/begin", {})[2]["data"]
     assertion = authenticator.authenticate(begin, origin=server.auth_origin)
-    status, _, result = browser.request("auth/login/finish", {
+    status, headers, result = browser.request("auth/login/finish", {
         "challenge_id": begin["challenge_id"], "credential": assertion,
     })
     assert status == 200 and result["data"]["authenticated"] is True
+    cookie = SimpleCookie(headers["Set-Cookie"])[server.cookie_name]
+    assert server.auth.SESSION_TTL - 2 <= int(cookie["max-age"]) <= server.auth.SESSION_TTL
     assert browser.request("auth/remove", {"id": keys[0]["id"]})[0] == 200
     assert browser.request("auth/keys")[0] == 401
     assert browser.request("request", {"command": "status"})[0] == 401

@@ -7,11 +7,60 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from web_helpers import javascript_asset
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.parametrize("scenario", [
+    r'''
+    state.channels=[{channel_key:"channel",channel_index:0,role:"PRIMARY",local_node_id:"local"}];
+    state.node={node_id:dm.peer_node,long_name:"Vald testnode"};
+    state.drafts.set(dm.conversation,"Bevart DM-utkast");
+    openDm=()=>{throw new Error("Node shortcut must not open a recipient picker");};
+    const pending=deferred();responses.messages=()=>pending.promise;
+    const opening=$("node-dm").listeners.click();
+    check(state.selected.peer_node===dm.peer_node&&state.selected.channel_key==="channel",
+      "Node shortcut opened the wrong conversation");
+    check($("message-text").value==="Bevart DM-utkast"&&$("send-button").disabled,
+      "Node shortcut lost the draft or allowed sending before history loaded");
+    pending.resolve([]);await opening;
+    check(state.selectionReady&&!$("send-button").disabled,"Node DM never became ready");
+    check(calls.length===1&&calls[0].command==="messages","Opening node DM sent radio traffic");
+    ''',
+    r'''
+    responses.status=()=>{throw Object.assign(new Error("Sambandet er mellombels brote"),
+      {transient:true});};
+    await refresh();
+    check(!$("notice").hidden&&noticeKind==="connection","Connection failure was not shown");
+    responses.status=()=>({state:"tilkopla",history_local_node_id:"local"});
+    await refresh();
+    check($("notice").hidden,"A recovered refresh kept the old connection warning");
+    notice("Ei uavklart sending");await refresh();
+    check(!$("notice").hidden&&$("notice-text").textContent==="Ei uavklart sending",
+      "Refresh hid a warning requiring user review");
+    ''',
+    r'''
+    state.channels=[
+      {channel_key:"private-a",channel_index:2,role:"SECONDARY"},
+      {channel_key:"primary",channel_index:0,role:"PRIMARY"},
+      {channel_key:"private-b",channel_index:1,role:"SECONDARY"},
+    ];
+    state.conversations=[
+      {kind:"public",channel_name:"Alfa privat",channel_key:"private-a",conversation:"a"},
+      {kind:"dm",long_name:"DM test",conversation:"dm"},
+      {kind:"public",channel_name:"Primær med anna namn",channel_key:"primary",conversation:"p"},
+      {kind:"public",channel_name:"Beta privat",channel_key:"private-b",conversation:"b"},
+    ];
+    const original=JSON.stringify(state.conversations);
+    renderConversations();
+    const names=$("conversations").children.filter(el=>el.type==="button")
+      .map(el=>el.children[0].textContent);
+    check(names.join("|")==="Primær med anna namn|Beta privat|Alfa privat|DM test",
+      "Conversations must put primary first, other channels next, and DMs last");
+    check(JSON.stringify(state.conversations)===original,
+      "Sorting mutated the shared conversations");
+    ''',
     r'''
     await selectConversation(dm);
     $("message-text").value="Privat utkast";
@@ -236,6 +285,8 @@ ROOT = Path(__file__).resolve().parents[1]
       "Stale release transmitted a message");
     ''',
 ], ids=[
+    "node-dm-direct",
+    "connection-notice-recovery", "channel-order",
     "selection-failure", "stale-load", "archive", "archive-race", "gateway", "scroll", "byte-limit",
     "send-uncertain-success", "send-pending-release", "send-known-error",
     "send-other-draft", "send-newer-draft", "release-fresh-status", "release-selection-race",
@@ -297,7 +348,7 @@ scenario().then(()=>{
   if(typeof print==="function")print("conversation-ok");else console.log("conversation-ok");
 });
 '''
-    source = (ROOT / "meshpi/web_assets/app.js").read_text()
+    source = javascript_asset("app.js")
     flag = "-e" if Path(engine).name == "node" else "-c"
     result = subprocess.run([engine, flag, environment + source + checks],
                             capture_output=True, text=True, timeout=10)

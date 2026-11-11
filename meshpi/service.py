@@ -48,7 +48,12 @@ from meshpi.models import (
     sanitize_terminal_text,
     validate_message_text,
 )
-from meshpi.node_actions import NodeActionError, parse_traceroute_response
+from meshpi.node_actions import (
+    NodeActionError,
+    node_info_payload,
+    parse_node_info_response,
+    parse_traceroute_response,
+)
 from meshpi.observations import (
     parse_node_observation,
     parse_position_packet,
@@ -65,6 +70,8 @@ TRACEROUTE_TIMEOUT_SECONDS = 120
 TRACEROUTE_COOLDOWN_SECONDS = 30
 POSITION_EXCHANGE_TIMEOUT_SECONDS = 120
 POSITION_EXCHANGE_COOLDOWN_SECONDS = 30
+NODE_INFO_EXCHANGE_TIMEOUT_SECONDS = 120
+NODE_INFO_EXCHANGE_COOLDOWN_SECONDS = 60
 NODE_REMOVAL_TIMEOUT_SECONDS = 30
 MAX_NODE_ACTIONS = 50
 
@@ -194,7 +201,6 @@ class MeshtasticService:
         self._deferred_receives: list[tuple[dict[str, Any], Interface | None]] | None = None
         self._ble_operation_lock = threading.Lock()
         self._ble_connect_active = threading.Event()
-        self._channel_sync_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._interface: Interface | None = None
         self._local_node_id: str | None = None
@@ -205,6 +211,7 @@ class MeshtasticService:
         self._node_action_timers: dict[str, threading.Timer] = {}
         self._traceroute_cooldown_until = 0.0
         self._position_exchange_cooldown_until = 0.0
+        self._node_info_exchange_cooldown_until = 0.0
         profile_status = self._profile_status(self._profile) if self._profile else {
             "connection_id": None,
             "connection_name": None,
@@ -554,10 +561,10 @@ class MeshtasticService:
                             self._switch_requested.set()
                             raise RuntimeError(tr("backend.connection.profile_changed"))
                         self._interface = interface
-                    self._discover_local_node(interface)
-                    self._sync_channels_safely(interface)
-                    self._sync_nodes(interface)
-                    self._set_status("tilkopla", attempt=0)
+                        self._discover_local_node(interface)
+                        self._sync_channels_safely(interface)
+                        self._sync_nodes(interface)
+                        self._set_status("tilkopla", attempt=0)
                     LOG.info("Tilkopla Meshtastic-noden")
                     attempt = 0
                     last_connection_error = None
@@ -641,21 +648,21 @@ class MeshtasticService:
         with self._lock:
             if interface is not self._interface:
                 return
-        self._discover_local_node(interface)
-        self._sync_channels_safely(interface)
-        self._sync_nodes(interface)
-        self._set_status("tilkopla", attempt=0)
+            self._discover_local_node(interface)
+            self._sync_channels_safely(interface)
+            self._sync_nodes(interface)
+            self._set_status("tilkopla", attempt=0)
 
     def _on_lost(self, interface: Interface, **_: Any) -> None:
         with self._lock:
             if interface is not self._interface:
                 return
-        with self._state_lock:
-            self._status["last_reconnect_reason"] = tr(
-                "backend.connection.reported_lost"
-            )
-        self._lost.set()
-        self._fail_pending_node_actions(tr("backend.connection.lost"))
+            with self._state_lock:
+                self._status["last_reconnect_reason"] = tr(
+                    "backend.connection.reported_lost"
+                )
+            self._lost.set()
+            self._fail_pending_node_actions(tr("backend.connection.lost"))
 
     def _discover_local_node(self, interface: Interface) -> None:
         local_id: str | None = None
@@ -674,8 +681,10 @@ class MeshtasticService:
             if isinstance(node_num, int) and node_num >= 0:
                 local_id = f"!{node_num & 0xFFFFFFFF:08x}"
         if local_id:
-            self._local_node_id = local_id.lower()
             with self._lock:
+                if interface is not self._interface:
+                    return
+                self._local_node_id = local_id.lower()
                 profile = self._profile
                 if (
                     profile is not None
@@ -685,9 +694,9 @@ class MeshtasticService:
                         profile.profile_id,
                         self._local_node_id,
                     )
-            with self._state_lock:
-                self._status["local_node_id"] = self._local_node_id
-                self._status["history_local_node_id"] = self._local_node_id
+                with self._state_lock:
+                    self._status["local_node_id"] = self._local_node_id
+                    self._status["history_local_node_id"] = self._local_node_id
 
     def _sync_nodes(self, interface: Interface) -> None:
         # Serialize snapshots with a confirmed removal so stale cache rows cannot
@@ -719,7 +728,9 @@ class MeshtasticService:
         self.events.publish({"type": "nodes"})
 
     def _sync_channels(self, interface: Interface) -> None:
-        with self._channel_sync_lock:
+        with self._lock:
+            if interface is not self._interface:
+                return
             self._sync_channels_locked(interface)
 
     def _sync_channels_safely(self, interface: Interface) -> bool:
@@ -846,6 +857,13 @@ class MeshtasticService:
 
     def _on_receive(
         self, packet: dict[str, Any], interface: Interface | None = None, **_: Any
+    ) -> None:
+        # Keep one gateway identity from interface validation through durable storage.
+        with self._lock:
+            self._receive_packet(packet, interface)
+
+    def _receive_packet(
+        self, packet: dict[str, Any], interface: Interface | None
     ) -> None:
         try:
             with self._lock:
@@ -1019,14 +1037,25 @@ class MeshtasticService:
             channel_index=channel_index,
         )
 
-    def start_node_action(self, action: str, node_id: str) -> dict[str, Any]:
+    def start_node_action(
+        self, action: str, node_id: str, *, expected_local_node_id: str | None = None,
+    ) -> dict[str, Any]:
         normalized_action = action.strip().lower()
         normalized_node_id = normalize_node_id(node_id)
-        if normalized_action == "traceroute":
-            return self._start_traceroute(normalized_node_id)
-        if normalized_action == "position_exchange":
-            return self._start_position_exchange(normalized_node_id)
-        raise ValueError(tr("backend.node_action.unknown", action=action))
+        expected = (
+            normalize_node_id(expected_local_node_id)
+            if expected_local_node_id is not None else None
+        )
+        with self._lock:
+            if expected is not None and expected != self._local_node_id:
+                raise RuntimeError(tr("backend.remove_node.gateway_changed"))
+            if normalized_action == "traceroute":
+                return self._start_traceroute(normalized_node_id)
+            if normalized_action == "position_exchange":
+                return self._start_position_exchange(normalized_node_id)
+            if normalized_action == "node_info_exchange":
+                return self._start_node_info_exchange(normalized_node_id)
+            raise ValueError(tr("backend.node_action.unknown", action=action))
 
     def node_action_status(self, action_id: str) -> dict[str, Any]:
         with self._lock:
@@ -1296,34 +1325,30 @@ class MeshtasticService:
 
     def node_action_availability(self, action: str, node_id: str) -> dict[str, Any]:
         normalized_action = action.strip().lower()
-        if normalized_action not in {"traceroute", "position_exchange"}:
+        if normalized_action not in {"traceroute", "position_exchange", "node_info_exchange"}:
             raise ValueError(tr("backend.node_action.unknown", action=action))
         normalized_node_id = normalize_node_id(node_id)
         with self._lock:
-            remaining = (
-                self._traceroute_cooldown_remaining()
-                if normalized_action == "traceroute"
-                else self._position_exchange_cooldown_remaining()
-            )
+            remaining = {
+                "traceroute": self._traceroute_cooldown_remaining,
+                "position_exchange": self._position_exchange_cooldown_remaining,
+                "node_info_exchange": self._node_info_exchange_cooldown_remaining,
+            }[normalized_action]()
             connected = self._interface is not None and self.status()["state"] == "tilkopla"
             local = normalized_node_id == self._local_node_id
         reason = None
         if not connected:
             reason = tr("backend.connection.not_connected")
         elif local:
-            reason = (
-                tr("backend.traceroute.local_target")
-                if normalized_action == "traceroute"
-                else tr("backend.position.local_target")
-            )
+            reason = tr({
+                "traceroute": "backend.traceroute.local_target",
+                "position_exchange": "backend.position.local_target",
+                "node_info_exchange": "backend.node_info.local_target",
+            }[normalized_action])
         elif remaining:
             reason = tr(
                 "backend.node_action.cooldown",
-                action=(
-                    tr("backend.node_action.traceroute")
-                    if normalized_action == "traceroute"
-                    else tr("backend.node_action.position_exchange")
-                ),
+                action=tr(f"backend.node_action.{normalized_action}"),
                 seconds=remaining,
             )
         return {
@@ -1369,7 +1394,14 @@ class MeshtasticService:
             }
             self._node_actions[action_id] = action
             self._trim_node_actions()
-        self.database.upsert_node_action(action)
+            self._traceroute_cooldown_until = time.monotonic() + TRACEROUTE_COOLDOWN_SECONDS
+        try:
+            self.database.upsert_node_action(action)
+        except Exception:
+            with self._lock:
+                self._traceroute_cooldown_until = 0.0
+                self._node_actions.pop(action_id, None)
+            raise
 
         def on_response(packet: dict[str, Any]) -> None:
             try:
@@ -1398,6 +1430,8 @@ class MeshtasticService:
                 hopLimit=self._traceroute_hop_limit(interface),
             )
         except Exception as exc:
+            with self._lock:
+                self._traceroute_cooldown_until = 0.0
             error = tr("backend.traceroute.send_failed", error=exc)
             self._finish_node_action(action_id, error=error)
             raise RuntimeError(error) from exc
@@ -1595,6 +1629,94 @@ class MeshtasticService:
             LOG.info("Posisjonsførespurnad sendt til %s", node_id)
         return snapshot
 
+    def _start_node_info_exchange(self, node_id: str) -> dict[str, Any]:
+        from meshtastic.protobuf import portnums_pb2
+
+        with self._lock:
+            interface, local_node_id = self._interface, self._local_node_id
+            if interface is None or self.status()["state"] != "tilkopla":
+                raise RuntimeError(tr("backend.connection.not_connected"))
+            if not local_node_id:
+                raise RuntimeError(tr("backend.local_node.id_unknown"))
+            if node_id == local_node_id:
+                raise ValueError(tr("backend.node_info.local_target"))
+            cooldown = self._node_info_exchange_cooldown_remaining()
+            if cooldown:
+                raise RuntimeError(tr(
+                    "backend.node_action.cooldown",
+                    action=tr("backend.node_action.node_info_exchange"), seconds=cooldown,
+                ))
+            nodes = interface.nodes or {}
+            own = nodes.get(local_node_id, {})
+            if not own:
+                by_num = getattr(interface, "nodesByNum", {}) or {}
+                own = by_num.get(int(local_node_id[1:], 16), {})
+            payload = node_info_payload(own.get("user"), local_node_id)
+            action_id = uuid.uuid4().hex
+            action = {
+                "action_id": action_id, "local_node_id": local_node_id,
+                "action": "node_info_exchange", "node_id": node_id,
+                "status": "started", "started_at": now_iso(), "packet_id": None,
+            }
+            self._node_actions[action_id] = action
+            self._trim_node_actions()
+            self._node_info_exchange_cooldown_until = (
+                time.monotonic() + NODE_INFO_EXCHANGE_COOLDOWN_SECONDS
+            )
+        self.database.upsert_node_action(action)
+
+        def on_response(packet: dict[str, Any]) -> None:
+            try:
+                with self._lock:
+                    if (interface is not self._interface or local_node_id != self._local_node_id):
+                        raise NodeActionError(tr("backend.connection.switched"))
+                    if action.get("status") != "started":
+                        return
+                    result = parse_node_info_response(packet, node_id)
+                    result["public_key_shared"] = len(payload.public_key) == 32
+                    self._sync_nodes(interface)
+                    self._finish_node_action(action_id, result=result)
+            except Exception as exc:
+                self._finish_node_action(action_id, error=str(exc))
+
+        try:
+            with self._lock:
+                if interface is not self._interface or local_node_id != self._local_node_id:
+                    raise NodeActionError(tr("backend.connection.switched"))
+                sent = interface.sendData(
+                    payload, destinationId=node_id, portNum=portnums_pb2.PortNum.NODEINFO_APP,
+                    wantResponse=True, onResponse=on_response, channelIndex=0,
+                    hopLimit=self._traceroute_hop_limit(interface),
+                )
+        except Exception:
+            # Do not include SDK exceptions: they can contain key-bearing payloads.
+            with self._lock:
+                self._node_info_exchange_cooldown_until = 0.0
+            error = tr("backend.node_info.send_failed")
+            self._finish_node_action(action_id, error=error)
+            raise RuntimeError(error) from None
+
+        packet_id = _sent_packet_id(sent)
+
+        def on_timeout() -> None:
+            self._discard_response_handler(interface, packet_id)
+            self._finish_node_action(action_id, error=tr("backend.node_info.timeout"))
+
+        timer = threading.Timer(NODE_INFO_EXCHANGE_TIMEOUT_SECONDS, on_timeout)
+        timer.daemon = True
+        with self._lock:
+            action["packet_id"] = packet_id
+            start_timer = action["status"] == "started"
+            if start_timer:
+                self._node_action_timers[action_id] = timer
+            snapshot = copy.deepcopy(action)
+            self.database.upsert_node_action(snapshot)
+            if start_timer:
+                self.events.publish({"type": "node_action", "data": snapshot})
+        if start_timer:
+            timer.start()
+        return snapshot
+
     def _local_position_for_exchange(
         self,
         interface: Interface,
@@ -1702,6 +1824,9 @@ class MeshtasticService:
             ),
         )
 
+    def _node_info_exchange_cooldown_remaining(self) -> int:
+        return max(0, math.ceil(self._node_info_exchange_cooldown_until - time.monotonic()))
+
     def _finish_node_action(
         self,
         action_id: str,
@@ -1734,6 +1859,7 @@ class MeshtasticService:
         label = {
             "traceroute": "Traceroute",
             "position_exchange": "Posisjonsførespurnad",
+            "node_info_exchange": "Nodeinfo-utveksling",
             "remove_nodes": "Nodefjerning",
         }.get(str(snapshot.get("action")), "Nodehandling")
         if error:

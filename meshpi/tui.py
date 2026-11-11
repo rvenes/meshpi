@@ -44,7 +44,7 @@ from meshpi import __version__
 from meshpi.channels import dm_conversation_id, parse_dm_conversation_id
 from meshpi.client import CLIError, WatchStream, open_watch, request
 from meshpi.config import Settings
-from meshpi.i18n import get_language, set_language, tr
+from meshpi.i18n import LANGUAGE_NAMES, get_language, set_language, tr
 from meshpi.models import normalize_node_id, sanitize_terminal_text, validate_message_text
 from meshpi.update import UpdateNotice, check_for_update
 
@@ -960,6 +960,8 @@ class NodeInfoScreen(ModalScreen[None]):
         ],
         action_callback: Callable[[str], None],
         action_availability: dict[str, dict[str, Any]] | None = None,
+        *,
+        local_node_id: str | None = None,
     ):
         super().__init__()
         _localize_bindings(
@@ -977,6 +979,7 @@ class NodeInfoScreen(ModalScreen[None]):
             ),
         )
         self.overview_data = overview
+        self.local_node_id = local_node_id
         self.telemetry = sorted(
             (dict(sample) for sample in telemetry),
             key=self._observation_sort_key,
@@ -2154,8 +2157,9 @@ class SettingsScreen(ModalScreen[str | None]):
                     yield Button(_t("local.nodes.remove"), id="local-nodes-remove", variant="error")
             with Vertical(id="settings-app"):
                 yield Static(_t("settings.language"), id="settings-language-label")
-                yield Button("Nynorsk", id="settings-nn")
-                yield Button("English", id="settings-en")
+                with Horizontal(id="settings-languages"):
+                    for code, name in LANGUAGE_NAMES.items():
+                        yield Button(name, id=f"settings-{code}")
                 yield Button(_t("history.title"), id="settings-history")
             yield Button(_t("common.close"), id="settings-cancel")
             yield Static(_t("settings.help"), id="settings-help")
@@ -2194,6 +2198,7 @@ class SettingsScreen(ModalScreen[str | None]):
             self.app.push_screen(HistorySettingsScreen())
             return
         results = {
+            "settings-nb": "nb",
             "settings-nn": "nn",
             "settings-en": "en",
             "settings-cancel": None,
@@ -2969,6 +2974,9 @@ class MeshPiTUI(App[str | None]):
         scrollbar-color: $accent;
     }
 
+    #settings-languages { height: 3; margin-bottom: 1; }
+    #settings-languages Button { min-width: 10; margin: 0; }
+
     #settings-app {
         height: 1fr;
         padding-top: 1;
@@ -3102,6 +3110,8 @@ class MeshPiTUI(App[str | None]):
         self._pending_message_history: dict[str, list[str]] = {}
         self._settings_snapshot: dict[str, Any] | None = None
         self._last_node_removal_message = ""
+        self._last_gateway_id: str | None = None
+        self._gateway_generation = 0
 
     def _localize_app_bindings(self) -> None:
         _localize_bindings(
@@ -3265,11 +3275,21 @@ class MeshPiTUI(App[str | None]):
         return self.requester(self.settings, payload)
 
     def _initial_worker(self) -> None:
+        generation = self._gateway_generation
         try:
             status = self._call({"command": "status"})["data"]
             conversations = self._call({"command": "conversations"})["data"]
             nodes = self._call({"command": "nodes", "sort": "seen"})["data"]
-            self.call_from_thread(self._apply_initial, status, conversations, nodes)
+            current_status = self._call({"command": "status"})["data"]
+            gateway = status.get("local_node_id") or status.get("history_local_node_id")
+            current_gateway = (current_status.get("local_node_id")
+                               or current_status.get("history_local_node_id"))
+            if gateway != current_gateway:
+                self.call_from_thread(self._resync_after_watch)
+                return
+            self.call_from_thread(
+                self._apply_initial, current_status, conversations, nodes, generation,
+            )
         except Exception as exc:
             self.call_from_thread(
                 self.notify,
@@ -3283,8 +3303,12 @@ class MeshPiTUI(App[str | None]):
         status: dict[str, Any],
         conversations: list[dict[str, Any]],
         nodes: list[dict[str, Any]],
+        generation: int | None = None,
     ) -> None:
-        self.status_data = status
+        if generation is not None and generation != self._gateway_generation:
+            self._resync_after_watch()
+            return
+        self._set_status(status, refresh_gateway=False)
         await self._apply_nodes(nodes)
         await self._apply_conversations(conversations)
         self._update_status_bar()
@@ -3310,9 +3334,49 @@ class MeshPiTUI(App[str | None]):
                 self.status_data | {"state": "fråkopla"},
             )
 
-    def _set_status(self, status: dict[str, Any]) -> None:
+    def _set_status(self, status: dict[str, Any], *, refresh_gateway: bool = True) -> None:
+        gateway = status.get("local_node_id") or status.get("history_local_node_id")
+        previous = self._last_gateway_id
         self.status_data = status
+        if gateway:
+            self._last_gateway_id = str(gateway)
+        if previous and gateway and previous != gateway:
+            self._gateway_generation += 1
+            self.node_action_entries.clear()
+            self.current_conversation = "public"
+            self._visible_timeline.clear()
+            self.query_one("#message-log", RichLog).clear()
+            self.query_one("#message-input", MessageInput).disabled = True
+            if isinstance(self.screen, (NodeInfoScreen, NodeActionScreen, NewDMScreen)):
+                self.screen.dismiss(None)
+            if refresh_gateway:
+                self._resync_after_watch()
         self._update_status_bar()
+
+    def _gateway_id(self) -> str | None:
+        value = (self.status_data.get("local_node_id")
+                 or self.status_data.get("history_local_node_id"))
+        return str(value) if value else None
+
+    def _gateway_matches(self, expected: str | None) -> bool:
+        return bool(expected) and self._gateway_id() == expected
+
+    def _node_info_event_matches(
+        self, screen: NodeInfoScreen, data: dict[str, Any]
+    ) -> bool:
+        expected = screen.local_node_id or self._gateway_id()
+        observed = data.get("local_node_id") or data.get("gateway_node_id")
+        return self._gateway_matches(expected) and observed in {None, expected}
+
+    def _resync_after_watch(self) -> None:
+        self.run_worker(
+            self._initial_worker,
+            name="watch-resync",
+            group="watch-resync",
+            thread=True,
+            exclusive=True,
+            exit_on_error=False,
+        )
 
     def _update_worker(self) -> None:
         try:
@@ -4278,6 +4342,7 @@ class MeshPiTUI(App[str | None]):
             )
 
     def _watch_worker(self) -> None:
+        connected_before = False
         while not self._watch_stop.is_set():
             try:
                 if self.watcher is None:
@@ -4295,6 +4360,9 @@ class MeshPiTUI(App[str | None]):
                     stream.close()
                     return
                 try:
+                    if connected_before:
+                        self.call_from_thread(self._resync_after_watch)
+                    connected_before = True
                     for raw in stream:
                         if self._watch_stop.is_set():
                             return
@@ -4320,6 +4388,8 @@ class MeshPiTUI(App[str | None]):
                         ),
                     )
                     self._watch_stop.wait(2)
+            else:
+                self._watch_stop.wait(2)
 
     @on(LiveEvent)
     def live_event(self, message: LiveEvent) -> None:
@@ -4357,6 +4427,7 @@ class MeshPiTUI(App[str | None]):
             if (
                 isinstance(data, dict)
                 and isinstance(screen, NodeInfoScreen)
+                and self._node_info_event_matches(screen, data)
                 and screen.overview_data.get("node", {}).get("node_id")
                 == data.get("node_id")
             ):
@@ -4368,6 +4439,7 @@ class MeshPiTUI(App[str | None]):
             if (
                 isinstance(data, dict)
                 and isinstance(screen, NodeInfoScreen)
+                and self._node_info_event_matches(screen, data)
                 and screen.overview_data.get("node", {}).get("node_id")
                 == data.get("node_id")
             ):
@@ -4549,8 +4621,9 @@ class MeshPiTUI(App[str | None]):
         if node is None:
             self.notify(_t("error.marked_node_missing"), severity="error")
             return
+        gateway = self._gateway_id()
         self.run_worker(
-            lambda: self._node_action_availability_worker(node_id),
+            lambda: self._node_action_availability_worker(node_id, gateway),
             name="node-action-availability",
             group="node-action-menu",
             thread=True,
@@ -4558,7 +4631,10 @@ class MeshPiTUI(App[str | None]):
             exit_on_error=False,
         )
 
-    def _node_action_availability_worker(self, node_id: str) -> None:
+    def _node_action_availability_worker(
+        self, node_id: str, expected_local_node_id: str | None = None
+    ) -> None:
+        gateway = expected_local_node_id or self._gateway_id()
         try:
             availability = self._call(
                 {
@@ -4577,27 +4653,38 @@ class MeshPiTUI(App[str | None]):
             self._show_node_action_screen,
             node_id,
             availability,
+            gateway,
         )
 
     def _show_node_action_screen(
         self,
         node_id: str,
         availability: dict[str, Any],
+        expected_local_node_id: str | None = None,
     ) -> None:
+        gateway = expected_local_node_id or self._gateway_id()
+        if not self._gateway_matches(gateway):
+            return
         node = self.nodes.get(node_id)
         if node is None:
             return
         self.push_screen(
             NodeActionScreen(node, availability),
-            lambda action: self._node_action_chosen(node_id, action),
+            lambda action: self._node_action_chosen(node_id, action, gateway),
         )
 
-    def _node_action_chosen(self, node_id: str, action: str | None) -> None:
+    def _node_action_chosen(
+        self, node_id: str, action: str | None,
+        expected_local_node_id: str | None = None,
+    ) -> None:
+        gateway = expected_local_node_id or self._gateway_id()
+        if not self._gateway_matches(gateway):
+            return
         if action == "open_dm":
             self._open_node_dm(node_id, focus_input=False)
         elif action == "node_info":
             self.run_worker(
-                lambda: self._node_info_worker(node_id),
+                lambda: self._node_info_worker(node_id, gateway),
                 name=f"node-info-{node_id}",
                 group="node-info",
                 thread=True,
@@ -4607,7 +4694,7 @@ class MeshPiTUI(App[str | None]):
         elif action == "traceroute":
             self._open_node_dm(node_id, focus_input=False)
             self.run_worker(
-                lambda: self._start_node_action_worker(node_id, action),
+                lambda: self._start_node_action_worker(node_id, action, gateway),
                 name=f"node-action-{action}",
                 group="node-action",
                 thread=True,
@@ -4615,7 +4702,10 @@ class MeshPiTUI(App[str | None]):
                 exit_on_error=False,
             )
 
-    def _node_info_worker(self, node_id: str) -> None:
+    def _node_info_worker(
+        self, node_id: str, expected_local_node_id: str | None = None
+    ) -> None:
+        gateway = expected_local_node_id or self._gateway_id()
         try:
             overview = self._call(
                 {"command": "node_overview", "node_id": node_id}
@@ -4668,6 +4758,9 @@ class MeshPiTUI(App[str | None]):
                 )["data"]
                 for action in ("traceroute", "position_exchange")
             }
+            status = self._call({"command": "status"})["data"]
+            if (status.get("local_node_id") or status.get("history_local_node_id")) != gateway:
+                return
         except Exception as exc:
             self.call_from_thread(
                 self.notify,
@@ -4677,21 +4770,32 @@ class MeshPiTUI(App[str | None]):
             )
             return
         self.call_from_thread(
-            self.push_screen,
+            self._push_gateway_screen,
             NodeInfoScreen(
                 overview,
                 telemetry,
                 positions,
                 traceroutes,
                 self._format_traceroute_table_row,
-                lambda action: self._node_info_action_requested(node_id, action),
+                lambda action: self._node_info_action_requested(node_id, action, gateway),
                 action_availability,
+                local_node_id=gateway,
             ),
+            gateway,
         )
 
-    def _node_info_action_requested(self, node_id: str, action: str) -> None:
+    def _push_gateway_screen(self, screen: NodeInfoScreen, gateway: str | None) -> None:
+        if self._gateway_matches(gateway):
+            self.push_screen(screen)
+
+    def _node_info_action_requested(
+        self, node_id: str, action: str, expected_local_node_id: str | None = None
+    ) -> None:
+        gateway = expected_local_node_id or self._gateway_id()
+        if not self._gateway_matches(gateway):
+            return
         self.run_worker(
-            lambda: self._start_node_action_worker(node_id, action),
+            lambda: self._start_node_action_worker(node_id, action, gateway),
             name=f"node-info-action-{action}",
             group=f"node-info-action-{action}",
             thread=True,
@@ -4699,13 +4803,19 @@ class MeshPiTUI(App[str | None]):
             exit_on_error=False,
         )
 
-    def _start_node_action_worker(self, node_id: str, action: str) -> None:
+    def _start_node_action_worker(
+        self, node_id: str, action: str, expected_local_node_id: str | None = None
+    ) -> None:
+        gateway = expected_local_node_id or self._gateway_id()
+        if not self._gateway_matches(gateway):
+            return
         try:
             data = self._call(
                 {
                     "command": "node_action",
                     "action": action,
                     "node_id": node_id,
+                    "expected_local_node_id": gateway,
                 }
             )["data"]
         except Exception as exc:
@@ -4741,6 +4851,9 @@ class MeshPiTUI(App[str | None]):
             screen.clear_action_cooldown(action)
 
     def _handle_node_action(self, action: dict[str, Any]) -> None:
+        local_id = action.get("local_node_id")
+        if local_id and not self._gateway_matches(str(local_id)):
+            return
         action_name = str(action.get("action") or "")
         if action_name not in {"traceroute", "position_exchange"}:
             return
@@ -4838,6 +4951,7 @@ class MeshPiTUI(App[str | None]):
         return _t("notice.position_not_shared", suffix=suffix)
 
     def action_new_dm(self) -> None:
+        gateway = self._gateway_id()
         channels = [
             item
             for item in self.conversations
@@ -4845,11 +4959,15 @@ class MeshPiTUI(App[str | None]):
         ]
         self.push_screen(
             NewDMScreen(list(self.nodes.values()), channels),
-            self._open_new_dm,
+            lambda selected: self._open_new_dm(selected, gateway),
         )
 
-    def _open_new_dm(self, selected: tuple[str, str] | None) -> None:
+    def _open_new_dm(
+        self, selected: tuple[str, str] | None, expected_local_node_id: str | None = None
+    ) -> None:
         if selected is None:
+            return
+        if expected_local_node_id and not self._gateway_matches(expected_local_node_id):
             return
         node_id, channel_key = selected
         self._open_node_dm(
@@ -5188,7 +5306,7 @@ class MeshPiTUI(App[str | None]):
         self.notify(
             _t(
                 "settings.saved",
-                language="Nynorsk" if get_language() == "nn" else "English",
+                language=LANGUAGE_NAMES[get_language()],
             ),
             timeout=3,
         )

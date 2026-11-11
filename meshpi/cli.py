@@ -24,6 +24,7 @@ from meshpi.daemon import run_daemon
 from meshpi.doctor import offline_checks
 from meshpi.i18n import (
     LANGUAGE_NAMES,
+    SUPPORTED_LANGUAGES,
     get_language,
     initialize_language,
     language_file,
@@ -855,7 +856,7 @@ def build_parser() -> argparse.ArgumentParser:
     chat.add_argument("conversation", help=tr("cli.help.chat_conversation"))
     chat.add_argument("--limit", type=int, default=50)
     language = sub.add_parser("language", help=tr("cli.help.language"))
-    language.add_argument("language", nargs="?", choices=("nn", "en"))
+    language.add_argument("language", nargs="?", choices=SUPPORTED_LANGUAGES)
     return parser
 
 

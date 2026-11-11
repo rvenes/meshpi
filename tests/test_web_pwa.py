@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from web_helpers import javascript_asset
 
 ASSETS = Path(__file__).resolve().parents[1] / "meshpi" / "web_assets"
 
@@ -42,7 +43,7 @@ function check(value, message) {if (!value) throw new Error(message);}
 function success() {if (typeof print === "function") print("pwa-ok"); else console.log("pwa-ok");}
 const elements = new Map();
 for (const id of ["install-button", "install-dialog", "install-native",
-    "install-status", "close-install"]) {
+    "install-status", "close-install", "settings-dialog"]) {
   elements.set(id, {hidden: true, disabled: false, listeners: {}, textContent: "", open: false,
     addEventListener(event, callback) {this.listeners[event] = callback;},
     showModal() {this.open = true;}, close() {this.open = false;},
@@ -80,8 +81,9 @@ async function scenario() {
   if (!settings.secure || settings.rejected) {
     check(status.textContent.length > 0, "Missing manual fallback");
   }
+  elements.get("settings-dialog").showModal();
   button.listeners.click();
-  check(dialog.open, "Help did not open");
+  check(dialog.open&&!elements.get("settings-dialog").open, "Help did not replace settings");
   elements.get("close-install").listeners.click();
   check(!dialog.open, "Help did not close");
   let calls = 0;
@@ -116,7 +118,7 @@ async function scenario() {
 }
 scenario().then(success).catch(error => {throw error;});
 """
-    run_javascript(environment + (ASSETS / "install.js").read_text() + checks)
+    run_javascript(environment + javascript_asset("install.js") + checks)
 
 
 def test_worker_only_handles_app_navigation_and_never_caches_or_replays_requests():
@@ -180,4 +182,4 @@ scenario().then(() => {
   if (typeof print === "function") print("pwa-ok"); else console.log("pwa-ok");
 }).catch(error => {throw error;});
 """
-    run_javascript(environment + (ASSETS / "sw.js").read_text() + checks)
+    run_javascript(environment + javascript_asset("sw.js") + checks)

@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.9.8",
-  "published_at": "2026-10-25T04:39:02Z",
+  "latest_version": "0.9.12",
+  "published_at": "2026-11-11T06:42:28Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.9.8",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.9.12",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.9.8-py3-none-any.whl",
-    "filename": "meshpi-0.9.8-py3-none-any.whl",
-    "sha256": "947df6aaf967b0e0e5b14d7ab479d010a9ec3d51cdc8640bc21e410044dab503",
-    "size": 279169,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.9.12-py3-none-any.whl",
+    "filename": "meshpi-0.9.12-py3-none-any.whl",
+    "sha256": "e1da93e68b5ff58b159c7dddccd756f347befc9d6a95a1d8b3bfa75a1113313e",
+    "size": 331749,
     "format": "wheel"
   },
   "locks": {
@@ -37,34 +37,35 @@
   "installers": {
     "linux": {
       "url": "https://venes.org/meshpi/install-linux.sh",
-      "sha256": "27ae4da8219ac010b69386f9d4cff32d78a978f832040d44f9af3b006d0ac3e9",
-      "size": 30958,
+      "sha256": "d418f5797e7bf71678a32c60524a7273bcc199fbff166541b211a64d06e86e28",
+      "size": 37233,
       "update_command": "curl -fLO https://venes.org/meshpi/install-linux.sh && sudo sh install-linux.sh"
     },
     "macos": {
       "url": "https://venes.org/meshpi/install-macos.sh",
-      "sha256": "fe5be94c3ff6e35cc5bce826e7e6b4a9323879a9c57e938d5676742a26be1050",
-      "size": 26378,
+      "sha256": "b42a7511b97ec1adff8aef5159d41e8668eafb8db335075d13fdb1150e8df83d",
+      "size": 31855,
       "update_command": "curl -fLO https://venes.org/meshpi/install-macos.sh && sh install-macos.sh"
     },
     "windows": {
       "url": "https://venes.org/meshpi/install-windows.ps1",
-      "sha256": "88e443ccfafc0985aeacaa4d30e263a9e5f973021ec98b64f1ab020511c709b6",
-      "size": 41702,
+      "sha256": "662fe3e53ab8cdae3a79e6f5d5179b287bffdffe9eef8e1060545e33dbbe3e3b",
+      "size": 46774,
       "update_command": "Invoke-WebRequest https://venes.org/meshpi/install-windows.ps1 -OutFile install-windows.ps1; .\\install-windows.ps1"
     }
   },
   "release_notes": [
-    "Kvar gateway har eiga databasefil; eksisterande historikk blir kopiert med originalen bevart.",
-    "Innstillingar i web og F10: lagringstid per gateway og stadfesta opprydding med førehandsvising.",
-    "Nye gatewayar bruker 30 dagar; eksisterande historikk ventar på eit stadfesta lagringsval.",
-    "Nodeoversikta viser namn, maskinvare, rolle, straum og signal. Forenkla webgrensesnitt.",
-    "Pip 26.2.2 og tydeleg informasjon om vedlikehald gjennom meshpi update."
+    "Gatewaybyte under mottak bevarer rett gatewayhistorikk.",
+    "Nodehandlingar i terminal og web er bundne til gatewayen brukaren såg.",
+    "Installatørane tillèt berre éi installering om gongen, også under tilbakeføring.",
+    "Terminalen hentar manglande historikk etter IPC-brot og bevarer utkast utan å gjenta sendingar.",
+    "Samtidige traceroute-førespurnader respekterer ventesperra.",
+    "Handlingsknappane i web blir tilgjengelege att etter ventesperre og mellombelse sambandsbrot."
   ],
   "channel": "stable",
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "eky1lNGfrPB1rfcykqHlvRXLql8AbYjIC7TB4cW9IBEvVYGn/emKTcqWb8nb7EgvA0CHrbGdnwZ4oyaD81l9SYZdShFkZ0IYeJEWL3U38ZS5HrgIavo2JiD62FatlKgVZXFPuga+wVauCdfG/d+wPDVe9WtFyFZC2a1Mhfv1QU3kDm2lhFJyRuOanDe4yyX0m/hhNIN3FamMuIUiLjm2OitsPeaYRGoRjEa8yKlyMnVg2L9kMlGE3SrsZXx5SoGrQPPRFbiEDNrLduwmZ4aNkZxxXZbHg7YfkMYZflu4h3X5EgrNj29W3dahZudWoWxY3U/rD5rLIe5i1iremWjekuibUVjrpEYw1xI/kHLP5tjbFibHHIiJ6D2phn1JQK1Sn5UYpVk8RR59VN1hntjR6aYIutf6rsRt/7nkh6thbziotWStMpObreUCSL1qHuUxvU0B6yu9ecbvGoF4tL5OxFIle08Y1UY8dsfgWAOdoCCkPWMTGyUPjGNgiPit7BOg"
+    "value": "LBU5haZRKgr3Py52IEdzdFADjXHNL+zAP+M+eaolziJzoGjx+Eg34z3Ib4LxyzQgpMhNDw0J5i7uMRQtHvrFytD65upseNJrECXw9XW6+f2/+DFrkLCOMx3KYOb0E7CIV/RMx3RsGfGLecuf6mkhsVfzq2JGlVK468IaRsNqK4LHpiF/OmAu7VXkJdjhOzzBPbVzFM9R+qHGM+9gmGDyS/gP/jW+sN8WS6jPb60yuvf2aZD8xmm61E9mZdaybp9jk8TRvFAjJlfJN4jlca6kJ3ldw1w4z86CKkw/ZmAYMgKD/Qv1E9p9U84b6gCyhZcKAda+U1EMdYn8Vg6p/UF8uoGRUHELKX/56lVpjcpofNtZFbwjq+94Dg/2wKQAlbEGfQ5Gqb7IH+T57sJUw1esuYQ+8vKTQlimCVwAlsMfOPkOgx+Czv2ACMMDJn+f5C76VjZ/+xxUZyy+1Dtjasza4EAPl8GfYCd+zw2PXQfJAoPaW1JxxH3jgQWGS7hmB1Qo"
   }
 }

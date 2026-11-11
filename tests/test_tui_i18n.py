@@ -234,7 +234,16 @@ def test_tui_translates_stored_message_status_without_changing_machine_value():
     assert "[delivered]" in rendered
 
 
-def test_live_language_switch_persists_and_preserves_tui_state(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("language", "title", "placeholder", "host", "connected"),
+    [
+        ("en", "Conversations", "Write a message and press Enter", "Host:", "Connected"),
+        ("nb", "Samtaler", "Skriv melding og trykk Enter", "Vert:", "Tilkoblet"),
+    ],
+)
+def test_live_language_switch_persists_and_preserves_tui_state(
+    tmp_path, monkeypatch, language, title, placeholder, host, connected
+):
     language_path = tmp_path / "language.json"
     monkeypatch.setenv("MESHPI_LANGUAGE_FILE", str(language_path))
 
@@ -269,18 +278,18 @@ def test_live_language_switch_persists_and_preserves_tui_state(tmp_path, monkeyp
                 await pilot.pause()
                 assert isinstance(app.screen, SettingsScreen)
                 await pilot.press("left")
-                await pilot.click("#settings-en")
+                await pilot.click(f"#settings-{language}")
                 await pilot.pause(0.6)
 
                 assert json.loads(language_path.read_text(encoding="utf-8")) == {
                     "schema_version": 1,
-                    "language": "en",
+                    "language": language,
                 }
                 assert _text(app.query_one("#conversation-panel-title", Static)) == (
-                    "Conversations"
+                    title
                 )
                 assert app.query_one("#message-input", Input).placeholder == (
-                    "Write a message and press Enter"
+                    placeholder
                 )
                 assert app.current_conversation == DM
                 assert app.selected_node_id == PEER_ID
@@ -299,9 +308,10 @@ def test_live_language_switch_persists_and_preserves_tui_state(tmp_path, monkeyp
                 # når eittsekundstimeren teiknar henne på nytt.
                 await pilot.pause(1.2)
                 status_bar = _text(app.query_one("#status-bar", Static))
-                assert "Host:" in status_bar
-                assert "Connected" in status_bar
-                assert "Vert:" not in status_bar
+                assert host in status_bar
+                assert connected in status_bar
+                if language == "en":
+                    assert "Vert:" not in status_bar
                 assert "Tilkopla" not in status_bar
 
     asyncio.run(scenario())

@@ -6,12 +6,28 @@ nettlesarfana servernamnet, slik at du kan skilje fleire MeshPi-installasjonar. 
 SQLite-tilgang går gjennom den lokale IPC-en; terminalklienten kan brukast
 samstundes. Berre éin gateway er aktiv om gongen.
 
-Webserveren følgjer med **MeshPi 0.9.8** og er valfri ved installasjon.
+Webserveren følgjer med **MeshPi 0.9.12** og er valfri ved installasjon.
 Utgåva blir distribuert gjennom den ordinære kanalen for praktisk utprøving
 fram mot 1.0.0; det blir ikkje oppretta ein ny betakanal. HTTP-delen bruker
 Python sitt standardbibliotek, med avgrensa klienttal og tidsfristar. Han er
 avgrensa til localhost og privat tilgang gjennom Tailscale, ikkje offentleg
 hosting.
+
+## Varsel om ny versjon
+
+Etter innlogging ser webgrensesnittet automatisk etter ny stabil utgåve.
+Kontrollen bruker den same signaturverifiseringa som `meshpi update`, og
+tenaren hentar oppdateringsinformasjon høgst éin gong i timen. Opne faner
+kontrollerer igjen kvart kvarter medan dei er synlege. Ved nettfeil blir
+kontrollen prøvd igjen seinare utan å avbryte meldingar eller nodevising.
+
+Ei ny utgåve gir eit toppvarsel som følgjer valet for automatisk lukking,
+og «Ny versjon» ved Innstillingar. Under **Innstillingar → Oppdateringar**
+står versjonen og kommandoen òg etter at varselet er lukka. Opne terminalen
+på maskina som køyrer MeshPi, og bruk den viste kommandoen: `meshpi update`,
+eller `sudo meshpi update` for ein Linux-installasjon i `always`-modus.
+Last nettsida inn på nytt etter oppdateringa. Webgrensesnittet installerer
+ikkje oppdateringar sjølv. Ei tom `UPDATE_URL` slår av kontrollen.
 
 ## Val ved installasjon
 
@@ -200,8 +216,12 @@ nettlesar-/leverandørkombinasjonar må testast på dei aktuelle einingane.
 
 Du kan leggje til og fjerne nøklar i same dialog. Nøkkelendringar krev at du
 har logga inn dei siste fem minutta. Har du mista nøklane, lagar du ein ny
-lokal eingongskode og registrerer ein erstatning. Sesjonar varer i høgst åtte
-timar og må opprettast på nytt etter omstart av webprosessen.
+lokal eingongskode og registrerer ein erstatning. Innlogginga varer i høgst
+30 dagar frå innloggingstidspunktet, også når nettlesaren eller webprosessen
+blir starta på nytt. Utlogging avsluttar innlogginga på den aktuelle eininga.
+Ein ny eingongskode eller fjerning av ein passkey avsluttar alle innloggingar.
+Nettlesaren må tillate lagring av informasjonskapslar; privat nettlesing eller
+sletting av informasjonskapslar kan krevje ny innlogging tidlegare.
 
 Den lagra adressa er fast og blir ikkje bytt automatisk når Tailscale kjem
 eller går. Passkeys frå eitt vertsnamn fungerer ikkje på eit anna vertsnamn
@@ -229,8 +249,8 @@ separate krav; tilgjengeleg tailnet-adresse gir ikkje automatisk innlogging.
 
 ## Installer som app på mobil og datamaskin
 
-Opne den private HTTPS-adressa på eininga og trykk **Installer app** i
-topplinja. Nettlesarar som tilbyr direkte installasjon, viser knappen
+Opne den private HTTPS-adressa på eininga og vel **Innstillingar → Installer app**.
+Nettlesarar som tilbyr direkte installasjon, viser knappen
 **Installer MeshPi**. Elles viser dialogen rettleiing:
 
 - **Android, Windows og Linux:** bruk installasjonsvalet i Chrome eller Edge.
@@ -286,6 +306,10 @@ legacy-historikk ligg att i dei bevarte kopiane.
 ## Funksjonar og grenser
 
 - Kanalar, nye og eksisterande DM-ar, historikk og leveringsstatus.
+- Samtalelista viser primærkanalen først, deretter dei andre kanalane i
+  konfigurert rekkjefølgje og til slutt DM-ar. **Send DM** i nodevindauget
+  opnar samtalen med den valde noden direkte på primærkanalen. Bruk **＋**
+  dersom du vil velje mottakar og kanal sjølv.
 - Ulest-status er felles med terminalklienten. Ei synleg samtale blir merkt lesen.
 - Arkivering av DM-ar; historikken blir bevart.
 - Utkast følgjer samtalen medan sida er open. Etter arkivering eller byte av
@@ -295,6 +319,19 @@ legacy-historikk ligg att i dei bevarte kopiane.
   Nye meldingar bevarer rulleposisjonen når du les eldre historikk; bruk
   **Nye meldingar ↓** for å hoppe til botnen.
 - Nodeliste, nodeinfo, telemetri, posisjons- og traceroutehistorikk.
+- **Slett node** i nodevindauget ber om stadfesting med namn, full node-ID og
+  aktiv gateway. Kontakten blir fjerna frå den lokale radioen og MeshPi-lista
+  når daemonen har stadfesta slettinga. Historikken blir bevart, og ny trafikk
+  kan gjere at noden dukkar opp att. Den lokale gatewayen kan ikkje slettast.
+  Ved uavklart resultat blir knappen **Kontroller sletting**; han hentar berre
+  status og sender inga ny sletting.
+- **Utveksle nodeinfo** i nodevindauget sender den aktive gatewayen sin
+  nodeinformasjon direkte til den valde noden og ber om svar. Den offentlege
+  nøkkelen følgjer med når han er tilgjengeleg. Oversikt viser om svaret kom
+  med offentleg nøkkel; manglande svar blir vist etter to minutt. Det er minst
+  eitt minutt mellom slike førespurnader. Private nøklar og kanalnøklar blir
+  ikkje sende. Funksjonen endrar ikkje nodekonfigurasjon eller omgår radioen
+  si handtering av endra nøklar. Motparten kan avgrense kor ofte han svarar.
 - Nodevindauget held same plass og storleik ved fanebyte. Tittel, faner og
   handlingsknappar står fast medan innhaldet kan rullast.
 - Oversikt grupperer identitet, samband, siste telemetri og historikktal.
@@ -321,14 +358,20 @@ legacy-historikk ligg att i dei bevarte kopiane.
   vertsmaskina. Éin gateway er aktiv om gongen.
 - Historikkinnstillingar og stadfesta opprydding gjennom daemonen.
 - Éin delt IPC-watch for nettlesarane, med ny tilkopling og periodisk oppfrisking.
-- Tilpassa smal og brei skjerm; webgrensesnittet i 0.9.8 er på nynorsk.
-- Sol-/måneknappen i topplinja byter mellom lys og mørk modus. Valet blir lagra
+- Tilpassa smal og brei skjerm. MeshPi 0.9.12 har bokmål,
+  nynorsk og engelsk. Vel språk på innloggingssida eller i **Innstillingar → Språk**.
+  Valet blir lagra per nettlesar. Usende utkast blir bevarte ved språkbyte.
+- Under **Innstillingar** finn du **Tilkoplingar**, **Innlogging og nøklar**,
+  installasjonsrettleiing og knappen for lys eller mørk modus. Temavalet blir lagra
   lokalt i nettlesaren når lokal lagring er tilgjengeleg; før første val
   følgjer temaet systemet. Valet påverkar ikkje daemonen eller andre klientar.
+- Varselfeltet blir lukka automatisk etter ti sekund som standard. Slå av
+  **Lukk varsel automatisk etter 10 sekund** i Innstillingar dersom varsla skal
+  stå til du lukkar dei sjølv. Valet blir lagra i denne nettlesaren.
 - Varsel og feilmeldingar kan lukkast med ×.
 
 Webgrensesnittet har enno ikkje full funksjonslikskap med terminalklienten:
-språkbyte, gjenopning av arkiv, administrasjon av noderegister,
+gjenopning av arkiv, administrasjon av noderegister,
 systemtenestestyring og installasjon av oppdateringar står att. Lange loggar
 viser dei siste 100 observasjonane og chat dei siste 300 meldingane.
 
@@ -348,8 +391,8 @@ før frigjeving; ei handling som framleis står i kø eller blir handsama,
 held skrivefeltet sperra. Dette er ikkje varig deduplisering gjennom omstart eller omlasting
 av sida. Utkast og uavklarte sendingar blir ikkje lagra etter at sida blir lukka.
 
-Etter omstart av webprosessen må opne klientar logge inn igjen før dei kan
-hente private data. Nettlesaren fornyar den separate CSRF-verdien ved behov. Ei sending som blei avvist før handsaming, må startast på nytt
+Etter omstart av webprosessen kan opne klientar bruke ei innlogging som
+framleis er gyldig. Nettlesaren fornyar den separate CSRF-verdien ved behov. Ei sending som blei avvist før handsaming, må startast på nytt
 av brukaren. Ei sending med usikkert resultat blir aldri repetert automatisk.
 Sesjons- og JSON-kall har tidsavbrot etter 45 sekund i nettlesarar med
 AbortController. Tidsavbrot under sending gir usikker status og aldri
@@ -370,7 +413,7 @@ passkeys med dei nettlesarane og nøkkellagra brukarane faktisk har.
 
 WebAuthn bruker `fido2`. Plattformlåsene og dei signerte installasjonsfilene
 høyrer til same MeshPi-versjon. Kjeldekoden for denne utgåva ligg i
-[kjeldearkivet for 0.9.8](https://venes.org/meshpi/downloads/meshpi-0.9.8.tar.gz).
+[kjeldearkivet for 0.9.12](https://venes.org/meshpi/downloads/meshpi-0.9.12.tar.gz).
 Meld reproducerbare feil og testresultat i
 [GitHub Issues](https://github.com/rvenes/meshpi/issues), utan private data
 eller innloggingsløyndomar.

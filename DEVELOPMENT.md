@@ -1,7 +1,7 @@
 # Utviklingsstatus og vidare plan
 
-Sist oppdatert: 25. oktober 2026
-Utgåve: MeshPi 0.9.8 i ordinær kanal, med praktisk utprøving fram mot 1.0.0.
+Sist oppdatert: 11. november 2026
+Utgåve: MeshPi 0.9.12 i ordinær kanal, med praktisk utprøving fram mot 1.0.0.
 Eksisterande beta-verktøy blir bevart; webutgivinga opprettar ingen ny betakanal.
 
 Denne fila er den varige overleveringa mellom utviklingstrådar. Ho skal
@@ -22,7 +22,7 @@ publisere ei utgiving eller endre konfigurasjonen på ein Meshtastic-node.
 
 ## Produktretning
 
-### Privat webgrensesnitt i 0.9.8
+### Privat webgrensesnitt i 0.9.9
 
 Webgrensesnittet blir pakka saman med MeshPi, med valfri aktivering før
 installasjon. Linux/macOS har `--web`/`--no-web`, Windows har
@@ -58,7 +58,7 @@ oppdatering/tilbakeføring. Kvar utgiving må framleis følgje `RELEASING.md`;
 denne statusfila er ikkje dokumentasjon på at ein bestemt publiserings- eller
 plattformtest er fullført.
 
-[Kjeldearkivet for 0.9.8](https://venes.org/meshpi/downloads/meshpi-0.9.8.tar.gz)
+[Kjeldearkivet for 0.9.12](https://venes.org/meshpi/downloads/meshpi-0.9.12.tar.gz)
 er kjeldegrunnlaget for akkurat den utgivinga. GitHub-repoet kan ha ein annan
 revisjon. Feilrapportar og bidrag går gjennom
 [GitHub Issues](https://github.com/rvenes/meshpi/issues) og pull requests.
@@ -77,6 +77,56 @@ Det viktigaste skiljet mot ein vanleg klient er derfor:
 - trygg drift, oppdatering og tilbakeføring på Linux, macOS og Windows;
 - eitt tydeleg grensesnitt for operatørarbeid, ikkje alle funksjonane i den
   offisielle klienten.
+
+### 0.9.12: stabilisering før 1.0.0
+
+- Mottak og profilbyte er serialiserte, slik at ein pakke alltid blir lagra
+  under gatewayen som tok imot han.
+- Nodehandlingar i TUI og web er bundne til gatewayen brukaren såg. Opne
+  nodevindauge blir ugyldige ved gatewaybyte, og gamle svar blir forkasta.
+- Installatørane tillèt berre éi installering om gongen og held låsen gjennom
+  aktivering og tilbakeføring. Låsen blir frigjeven av operativsystemet.
+- TUI hentar status, samtalar, nodar og aktiv meldingshistorikk på nytt etter
+  brot i IPC-straumen, med bevarte utkast og utan å gjenta sendingar.
+- Traceroute reserverer ventesperra før sending, også med samtidige klientar.
+- Nodehandlingsknappane i web blir tilgjengelege att når ventesperra går ut.
+- Køyretidsavhengigheiter, plattformlåser og databaseskjema er uendra.
+
+### 0.9.11: innlogging i 30 dagar
+
+- Autentiserte webøkter varer i opptil 30 dagar og blir hugsa gjennom omstart
+  av nettlesaren og webprosessen. Berre tokenhashar blir lagra på disken.
+- Utlogging avsluttar den aktuelle økta. Ny eingongskode eller fjerning av
+  passkey tilbakekallar alle økter, også etter omstart.
+- Nøkkelendringar krev framleis innlogging dei siste fem minutta. Ingen
+  køyretidsavhengigheiter eller plattformlåser er endra.
+
+### 0.9.10: tre språk og trygg installasjonsdialog
+
+- Bokmål, nynorsk og engelsk i terminal, web, IPC og installatørar. Språkbyte
+  bevarer utkast, brukardata og ulagrede historikkval.
+- Webspørsmålet ved ny Linux-/Mac-installasjon skriv teksten direkte på alle
+  språk. Isolerte interaktive testar dekkjer både ja og nei.
+- Webtekstfunksjonen er samla i `web_assets/text.js`, lasta før dei andre
+  brukargrensesnittmodulane. Mocka klienttestar bruker same funksjon og UTF-8.
+- Ingen køyretidsavhengigheiter eller plattformlåser er endra.
+
+### 0.9.9: webrettingar og nodehandlingar
+
+- Større mobildialog med søk etter fullt namn, kortnamn og node-ID. Direkte DM
+  frå nodevindauget og primærkanalen først i samtalelista.
+- Nodeinfo-utveksling deler berre offentlege User-felt og offentleg nøkkel,
+  med svarfrist og sendesperre. Private nøklar og kanalnøklar blir ikkje sende.
+- Stadfesta nodesletting bruker den eksisterande daemon-flyten; historikken
+  blir bevart. Uvisst resultat blir kontrollert utan å sende slettinga igjen.
+- Felles ti-sekunds varsel med val for manuell lukking, og gjenoppretting etter
+  mellombelse sambands-/JSON-feil utan å gjenta uavklarte skriveoperasjonar.
+- Topplinje på same breidd som innhaldet, lys topplinje i lys modus og samla
+  app-/tilkoplingsval under Innstillingar.
+- Signaturverifisert varsel om ny stabil versjon i web, med mellomlagring,
+  terminalkommando og vedvarande informasjon under Innstillingar.
+
+- Windows-web bruker eksklusiv loopback-port og avviser portkonflikt ved oppstart.
 
 ### 0.9.8: fysisk historikkdeling og opprydding
 
@@ -291,6 +341,10 @@ og BLE i Docker, er ikkje ferdig plattformtesta.
 | 0.8.8b8 | Dato i Nodeinfo-loggar og synleg cooldown-nedtelling |
 | 0.8.9 | Stabil samling av dataskilje-, chat-, Nodeinfo- og Windows-rettingane frå 0.8.8-betaane |
 | 0.9.0 | Komplett nynorsk/engelsk terminalgrensesnitt med lagra språkval og direkte språkbyte |
+| 0.9.12 | Gatewaytryggleik, installasjonslås, TUI-resynk og retta ventesperrer |
+| 0.9.11 | Webinnlogging i 30 dagar, også etter omstart; varig tilbakekalling |
+| 0.9.10 | Bokmål, nynorsk og engelsk; retta installasjonsdialog og samla webtekst |
+| 0.9.9 | Mobilvenleg DM, nodeinfo-utveksling, stadfesta nodesletting, varselval og samla webinnstillingar |
 | 0.9.8 | Eiga databasefil per gateway, lagringsval og stadfesta opprydding i TUI/web, nodedetaljar og pip 26.2.2 |
 | 0.9.7 | Tydeleg web-info-hjelp for avslått web, Tailscale Serve og HTTPS-aktivering; servernamn i nettlesarfana |
 | 0.9.6 | Valfri webserver i installatørane, localhost-/Tailscale-innlogging, passkeys og betre webchat/nodevising |

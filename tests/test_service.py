@@ -1936,3 +1936,308 @@ def test_service_waits_without_connecting_when_no_profile_exists(tmp_path):
         time.sleep(0.01)
     value.stop()
     assert attempts[0].endpoint == "192.0.2.42:4403"
+
+
+def test_node_info_exchange_sends_owner_and_records_reply_without_keys(service):
+    import base64
+
+    from meshtastic.protobuf import mesh_pb2
+
+    value, interface, database = service
+    local = '!710365c8'
+    remote = '!11112222'
+    interface.nodes[local] = {'user': {
+        'id': local, 'longName': 'Lokal testnode', 'shortName': 'TEST',
+        'publicKey': base64.b64encode(b'p' * 32).decode(),
+        'privateKey': 'never-share',
+    }}
+    started = value.start_node_action('node_info_exchange', remote)
+    payload, kwargs = interface.data_calls[0]
+    assert payload.public_key == b'p' * 32
+    assert payload.long_name == 'Lokal testnode'
+    assert kwargs['destinationId'] == remote
+    assert kwargs['portNum'] == 4
+    assert kwargs['wantResponse'] is True
+    assert kwargs['channelIndex'] == 0
+    assert kwargs['hopLimit'] == 3
+    assert not interface.calls
+    assert not value.node_action_availability('node_info_exchange', remote)['available']
+    with pytest.raises(RuntimeError, match='sendast igjen'):
+        value.start_node_action('node_info_exchange', '!33334444')
+    # The SDK updates its registry before delivering the response callback.
+    interface.nodes[remote] = {'user': {'id': remote, 'longName': 'Fullt nytt namn'}}
+    kwargs['onResponse']({
+        'from': 0x11112222,
+        'decoded': {'portnum': 4, 'payload': mesh_pb2.User(
+            id=remote, long_name='Fullt nytt namn', public_key=b'r' * 32,
+        ).SerializeToString()},
+    })
+    completed = value.node_action_status(started['action_id'])
+    assert completed['status'] == 'completed'
+    assert completed['result'] == {
+        'node_info_received': True, 'public_key_received': True, 'public_key_shared': True,
+    }
+    saved = database.list_node_actions(remote, action='node_info_exchange')
+    assert saved[0]['result'] == completed['result']
+    assert 'never-share' not in json.dumps(saved)
+    assert database.get_node(remote)['long_name'] == 'Fullt nytt namn'
+    assert started['action_id'] not in value._node_action_timers
+
+
+def test_node_info_exchange_requires_connection_owner_and_remote_target(service):
+    value, interface, _ = service
+    with pytest.raises(ValueError, match='lokale noden'):
+        value.start_node_action('node_info_exchange', '!710365c8')
+    with pytest.raises(RuntimeError, match='ikkje klar'):
+        value.start_node_action('node_info_exchange', '!11112222')
+    assert not interface.data_calls
+    value._interface = None
+    with pytest.raises(RuntimeError, match='ikkje tilkopla'):
+        value.start_node_action('node_info_exchange', '!11112222')
+
+
+def test_node_info_exchange_supports_own_registry_by_num_and_missing_public_key(service):
+    value, interface, _ = service
+    interface.nodesByNum = {0x710365c8: {'user': {'longName': 'Lokal'}}}
+    started = value.start_node_action('node_info_exchange', '!11112222')
+    payload, kwargs = interface.data_calls[0]
+    assert not payload.public_key
+    kwargs['onResponse']({
+        'fromId': '!11112222', 'decoded': {'portnum': 4, 'user': {'longName': 'Anna'}},
+    })
+    result = value.node_action_status(started['action_id'])['result']
+    assert result == {
+        'node_info_received': True, 'public_key_received': False, 'public_key_shared': False,
+    }
+
+
+def test_node_info_send_failure_does_not_expose_payload_or_consume_cooldown(service):
+    value, interface, database = service
+    interface.nodes['!710365c8'] = {'user': {'longName': 'Lokal'}}
+
+    def fail(*args, **kwargs):
+        raise RuntimeError('sensitive-payload')
+
+    interface.sendData = fail
+    with pytest.raises(RuntimeError, match='Klarte ikkje sende nodeinfo') as error:
+        value.start_node_action('node_info_exchange', '!11112222')
+    assert 'sensitive-payload' not in str(error.value)
+    assert value.node_action_availability('node_info_exchange', '!11112222')['available']
+    saved = database.list_node_actions('!11112222', action='node_info_exchange')
+    assert saved[0]['status'] == 'failed'
+    assert 'sensitive-payload' not in json.dumps(saved)
+
+
+@pytest.mark.parametrize('switched', [False, True])
+def test_node_info_exchange_timeout_and_gateway_switch_never_report_success(service, switched):
+    value, interface, _ = service
+    interface.nodes['!710365c8'] = {'user': {'longName': 'Lokal'}}
+    started = value.start_node_action('node_info_exchange', '!11112222')
+    callback = interface.data_calls[0][1]['onResponse']
+    if switched:
+        value._interface = FakeInterface()
+        callback({'fromId': '!11112222', 'decoded': {'portnum': 4, 'user': {'longName': 'A'}}})
+    else:
+        interface.responseHandlers[991] = object()
+        value._node_action_timers[started['action_id']].function()
+        assert 991 not in interface.responseHandlers
+        callback({'fromId': '!11112222', 'decoded': {'portnum': 4, 'user': {'longName': 'A'}}})
+    assert value.node_action_status(started['action_id'])['status'] == 'failed'
+
+
+@pytest.mark.parametrize(("decoded", "table"), [
+    ({"portnum": "TEXT_MESSAGE_APP", "text": "Frå den gamle gatewayen"}, "messages"),
+    ({"portnum": "TELEMETRY_APP", "telemetry": {
+        "deviceMetrics": {"batteryLevel": 82},
+    }}, "telemetry_samples"),
+    ({"portnum": "POSITION_APP", "position": {
+        "latitudeI": 601234567, "longitudeI": 51234567,
+    }}, "positions"),
+])
+def test_receive_keeps_original_gateway_during_concurrent_profile_switch(
+    tmp_path, monkeypatch, decoded, table,
+):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from meshpi.gateway_database import GatewayDatabase
+
+    database = GatewayDatabase(tmp_path / "history.sqlite")
+    database.initialize()
+    value = MeshtasticService(
+        Settings(meshtastic_host="192.0.2.42", database_path=database.path),
+        database, EventHub(),
+    )
+    old_gateway, new_gateway = "!11111111", "!22222222"
+    old_interface, new_interface = FakeInterface(), FakeInterface()
+    value._interface = old_interface
+    value._local_node_id = old_gateway
+    value._sync_channels(old_interface)
+    value._set_status("tilkopla")
+    entered, resume, switching, switched = (threading.Event() for _ in range(4))
+
+    def pause_receive(_packet):
+        entered.set()
+        assert resume.wait(5)
+
+    monkeypatch.setattr(value, "_update_routing_ack", pause_receive)
+
+    def switch_gateway():
+        switching.set()
+        value.connect(target="tcp://192.0.2.43")
+        with value._lock:
+            value._interface = new_interface
+            value._local_node_id = new_gateway
+            value._sync_channels(new_interface)
+            value._set_status("tilkopla")
+        switched.set()
+
+    packet = {
+        "id": 601, "fromId": "!33333333", "toId": "^all", "rxTime": 1_700_000_000,
+        "decoded": decoded,
+    }
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            receiving = pool.submit(value._on_receive, packet, old_interface)
+            try:
+                assert entered.wait(5)
+                switch = pool.submit(switch_gateway)
+                assert switching.wait(5)
+                assert not switched.wait(0.2)
+            finally:
+                resume.set()
+            receiving.result(timeout=5)
+            switch.result(timeout=5)
+        assert database.history_settings(old_gateway)["counts"][table] == 1
+        assert database.history_settings(new_gateway)["counts"][table] == 0
+        assert database.get_node("!33333333", local_node_id=old_gateway) is not None
+        assert database.get_node("!33333333", local_node_id=new_gateway) is None
+        # A late packet from the closed interface is ignored after the switch.
+        value._on_receive(packet | {"id": 602}, old_interface)
+        assert database.history_settings(new_gateway)["counts"][table] == 0
+        assert not old_interface.calls and not new_interface.calls
+    finally:
+        value.stop()
+
+
+def test_concurrent_traceroutes_only_send_one_request(service, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    value, interface, _ = service
+    sending, release, second_sent, second_attempt = (threading.Event() for _ in range(4))
+
+    def delayed_send(data, **kwargs):
+        interface.data_calls.append((data, kwargs))
+        if len(interface.data_calls) > 1:
+            second_sent.set()
+        sending.set()
+        assert release.wait(5)
+        return SentPacket()
+
+    def second_request():
+        second_attempt.set()
+        return value.start_node_action("traceroute", "!33334444")
+
+    monkeypatch.setattr(interface, "sendData", delayed_send)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(value.start_node_action, "traceroute", "!11112222")
+            try:
+                assert sending.wait(5)
+                second = pool.submit(second_request)
+                assert second_attempt.wait(5)
+                assert not second_sent.wait(0.2)
+            finally:
+                release.set()
+            assert first.result(timeout=5)["status"] == "started"
+            with pytest.raises(RuntimeError, match="sendast igjen"):
+                second.result(timeout=5)
+        assert len(interface.data_calls) == 1
+    finally:
+        value.stop()
+
+
+@pytest.mark.parametrize("failure", ["database", "send"])
+def test_traceroute_failure_releases_cooldown(service, monkeypatch, failure):
+    value, interface, database = service
+    original = database.upsert_node_action if failure == "database" else interface.sendData
+
+    def fail(*_args, **_kwargs):
+        raise OSError("mocked failure before queueing")
+
+    target, name = (
+        (database, "upsert_node_action") if failure == "database" else (interface, "sendData")
+    )
+    monkeypatch.setattr(target, name, fail)
+    try:
+        with pytest.raises((OSError, RuntimeError)):
+            value.start_node_action("traceroute", "!11112222")
+        assert value.node_action_availability("traceroute", "!11112222")["available"]
+        monkeypatch.setattr(target, name, original)
+        assert value.start_node_action("traceroute", "!11112222")["status"] == "started"
+        assert len(interface.data_calls) == 1
+    finally:
+        value.stop()
+
+
+@pytest.mark.parametrize("action", ["traceroute", "position_exchange", "node_info_exchange"])
+def test_node_actions_reject_stale_expected_gateway_without_sending(service, action):
+    value, interface, database = service
+    with pytest.raises(RuntimeError, match="aktive radioen er endra"):
+        value.start_node_action(action, "!11112222", expected_local_node_id="!22222222")
+    assert not interface.calls and not interface.data_calls
+    assert database.list_node_actions("!11112222") == []
+
+
+@pytest.mark.parametrize("action", ["traceroute", "position_exchange", "node_info_exchange"])
+def test_expected_gateway_remains_bound_until_node_action_is_sent(service, monkeypatch, action):
+    from concurrent.futures import ThreadPoolExecutor
+
+    value, interface, _ = service
+    local = value._local_node_id
+    interface.nodes[local] = {"user": {"id": local, "longName": "Lokal testnode"}}
+    new_interface = FakeInterface()
+    new_interface.nodes["!22222222"] = {
+        "user": {"id": "!22222222", "longName": "Ny gateway"},
+    }
+    entered, resume, switching, switched = (threading.Event() for _ in range(4))
+    method_name = {
+        "traceroute": "_start_traceroute",
+        "position_exchange": "_start_position_exchange",
+        "node_info_exchange": "_start_node_info_exchange",
+    }[action]
+    original = getattr(value, method_name)
+
+    def paused_start(node_id):
+        entered.set()
+        assert resume.wait(5)
+        return original(node_id)
+
+    def switch_gateway():
+        switching.set()
+        value.connect(target="tcp://192.0.2.43")
+        with value._lock:
+            value._interface = new_interface
+            value._local_node_id = "!22222222"
+            value._set_status("tilkopla")
+        switched.set()
+
+    monkeypatch.setattr(value, method_name, paused_start)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            request = pool.submit(
+                value.start_node_action, action, "!11112222", expected_local_node_id=local,
+            )
+            try:
+                assert entered.wait(5)
+                switch = pool.submit(switch_gateway)
+                assert switching.wait(5)
+                assert not switched.wait(0.2)
+            finally:
+                resume.set()
+            result = request.result(timeout=5)
+            switch.result(timeout=5)
+        assert result["local_node_id"] == local
+        assert len(interface.data_calls) == 1
+        assert not new_interface.data_calls
+    finally:
+        value.stop()

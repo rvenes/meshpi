@@ -8,6 +8,9 @@
   const status = document.getElementById("install-status");
   const mode = window.matchMedia("(display-mode: standalone)");
   const basePath = document.documentElement.dataset.basePath;
+  let statusSource = "";
+  function setStatus(source) {statusSource = source; status.textContent = webText(source);}
+  if (typeof meshpiI18n !== "undefined") meshpiI18n.onChange(() => setStatus(statusSource));
   let pendingPrompt = null;
   let prompting = false;
 
@@ -18,13 +21,16 @@
 
   update();
   if (typeof mode.addEventListener === "function") mode.addEventListener("change", update);
-  button.addEventListener("click", () => dialog.showModal());
+  button.addEventListener("click", () => {
+    document.getElementById("settings-dialog")?.close();
+    dialog.showModal();
+  });
   document.getElementById("close-install").addEventListener("click", () => dialog.close());
 
   window.addEventListener("beforeinstallprompt", event => {
     event.preventDefault();
     pendingPrompt = event;
-    status.textContent = "Nettlesaren er klar til å installere MeshPi.";
+    setStatus("Nettlesaren er klar til å installere MeshPi.");
     update();
   });
   window.addEventListener("appinstalled", () => {
@@ -43,9 +49,9 @@
       await prompt.prompt();
       const choice = await prompt.userChoice;
       if (choice.outcome === "accepted") dialog.close();
-      else status.textContent = "Installasjonen blei avbroten. Du kan prøve igjen frå nettlesarmenyen.";
+      else setStatus("Installasjonen blei avbroten. Du kan prøve igjen frå nettlesarmenyen.");
     } catch (_) {
-      status.textContent = "Installasjonen kunne ikkje startast. Bruk rettleiinga for nettlesaren din.";
+      setStatus("Installasjonen kunne ikkje startast. Bruk rettleiinga for nettlesaren din.");
     } finally {
       prompting = false;
       nativeButton.disabled = false;
@@ -54,12 +60,12 @@
   });
 
   if (!window.isSecureContext) {
-    status.textContent = "Opne den private HTTPS-adressa for å installere appen på denne eininga.";
+    setStatus("Opne den private HTTPS-adressa for å installere appen på denne eininga.");
   } else if ("serviceWorker" in window.navigator) {
     window.navigator.serviceWorker.register(`${basePath}/sw.js`, {
       scope: `${basePath}/`, updateViaCache: "none",
     }).catch(() => {
-      status.textContent = "Appstøtta kunne ikkje aktiverast. Last sida på nytt, eller bruk nettlesarmenyen.";
+      setStatus("Appstøtta kunne ikkje aktiverast. Last sida på nytt, eller bruk nettlesarmenyen.");
     });
   }
 })();

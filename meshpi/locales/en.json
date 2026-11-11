@@ -4,11 +4,12 @@
   "language.saved": "Language set to {language}.",
   "language.name.en": "English",
   "language.name.nn": "Nynorsk",
-  "language.usage": "usage: meshpi language [nn|en]",
+  "language.usage": "usage: meshpi language [nb|nn|en]",
   "common.cancel": "Cancel",
   "common.close": "Close",
   "common.error": "Error",
   "common.next": "Next",
   "common.previous": "Previous",
-  "common.unknown": "Unknown"
+  "common.unknown": "Unknown",
+  "language.name.nb": "Bokmål"
 }

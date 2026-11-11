@@ -11,7 +11,8 @@ TEST_MODE="${MESHPI_TEST_MODE:-0}"
 detect_language() {
     locale_hint="${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}"
     case "$locale_hint" in
-        nn* | NN* | nb* | NB* | no* | NO*) printf '%s\n' nn ;;
+        nn* | NN*) printf '%s\n' nn ;;
+        nb* | NB* | no* | NO*) printf '%s\n' nb ;;
         *) printf '%s\n' en ;;
     esac
 }
@@ -21,78 +22,138 @@ LANGUAGE="${MESHPI_LANGUAGE:-$DETECTED_LANGUAGE}"
 
 message() {
     case "$1:$LANGUAGE" in
-        invalid_language:nn) printf '%s' 'Språket må vere «nn» eller «en».' ;;
-        invalid_language:en) printf '%s' 'Language must be “nn” or “en”.' ;;
+        invalid_language:nn) printf '%s' 'Språket må vere «nb», «nn» eller «en».' ;;
+        invalid_language:nb) printf '%s' 'Språket må være «nb», «nn» eller «en».' ;;
+        invalid_language:en) printf '%s' 'Language must be “nb”, “nn” or “en”.' ;;
         unknown_argument:nn) printf '%s' 'Ukjent argument: %s' ;;
+        install_busy:nn) printf '%s' 'Ei anna MeshPi-installering køyrer. Vent til ho er ferdig og prøv igjen.' ;;
+        install_busy:nb) printf '%s' 'En annen MeshPi-installasjon kjører. Vent til den er ferdig og prøv igjen.' ;;
+        install_busy:en) printf '%s' 'Another MeshPi installation is running. Wait for it to finish and try again.' ;;
+        unknown_argument:nb) printf '%s' 'Ukjent argument: %s' ;;
         unknown_argument:en) printf '%s' 'Unknown argument: %s' ;;
         invalid_mode:nn) printf '%s' 'MESHPI_MODE må vere «always» eller «session».' ;;
+        invalid_mode:nb) printf '%s' 'MESHPI_MODE må være «always» eller «session».' ;;
         invalid_mode:en) printf '%s' 'MESHPI_MODE must be “always” or “session”.' ;;
         root_required:nn) printf '%s' 'Køyr installasjonen som root.' ;;
+        root_required:nb) printf '%s' 'Kjør installasjonen som root.' ;;
         root_required:en) printf '%s' 'Run the installation as root.' ;;
         root_command:nn) printf '%s' 'Last ned install-linux.sh og køyr: sudo sh install-linux.sh' ;;
+        root_command:nb) printf '%s' 'Last ned install-linux.sh og kjør: sudo sh install-linux.sh' ;;
         root_command:en) printf '%s' 'Download install-linux.sh and run: sudo sh install-linux.sh' ;;
         session_without_sudo:nn) printf '%s' 'Session-modus skal installerast utan sudo.' ;;
+        session_without_sudo:nb) printf '%s' 'Session-modus skal installeres uten sudo.' ;;
         session_without_sudo:en) printf '%s' 'Session mode must be installed without sudo.' ;;
         check_python:nn) printf '%s' 'Kontrollerer Python 3.11 eller nyare …' ;;
+        check_python:nb) printf '%s' 'Kontrollerer Python 3.11 eller nyere …' ;;
         check_python:en) printf '%s' 'Checking for Python 3.11 or newer …' ;;
         missing_command:nn) printf '%s' 'Manglar kommandoen «%s».' ;;
+        missing_command:nb) printf '%s' 'Mangler kommandoen «%s».' ;;
         missing_command:en) printf '%s' 'Required command “%s” is missing.' ;;
         systemd_required:nn) printf '%s' 'Always-modus krev systemd og ein godkjend systemctl-sti.' ;;
+        systemd_required:nb) printf '%s' 'Always-modus krever systemd og en godkjent systemctl-sti.' ;;
         systemd_required:en) printf '%s' 'Always mode requires systemd and an approved systemctl path.' ;;
         python_required:nn) printf '%s' 'MeshPi krev Python 3.11 eller nyare.' ;;
+        python_required:nb) printf '%s' 'MeshPi krever Python 3.11 eller nyere.' ;;
         python_required:en) printf '%s' 'MeshPi requires Python 3.11 or newer.' ;;
         debian_python:nn) printf '%s' 'På Debian/Raspberry Pi OS: sudo apt install python3 python3-venv' ;;
+        debian_python:nb) printf '%s' 'På Debian/Raspberry Pi OS: sudo apt install python3 python3-venv' ;;
         debian_python:en) printf '%s' 'On Debian/Raspberry Pi OS: sudo apt install python3 python3-venv' ;;
         venv_failed:nn) printf '%s' 'Python %s kan ikkje opprette virtuelle miljø.' ;;
+        venv_failed:nb) printf '%s' 'Python %s kan ikke opprette virtuelle miljøer.' ;;
         venv_failed:en) printf '%s' 'Python %s cannot create virtual environments.' ;;
         debian_venv:nn) printf '%s' 'På Debian/Ubuntu: sudo apt install python%s-venv' ;;
+        debian_venv:nb) printf '%s' 'På Debian/Ubuntu: sudo apt install python%s-venv' ;;
         debian_venv:en) printf '%s' 'On Debian/Ubuntu: sudo apt install python%s-venv' ;;
         distro_venv:nn) printf '%s' 'Alternativt kan distribusjonen bruke pakken python3-venv.' ;;
+        distro_venv:nb) printf '%s' 'Alternativt kan distribusjonen bruke pakken python3-venv.' ;;
         distro_venv:en) printf '%s' 'Alternatively, your distribution may provide the python3-venv package.' ;;
         shared_group:nn) printf '%s' 'Primærgruppa til %s er delt av fleire kontoar.' ;;
+        shared_group:nb) printf '%s' 'Primærgruppen til %s er delt av flere kontoer.' ;;
         shared_group:en) printf '%s' 'The primary group of %s is shared by multiple accounts.' ;;
         private_group:nn) printf '%s' 'MeshPi krev ei privat primærgruppe for trygg IPC-tilgang.' ;;
+        private_group:nb) printf '%s' 'MeshPi krever en privat primærgruppe for trygg IPC-tilgang.' ;;
         private_group:en) printf '%s' 'MeshPi requires a private primary group for secure IPC access.' ;;
         fetch_manifest:nn) printf '%s' 'Hentar og kontrollerer signert versjonsinformasjon …' ;;
+        fetch_manifest:nb) printf '%s' 'Henter og kontrollerer signert versjonsinformasjon …' ;;
         fetch_manifest:en) printf '%s' 'Downloading and checking signed version information …' ;;
         download_release:nn) printf '%s' 'Lastar ned MeshPi %s og låste avhengigheiter …' ;;
+        download_release:nb) printf '%s' 'Laster ned MeshPi %s og låste avhengigheter …' ;;
         download_release:en) printf '%s' 'Downloading MeshPi %s and locked dependencies …' ;;
         check_hashes:nn) printf '%s' 'Kontrollerer SHA-256 for alle nedlasta filer …' ;;
+        check_hashes:nb) printf '%s' 'Kontrollerer SHA-256 for alle nedlastede filer …' ;;
         check_hashes:en) printf '%s' 'Checking SHA-256 for all downloaded files …' ;;
         bad_sha:nn) printf '%s' 'Ugyldig SHA-256 i version.json' ;;
+        bad_sha:nb) printf '%s' 'Ugyldig SHA-256 i version.json' ;;
         bad_sha:en) printf '%s' 'Invalid SHA-256 in version.json' ;;
         bad_sha_length:nn) printf '%s' 'Ugyldig SHA-256-lengd i version.json' ;;
+        bad_sha_length:nb) printf '%s' 'Ugyldig SHA-256-lengde i version.json' ;;
         bad_sha_length:en) printf '%s' 'Invalid SHA-256 length in version.json' ;;
         bad_lock_hash:nn) printf '%s' 'Ugyldig låsefil-hash i version.json' ;;
+        bad_lock_hash:nb) printf '%s' 'Ugyldig låsefil-hash i version.json' ;;
         bad_lock_hash:en) printf '%s' 'Invalid lock-file hash in version.json' ;;
         sha_mismatch:nn) printf '%s' 'SHA-256 stemmer ikkje. Installasjonen er avbroten.' ;;
+        sha_mismatch:nb) printf '%s' 'SHA-256 stemmer ikke. Installasjonen er avbrutt.' ;;
         sha_mismatch:en) printf '%s' 'SHA-256 does not match. Installation aborted.' ;;
         lock_mismatch:nn) printf '%s' 'SHA-256 for låsefila stemmer ikkje. Installasjonen er avbroten.' ;;
+        lock_mismatch:nb) printf '%s' 'SHA-256 for låsefilen stemmer ikke. Installasjonen er avbrutt.' ;;
         lock_mismatch:en) printf '%s' 'The lock-file SHA-256 does not match. Installation aborted.' ;;
         create_environment:nn) printf '%s' 'Opprettar programmiljø og installerer avhengigheiter. Dette kan ta nokre minutt …' ;;
+        create_environment:nb) printf '%s' 'Oppretter programmiljø og installerer avhengigheter. Dette kan ta noen minutter …' ;;
         create_environment:en) printf '%s' 'Creating the application environment and installing dependencies. This may take a few minutes …' ;;
         already_installed:nn) printf '%s' 'MeshPi %s er alt installert; bruker programfilene på nytt …' ;;
+        already_installed:nb) printf '%s' 'MeshPi %s er allerede installert; bruker programfilene på nytt …' ;;
         already_installed:en) printf '%s' 'MeshPi %s is already installed; reusing the application files …' ;;
         selftest:nn) printf '%s' 'Kontrollerer installert versjon og køyrer sjølvtest …' ;;
+        selftest:nb) printf '%s' 'Kontrollerer installert versjon og kjører selvtest …' ;;
         selftest:en) printf '%s' 'Checking the installed version and running the self-test …' ;;
         wrong_version:nn) printf '%s' 'Pakken rapporterer «%s», venta MeshPi %s.' ;;
+        wrong_version:nb) printf '%s' 'Pakken rapporterer «%s», forventet MeshPi %s.' ;;
         wrong_version:en) printf '%s' 'The package reports “%s”; expected MeshPi %s.' ;;
         activate:nn) printf '%s' 'Aktiverer MeshPi og konfigurerer bakgrunnstenesta …' ;;
+        activate:nb) printf '%s' 'Aktiverer MeshPi og konfigurerer bakgrunnstjenesten …' ;;
         activate:en) printf '%s' 'Activating MeshPi and configuring the background service …' ;;
         service_description:nn) printf '%s' 'MeshPi Meshtastic CLI-teneste' ;;
+        service_description:nb) printf '%s' 'MeshPi Meshtastic-bakgrunnstjeneste' ;;
         service_description:en) printf '%s' 'MeshPi Meshtastic CLI service' ;;
         rollback:nn) printf '%s' 'Oppdateringa feila. Førre versjon er sett tilbake.' ;;
+        rollback:nb) printf '%s' 'Oppdateringen mislyktes. Forrige versjon er gjenopprettet.' ;;
         rollback:en) printf '%s' 'The update failed. The previous version has been restored.' ;;
         no_rollback:nn) printf '%s' 'Oppdateringa feila, og ingen førre versjon finst.' ;;
+        no_rollback:nb) printf '%s' 'Oppdateringen mislyktes, og ingen tidligere versjon finnes.' ;;
         no_rollback:en) printf '%s' 'The update failed, and no previous version is available.' ;;
         managed_pip:nn) printf '%s' 'MeshPi held pip og programpakkane oppdaterte gjennom testa utgivingar. Bruk meshpi update.' ;;
+        managed_pip:nb) printf '%s' 'MeshPi holder pip og programpakkene oppdatert gjennom testede utgivelser. Bruk meshpi update.' ;;
         managed_pip:en) printf '%s' 'MeshPi updates pip and dependencies through tested releases. Use meshpi update.' ;;
         complete:nn) printf '%s' 'Installasjonen er ferdig.' ;;
+        complete:nb) printf '%s' 'Installasjonen er ferdig.' ;;
         complete:en) printf '%s' 'Installation is complete.' ;;
         installed:nn) printf '%s' 'MeshPi %s er installert i %s-modus.' ;;
+        installed:nb) printf '%s' 'MeshPi %s er installert i %s-modus.' ;;
         installed:en) printf '%s' 'MeshPi %s is installed in %s mode.' ;;
         start:nn) printf '%s' 'Start med: meshpi' ;;
+        start:nb) printf '%s' 'Start med: meshpi' ;;
         start:en) printf '%s' 'Start with: meshpi' ;;
+        web_prompt:nn) printf '%s' 'Vil du aktivere webgrensesnittet? [j/N] ' ;;
+        web_prompt:nb) printf '%s' 'Vil du aktivere webgrensesnittet? [j/N] ' ;;
+        web_prompt:en) printf '%s' 'Enable the web interface? [y/N] ' ;;
+        web_invalid:nn) printf '%s' 'WEB_ENABLED må vere true eller false.' ;;
+        web_invalid:nb) printf '%s' 'WEB_ENABLED må være true eller false.' ;;
+        web_invalid:en) printf '%s' 'WEB_ENABLED must be true or false.' ;;
+        web_off:nn) printf '%s' 'Webgrensesnittet er avslått. Køyr meshpi web-info for steg til aktivering og tilgang.' ;;
+        web_off:nb) printf '%s' 'Webgrensesnittet er slått av. Kjør meshpi web-info for hjelp til aktivering og tilgang.' ;;
+        web_off:en) printf '%s' 'The web interface is disabled. Run meshpi web-info for activation and access instructions.' ;;
+        web_address:nn) printf '%s' 'Webgrensesnitt: %s%s/' ;;
+        web_address:nb) printf '%s' 'Webgrensesnitt: %s%s/' ;;
+        web_address:en) printf '%s' 'Web interface: %s%s/' ;;
+        web_start:nn) printf '%s' 'Start webgrensesnittet med: meshpi web' ;;
+        web_start:nb) printf '%s' 'Start webgrensesnittet med: meshpi web' ;;
+        web_start:en) printf '%s' 'Start the web interface with: meshpi web' ;;
+        web_code:nn) printf '%s' 'Hent ein eingongskode for innlogging med: meshpi web-code' ;;
+        web_code:nb) printf '%s' 'Hent en engangskode for innlogging med: meshpi web-code' ;;
+        web_code:en) printf '%s' 'Get a one-time login code with: meshpi web-code' ;;
+        web_serve:nn) printf '%s' 'Tilgang via Tailscale Serve må setjast opp separat. Køyr meshpi web-info for kommandoane.' ;;
+        web_serve:nb) printf '%s' 'Tilgang via Tailscale Serve må settes opp separat. Kjør meshpi web-info for kommandoene.' ;;
+        web_serve:en) printf '%s' 'Access through Tailscale Serve requires separate setup. Run meshpi web-info for the commands.' ;;
         *) return 1 ;;
     esac
 }
@@ -115,6 +176,24 @@ install_step() {
     format="$(message "$key")"
     printf '[%s/8] ' "$number"
     printf "$format\n" "$@"
+}
+
+acquire_install_lock() {
+    mkdir -p "$1"
+    install_umask="$(umask)"
+    umask 077
+    # Keep the inode and fd open through activation and rollback. The OS releases
+    # the lock even after an interrupted installer; never unlink the lock file.
+    exec 9>>"$1/.install.lock"
+    umask "$install_umask"
+    if ! "$PYTHON" -c 'import fcntl, sys
+try:
+    fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    sys.exit(1)'; then
+        say_error install_busy
+        exit 1
+    fi
 }
 
 set_env_value() {
@@ -173,7 +252,7 @@ choose_web() {
         WEB_ENABLED="$(get_env_value WEB_ENABLED)"
         WEB_ENABLED="${WEB_ENABLED:-false}"
         if [ "$FRESH_INSTALL" = "1" ] && [ -t 0 ]; then
-            printf '%s' 'Vil du aktivere webgrensesnittet? [j/N] '
+            message web_prompt
             read -r answer || answer=
             case "$answer" in j | J | ja | Ja | y | Y | yes) WEB_ENABLED=true ;; esac
         fi
@@ -182,7 +261,7 @@ choose_web() {
     fi
     case "$WEB_ENABLED" in
         true | false) ;;
-        *) printf '%s\n' 'WEB_ENABLED må vere true eller false.' >&2; return 1 ;;
+        *) say_error web_invalid; return 1 ;;
     esac
 }
 
@@ -195,18 +274,18 @@ save_web_settings() {
 
 show_web_access() {
     if [ "$WEB_ENABLED" != "true" ]; then
-        printf '%s\n' 'Webgrensesnittet er avslått. Køyr meshpi web-info for steg til aktivering og tilgang.'
+        say web_off
         return 0
     fi
     web_url="$(get_env_value WEB_PUBLIC_URL)"
     web_port="$(get_env_value WEB_PORT)"
     web_path="$(get_env_value WEB_BASE_PATH)"
-    printf 'Webgrensesnitt: %s%s/\n' "${web_url:-http://localhost:$web_port}" "$web_path"
+    say web_address "${web_url:-http://localhost:$web_port}" "$web_path"
     if [ "$MODE" = "session" ]; then
-        printf '%s\n' 'Start webgrensesnittet med: meshpi web'
+        say web_start
     fi
-    printf '%s\n' 'Hent ein eingongskode for innlogging med: meshpi web-code'
-    printf '%s\n' 'Tilgang via Tailscale Serve må setjast opp separat. Køyr meshpi web-info for kommandoane.'
+    say web_code
+    say web_serve
 }
 
 snapshot_file() {
@@ -228,6 +307,7 @@ for argument in "$@"; do
         --mode=always) MODE=always ;;
         --mode=session) MODE=session ;;
         --no-service) MODE=session ;;
+        --language=nb) LANGUAGE=nb ;;
         --language=nn) LANGUAGE=nn ;;
         --language=en) LANGUAGE=en ;;
         --language=*) say_error invalid_language; exit 2 ;;
@@ -236,7 +316,7 @@ for argument in "$@"; do
 done
 
 case "$LANGUAGE" in
-    nn | en) ;;
+    nb | nn | en) ;;
     *) LANGUAGE="$DETECTED_LANGUAGE"; say_error invalid_language; exit 2 ;;
 esac
 
@@ -357,6 +437,7 @@ FRESH_INSTALL=0
 if [ ! -e "$PREFIX" ] && [ ! -e "$STATE_DIR" ] && [ ! -e "$CONFIG_FILE" ]; then
     FRESH_INSTALL=1
 fi
+acquire_install_lock "$PREFIX"
 choose_web
 
 CLIENT_USER="$INSTALL_USER"
@@ -406,6 +487,14 @@ messages = {
         "unknown_key": "Ukjend signeringsnøkkel",
         "invalid_signature": "Ugyldig manifestsignatur",
         "signature_mismatch": "Signaturen på versjonsmanifestet stemmer ikkje",
+    },
+    "nb": {
+        "missing_signature": "Versjonsmanifestet mangler signatur",
+        "unknown_algorithm": "Ukjent signaturalgoritme",
+        "revoked_key": "Tilbakekalt signeringsnøkkel",
+        "unknown_key": "Ukjent signeringsnøkkel",
+        "invalid_signature": "Ugyldig manifestsignatur",
+        "signature_mismatch": "Signaturen på versjonsmanifestet stemmer ikke",
     },
     "en": {
         "missing_signature": "The version manifest is missing a signature",
@@ -468,7 +557,7 @@ for part in sys.argv[2].split("."):
 if not isinstance(value, str) or not value:
     raise SystemExit(
         "Ugyldig version.json"
-        if sys.argv[3] == "nn"
+        if sys.argv[3] in {"nn", "nb"}
         else "Invalid version.json"
     )
 print(value)
@@ -491,14 +580,12 @@ pattern = r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:(?:a|b|rc)(0|[1-9]\d*))?"
 if re.fullmatch(pattern, version) is None:
     raise SystemExit(
         "Ugyldig versjon i manifestet"
-        if sys.argv[3] == "nn"
+        if sys.argv[3] in {"nn", "nb"}
         else "Invalid version in the manifest"
     )
 if filename != f"meshpi-{version}-py3-none-any.whl":
     raise SystemExit(
-        "Ugyldig pakkenamn i manifestet"
-        if sys.argv[3] == "nn"
-        else "Invalid package name in the manifest"
+        {"nn": "Ugyldig pakkenamn i manifestet", "nb": "Ugyldig pakkenavn i manifestet", "en": "Invalid package name in the manifest"}[sys.argv[3]]
     )
 PY
 case "$EXPECTED_SHA256" in

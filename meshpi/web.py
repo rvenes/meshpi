@@ -9,6 +9,7 @@ import hashlib
 import html
 import json
 import logging
+import os
 import queue
 import re
 import secrets
@@ -23,30 +24,38 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from ipaddress import IPv4Address
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
+from meshpi import __version__
 from meshpi.channels import parse_dm_conversation_id, parse_public_conversation_id
 from meshpi.client import CLIError, open_export, open_watch, request
 from meshpi.config import Settings
 from meshpi.events import EventHub
-from meshpi.i18n import using_language
+from meshpi.i18n import (
+    localize_response as _daemon_result,
+)
+from meshpi.i18n import normalize_language, tr, using_language
+from meshpi.i18n import translate_known_text as _daemon_text
 from meshpi.models import normalize_node_id
+from meshpi.update import UpdateCheckError, check_for_update
 from meshpi.web_auth import AuthError, AuthStore, Session
 
 LOG = logging.getLogger(__name__)
 MAX_BODY = 16_384
 READ_COMMANDS = {
+    "update_check",
     "history_settings", "history_cleanup_preview",
     "status", "nodes", "node_overview", "node_telemetry", "node_positions",
     "node_actions", "node_action_availability", "channels", "conversations", "messages",
     "connections", "local_node_info", "node_action_status",
 }
 WRITE_COMMANDS = {
-    "history_settings_set", "history_cleanup",
+    "history_settings_set", "history_cleanup", "remove_nodes",
     "send_public", "send_dm", "archive_conversation", "unarchive_conversation",
     "connect", "discover_connections", "discover_ble_connections", "node_action",
 }
 FIELDS = {
+    "update_check": set(),
     "history_settings": set(),
     "history_settings_set": {"expected_local_node_id", "retention_days", "confirmed"},
     "history_cleanup_preview": {"expected_local_node_id", "scope", "older_than_days"},
@@ -67,73 +76,96 @@ FIELDS = {
     "unarchive_conversation": {"node_id", "conversation"},
     "connect": {"profile_id", "target", "name"},
     "discover_connections": {"include_ble"}, "discover_ble_connections": set(),
-    "node_action": {"action", "node_id"},
+    "node_action": {"action", "node_id", "expected_local_node_id"},
+    "remove_nodes": {"node_ids", "expected_local_node_id", "confirmed"},
 }
+
+
 
 
 def validate_payload(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
-        raise ValueError("Førespurnaden må vere eit JSON-objekt.")
+        raise ValueError(tr("web.server.request_object"))
     command = payload.get("command")
     if not isinstance(command, str) or command not in FIELDS:
-        raise ValueError("Denne handlinga er ikkje tilgjengeleg i webprototypen.")
+        raise ValueError(tr("web.server.action_unavailable"))
     if payload.keys() - (FIELDS[command] | {"command"}):
-        raise ValueError("Førespurnaden har ukjende felt.")
+        raise ValueError(tr("web.server.unknown_fields"))
     for key, value in payload.items():
         if key in {"retention_days", "older_than_days"}:
             if type(value) is not int or not 0 <= value <= 36500:
-                raise ValueError("Vel 0–36500 heile dagar.")
+                raise ValueError(tr("web.server.day_range"))
         elif key == "confirmed":
             if value is not True:
-                raise ValueError("Handlinga må stadfestast.")
+                raise ValueError(tr("web.server.confirmation_required"))
+        elif key == "node_ids":
+            if (not isinstance(value, list) or len(value) != 1
+                    or not isinstance(value[0], str)
+                    or not re.fullmatch(r"![0-9a-f]{8}", value[0])):
+                raise ValueError(tr("web.server.select_node"))
         elif key in {"limit", "before_id"}:
             if type(value) is not int or not 1 <= value <= (500 if key == "limit" else 2**63 - 1):
-                raise ValueError("Ugyldig radgrense eller sidepeikar.")
+                raise ValueError(tr("web.server.invalid_page"))
         elif key in {"mark_read", "include_ble"}:
             if type(value) is not bool:
-                raise ValueError("Ugyldig ja/nei-verdi.")
+                raise ValueError(tr("web.server.invalid_boolean"))
         elif key == "conversations":
             if not isinstance(value, list) or not 1 <= len(value) <= 64:
-                raise ValueError("Ugyldige samtaleruter.")
+                raise ValueError(tr("web.server.invalid_routes"))
             for route in value:
                 if not isinstance(route, str):
-                    raise ValueError("Ugyldig samtalerute.")
+                    raise ValueError(tr("web.server.invalid_route"))
                 parse_dm_conversation_id(route)
         elif not isinstance(value, str) or len(value) > (4000 if key == "text" else 512):
-            raise ValueError("Ugyldig tekstfelt.")
+            raise ValueError(tr("web.server.invalid_text"))
     if "node_id" in FIELDS[command]:
         node_id = payload.get("node_id", "")
         if not re.fullmatch(r"![0-9a-fA-F]{8}", node_id):
-            raise ValueError("Oppgi den fulle node-ID-en.")
+            raise ValueError(tr("web.server.full_node_id"))
+    if command == "node_action" and not re.fullmatch(
+        r"![0-9a-f]{8}", payload.get("expected_local_node_id", ""),
+    ):
+        raise ValueError(tr("web.server.full_gateway_id"))
+    if command == "remove_nodes":
+        if payload.keys() != FIELDS[command] | {"command"}:
+            raise ValueError(tr("web.server.removal_fields"))
+        local_id = payload["expected_local_node_id"]
+        if not re.fullmatch(r"![0-9a-f]{8}", local_id):
+            raise ValueError(tr("web.server.full_gateway_id"))
+        target = payload["node_ids"][0]
+        if target == local_id or int(target[1:], 16) < 4 or target == "!ffffffff":
+            raise ValueError(tr("web.server.removal_reserved"))
     if command.startswith("history_") and command != "history_settings":
         if payload.keys() != FIELDS[command] | {"command"}:
-            raise ValueError("Historikkførespurnaden manglar nødvendige felt.")
+            raise ValueError(tr("web.server.history_fields"))
         if not re.fullmatch(r"![0-9a-f]{8}", payload["expected_local_node_id"]):
-            raise ValueError("Oppgi den fulle gateway-ID-en.")
+            raise ValueError(tr("web.server.full_gateway_id"))
         if command == "history_cleanup_preview" and payload["scope"] not in {"messages", "history"}:
-            raise ValueError("Vel meldingar eller all historikk.")
+            raise ValueError(tr("web.server.select_scope"))
     if command in {"send_public", "send_dm"}:
         if not payload.get("text", "").strip():
-            raise ValueError("Meldinga er tom.")
+            raise ValueError(tr("web.server.empty_message"))
         route = payload.get("conversation", "")
         if command == "send_public":
             local, _ = parse_public_conversation_id(route)
             if local is None:
-                raise ValueError("Vel ei kanalrute på den aktive noden.")
+                raise ValueError(tr("web.server.select_channel"))
         else:
             _, peer, _ = parse_dm_conversation_id(route)
             if peer != normalize_node_id(payload["node_id"]):
-                raise ValueError("Mottakaren samsvarar ikkje med samtaleruta.")
+                raise ValueError(tr("web.server.recipient_mismatch"))
     if command == "messages" and not isinstance(payload.get("conversation"), str):
-        raise ValueError("Vel ei samtale.")
-    if "action" in payload and payload["action"] not in {"traceroute", "position_exchange"}:
-        raise ValueError("Ugyldig nodehandling.")
+        raise ValueError(tr("web.server.select_conversation"))
+    if "action" in payload and payload["action"] not in {
+        "traceroute", "position_exchange", "node_info_exchange",
+    }:
+        raise ValueError(tr("web.server.invalid_action"))
     if command == "node_action" and "action" not in payload:
-        raise ValueError("Vel ei nodehandling.")
+        raise ValueError(tr("web.server.select_action"))
     if "sort" in payload and payload["sort"] not in {"name", "seen", "id"}:
-        raise ValueError("Ugyldig sortering.")
+        raise ValueError(tr("web.server.invalid_sort"))
     if command == "connect" and bool(payload.get("profile_id")) == bool(payload.get("target")):
-        raise ValueError("Vel anten ein lagra profil eller eit manuelt mål.")
+        raise ValueError(tr("web.server.select_connection"))
     return payload
 
 
@@ -157,6 +189,34 @@ class WebApplication:
         self._operation_lock = threading.Lock()
         self._pending_operations: dict[str, _PendingOperation] = {}
         self._results: OrderedDict[str, tuple[float, str, int, dict[str, Any]]] = OrderedDict()
+        self._update_lock = threading.Lock()
+        self._update_next_check = 0.0
+        self._update_result: dict[str, Any] = {}
+
+    def update_status(self) -> dict[str, Any]:
+        # Share the signed release check across browsers, independently of daemon/radio IPC.
+        with self._update_lock:
+            if time.monotonic() < self._update_next_check:
+                return dict(self._update_result)
+            result: dict[str, Any] = {"current_version": __version__, "state": "disabled"}
+            retry_after = 3600
+            if self.settings.update_url.strip():
+                try:
+                    update = check_for_update(self.settings)
+                    result["state"] = "current"
+                    if update is not None:
+                        result.update(state="available", latest_version=update.latest_version,
+                                      command=update.command)
+                except UpdateCheckError:
+                    # Keep a previously verified notice through temporary network failures.
+                    if self._update_result.get("state") == "available":
+                        result = dict(self._update_result)
+                    else:
+                        result["state"] = "unavailable"
+                    retry_after = 300
+            self._update_result = result
+            self._update_next_check = time.monotonic() + retry_after
+            return dict(result)
 
     def _expire_results(self) -> None:
         # Caller holds _operation_lock; completed results retain the original deduplication window.
@@ -166,12 +226,12 @@ class WebApplication:
 
     def operation(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict) or payload.keys() != {"operation_id"}:
-            raise ValueError("Oppgi berre førespurnads-ID-en for handlinga.")
+            raise ValueError(tr("web.server.operation_only"))
         operation_id = payload["operation_id"]
         if not isinstance(operation_id, str) or not re.fullmatch(
             r"[a-zA-Z0-9-]{16,80}", operation_id,
         ):
-            raise ValueError("Handlinga manglar ein gyldig førespurnads-ID.")
+            raise ValueError(tr("web.server.operation_required"))
         # This lock is never held during IPC, so a status check cannot block on a radio write.
         with self._operation_lock:
             self._expire_results()
@@ -185,11 +245,12 @@ class WebApplication:
         return {"ok": True, "data": data}
 
     def execute(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        if payload["command"] == "update_check":
+            return 200, {"ok": True, "data": self.update_status()}
         try:
-            with using_language("nn"):
-                return 200, request(self.settings, payload, timeout=35)
+            return 200, _daemon_result(request(self.settings, payload, timeout=35))
         except CLIError as exc:
-            return 503, {"ok": False, "error": str(exc)}
+            return 503, {"ok": False, "error": _daemon_text(str(exc))}
 
     def dispatch(self, payload: Any, operation_id: str) -> tuple[int, dict[str, Any]]:
         payload = validate_payload(payload)
@@ -198,7 +259,7 @@ class WebApplication:
         if not isinstance(operation_id, str) or not re.fullmatch(
             r"[a-zA-Z0-9-]{16,80}", operation_id,
         ):
-            raise ValueError("Handlinga manglar ein gyldig førespurnads-ID.")
+            raise ValueError(tr("web.server.operation_required"))
         fingerprint = json.dumps(payload, sort_keys=True, ensure_ascii=False)
         # Register before waiting for another write: queued sends must also report pending.
         with self._operation_lock:
@@ -206,7 +267,7 @@ class WebApplication:
             previous = self._results.get(operation_id)
             if previous:
                 if previous[1] != fingerprint:
-                    return 409, {"ok": False, "error": "Førespurnads-ID-en er allereie brukt."}
+                    return 409, {"ok": False, "error": tr("web.server.operation_used")}
                 return previous[2], previous[3]
             pending = self._pending_operations.get(operation_id)
             owner = pending is None
@@ -214,7 +275,7 @@ class WebApplication:
                 pending = _PendingOperation(fingerprint)
                 self._pending_operations[operation_id] = pending
             elif pending.fingerprint != fingerprint:
-                return 409, {"ok": False, "error": "Førespurnads-ID-en er allereie brukt."}
+                return 409, {"ok": False, "error": tr("web.server.operation_used")}
         if not owner:
             pending.done.wait()
             # Keep this response even if the bounded cache evicts it before a waiter resumes.
@@ -228,12 +289,11 @@ class WebApplication:
             except Exception:
                 # Once IPC starts, even an unexpected failure must not permit an automatic replay.
                 status, result = 503, {
-                    "ok": False, "error": "Svaret frå daemonen kunne ikkje lesast.",
+                    "ok": False, "error": tr("web.server.response_unreadable"),
                 }
             if status != 200:
                 result = {"ok": False, "error": result["error"] + (
-                    " Kontroller historikken før du prøver handlinga på nytt; "
-                    "daemonen kan ha motteke førespurnaden."
+                    tr("web.server.uncertain_write")
                 )}
             with self._operation_lock:
                 self._results[operation_id] = (now, fingerprint, status, result)
@@ -292,15 +352,21 @@ def validate_web_address(address: str) -> str:
     try:
         parsed = IPv4Address(address)
     except ValueError as exc:
-        raise ValueError("Webserveren støttar berre lokal loopback-tilgang.") from exc
+        raise ValueError(tr("web.server.loopback_only")) from exc
     if not parsed.is_loopback:
-        raise ValueError("Weblyttaren må bruke loopback. Bruk Tailscale Serve for andre einingar.")
+        raise ValueError(tr("web.server.loopback_required"))
     return str(parsed)
 
 
 class WebServer(ThreadingHTTPServer):
+    allow_reuse_address = os.name != "nt"
     daemon_threads = True
     block_on_close = False
+
+    def server_bind(self) -> None:
+        if os.name == "nt":
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
     def __init__(
         self, settings: Settings, *, port: int = 8780, public_url: str = "",
@@ -309,16 +375,16 @@ class WebServer(ThreadingHTTPServer):
     ):
         bind_address = validate_web_address(bind_address)
         if not 0 <= port <= 65535:
-            raise ValueError("Ugyldig webport.")
+            raise ValueError(tr("web.server.invalid_port"))
         if not re.fullmatch(r"(?:/[a-zA-Z0-9_-]+)*", base_path):
-            raise ValueError("Ugyldig websti.")
+            raise ValueError(tr("web.server.invalid_path"))
         external = urlsplit(public_url)
         if public_url and (
             external.scheme != "https" or not external.hostname or external.username
             or external.password or external.path not in {"", "/"}
             or external.query or external.fragment
         ):
-            raise ValueError("Nettadressa må vere ei privat HTTPS-rotadresse.")
+            raise ValueError(tr("web.server.https_origin"))
         self.base_path = base_path
         self.app = app if app is not None else WebApplication(settings)
         self._slots = threading.BoundedSemaphore(24)
@@ -367,6 +433,19 @@ class WebHandler(BaseHTTPRequestHandler):
     server_version = "MeshPi-web"
     sys_version = ""
 
+    def _language(self) -> str:
+        # send_error can run before malformed requests have parsed their headers.
+        headers = getattr(self, "headers", None)
+        if headers is None:
+            return "nn"
+        values = headers.get_all("X-MeshPi-Language", [])
+        try:
+            if self._path() == "/manifest.webmanifest":
+                values = parse_qs(urlsplit(self.path).query).get("language", values)
+            return normalize_language(values[0]) if len(values) == 1 else "nn"
+        except ValueError:
+            return "nn"
+
     def setup(self) -> None:
         self.request.settimeout(10)
         super().setup()
@@ -377,7 +456,7 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def send_error(self, code: int, message: str | None = None, explain: str | None = None):
         del message, explain
-        self._json(code, {"ok": False, "error": "HTTP-førespurnaden kunne ikkje handsamast."})
+        self._json(code, {"ok": False, "error": tr("web.server.http_error")})
 
     def _reply(self, status: int, data: bytes, content_type: str) -> None:
         self.send_response(status)
@@ -392,6 +471,8 @@ class WebHandler(BaseHTTPRequestHandler):
             item["path"] = self.server.base_path + "/" if self.server.base_path else "/"
             item["httponly"] = True
             item["samesite"] = "Strict"
+            if session.authenticated:
+                item["max-age"] = max(0, int(session.expires_at - time.time()))
             if self.server.auth_origin.startswith("https://"):
                 item["secure"] = True
             self.send_header("Set-Cookie", item.OutputString())
@@ -400,6 +481,8 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def _security_headers(self) -> None:
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Language", self._language())
+        self.send_header("Vary", "X-MeshPi-Language")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Content-Security-Policy", (
@@ -423,17 +506,17 @@ class WebHandler(BaseHTTPRequestHandler):
     def _allowed(self, *, write: bool = False) -> bool:
         hosts = self.headers.get_all("Host", [])
         if len(hosts) != 1 or hosts[0] not in self.server.hosts:
-            self._json(403, {"ok": False, "error": "Ugyldig vert."})
+            self._json(403, {"ok": False, "error": tr("web.server.invalid_host")})
             return False
         origins = self.headers.get_all("Origin", [])
         if len(origins) > 1 or (origins and origins[0] not in self.server.origins):
-            self._json(403, {"ok": False, "error": "Ugyldig opphav."})
+            self._json(403, {"ok": False, "error": tr("web.server.invalid_origin")})
             return False
         if self.headers.get("Sec-Fetch-Site") == "cross-site" and self._path() != "/":
-            self._json(403, {"ok": False, "error": "Opne MeshPi frå den private nettadressa."})
+            self._json(403, {"ok": False, "error": tr("web.server.private_address")})
             return False
         if write and (len(origins) != 1 or origins[0] != self.server.auth_origin):
-            self._json(403, {"ok": False, "error": "Bruk den faste innloggingsadressa."})
+            self._json(403, {"ok": False, "error": tr("web.server.canonical_address")})
             return False
         return True
 
@@ -464,7 +547,7 @@ class WebHandler(BaseHTTPRequestHandler):
     def _authenticated(self) -> bool:
         session = self._session()
         if session is None or not session.authenticated:
-            self._json(401, {"ok": False, "error": "Logg inn for å bruke MeshPi."})
+            self._json(401, {"ok": False, "error": tr("web.server.login_required")})
             return False
         return True
 
@@ -472,14 +555,14 @@ class WebHandler(BaseHTTPRequestHandler):
         tokens = self.headers.get_all("X-MeshPi-CSRF", [])
         session = self._session()
         if session is None:
-            self._json(401, {"ok": False, "error": "Innlogginga er utgått. Logg inn igjen."})
+            self._json(401, {"ok": False, "error": tr("web.server.session_expired")})
             return False
         try:
             valid = len(tokens) == 1 and self.server.auth.verify_csrf(session.token, tokens[0])
         except AuthError:
             valid = False
         if not valid:
-            self._json(403, {"ok": False, "error": "Last sida på nytt før du prøver igjen."})
+            self._json(403, {"ok": False, "error": tr("web.server.reload")})
             return False
         return True
 
@@ -494,7 +577,7 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def _auth_request(self, path: str, payload: Any) -> None:
         if not isinstance(payload, dict):
-            raise ValueError("Førespurnaden må vere eit JSON-objekt.")
+            raise ValueError(tr("web.server.request_object"))
         auth, token = self.server.auth, self._token()
         data = {}
         if path == "/api/auth/code":
@@ -524,11 +607,15 @@ class WebHandler(BaseHTTPRequestHandler):
             self._set_session = session
             data = self._session_data(session)
         else:
-            self._json(404, {"ok": False, "error": "Handlinga finst ikkje."})
+            self._json(404, {"ok": False, "error": tr("web.server.action_missing")})
             return
         self._json(200, {"ok": True, "data": data})
 
     def do_GET(self) -> None:
+        with using_language(self._language()):
+            self._get()
+
+    def _get(self) -> None:
         if not self._allowed():
             return
         path = self._path()
@@ -541,6 +628,9 @@ class WebHandler(BaseHTTPRequestHandler):
         resources = {
             "/": ("index.html", "text/html; charset=utf-8"),
             "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+            "/text.js": ("text.js", "text/javascript; charset=utf-8"),
+            "/i18n.js": ("i18n.js", "text/javascript; charset=utf-8"),
+            "/updates.js": ("updates.js", "text/javascript; charset=utf-8"),
             "/auth.js": ("auth.js", "text/javascript; charset=utf-8"),
             "/traceroute.js": ("traceroute.js", "text/javascript; charset=utf-8"),
             "/theme.js": ("theme.js", "text/javascript; charset=utf-8"),
@@ -562,6 +652,10 @@ class WebHandler(BaseHTTPRequestHandler):
                 content = content.replace(
                     b"__MESHPI_BASE_PATH__", self.server.base_path.encode("utf-8")
                 )
+            if name == "manifest.webmanifest":
+                manifest = json.loads(content)
+                manifest.update(lang=self._language(), description=tr("web.server.description"))
+                content = json.dumps(manifest, ensure_ascii=False).encode()
             if name == "index.html":
                 # The configured HTTPS name is already public; do not expose the
                 # OS hostname before login or trust request headers for identity.
@@ -573,7 +667,7 @@ class WebHandler(BaseHTTPRequestHandler):
                     b"__MESHPI_SERVER_NAME__", html.escape(server_name, quote=True).encode()
                 ).replace(
                     b"__MESHPI_PAGE_LABEL__",
-                    html.escape(server_name or "Privat meshklient", quote=True).encode(),
+                    html.escape(server_name or tr("web.server.page_label"), quote=True).encode(),
                 )
             self._reply(200, content, mime)
         elif path == "/api/session":
@@ -592,7 +686,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 self._json(200, {"ok": True, "data": self._session_data(session)})
             except AuthError:
                 self._json(503, {"ok": False, "error":
-                    "Innlogginga er utilgjengeleg. Prøv igjen eller køyr meshpi web-code lokalt."})
+                    tr("web.server.login_unavailable")})
         elif path == "/api/health":
             self._json(200, {"ok": True, "service": "meshpi-web"})
         elif path == "/api/auth/keys":
@@ -601,14 +695,18 @@ class WebHandler(BaseHTTPRequestHandler):
                     keys = self.server.auth.list_credentials(self._token())
                     self._json(200, {"ok": True, "data": {"keys": keys}})
                 except AuthError:
-                    self._json(401, {"ok": False, "error": "Logg inn igjen."})
+                    self._json(401, {"ok": False, "error": tr("web.server.login_again")})
         elif path == "/api/events":
             if self._authenticated():
                 self._events()
         else:
-            self._json(404, {"ok": False, "error": "Sida finst ikkje."})
+            self._json(404, {"ok": False, "error": tr("web.server.page_missing")})
 
     def do_POST(self) -> None:
+        with using_language(self._language()):
+            self._post()
+
+    def _post(self) -> None:
         if not self._allowed(write=True):
             return
         path = self._path()
@@ -620,21 +718,21 @@ class WebHandler(BaseHTTPRequestHandler):
             self._export()
             return
         if path not in {"/api/request", "/api/operation"} and not path.startswith("/api/auth/"):
-            self._json(404, {"ok": False, "error": "Handlinga finst ikkje."})
+            self._json(404, {"ok": False, "error": tr("web.server.action_missing")})
             return
         lengths = self.headers.get_all("Content-Length", [])
         if self.headers.get("Transfer-Encoding") or len(lengths) != 1:
-            self._json(400, {"ok": False, "error": "Ugyldig meldingslengd."})
+            self._json(400, {"ok": False, "error": tr("web.server.invalid_length")})
             return
         try:
             length = int(lengths[0])
             if not 1 <= length <= MAX_BODY:
-                raise ValueError("Førespurnaden er for stor eller tom.")
+                raise ValueError(tr("web.server.body_size"))
             if self.headers.get_content_type() != "application/json":
-                raise ValueError("Førespurnaden må bruke JSON.")
+                raise ValueError(tr("web.server.json_required"))
             raw = self.rfile.read(length)
             if len(raw) != length:
-                raise ValueError("Førespurnaden er ufullstendig.")
+                raise ValueError(tr("web.server.incomplete_request"))
             payload = json.loads(raw)
             if path.startswith("/api/auth/"):
                 self._auth_request(path, payload)
@@ -646,47 +744,48 @@ class WebHandler(BaseHTTPRequestHandler):
                     payload, self.headers.get("X-MeshPi-Operation", ""),
                 )
             self._json(status, result)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self._json(400, {"ok": False, "error": tr("web.server.invalid_json")})
         except (ValueError, UnicodeError) as exc:
             self._json(400, {"ok": False, "error": str(exc)})
         except RecursionError:
-            self._json(400, {"ok": False, "error": "JSON-førespurnaden har for mange nivå."})
+            self._json(400, {"ok": False, "error": tr("web.server.json_depth")})
         except (OSError, TimeoutError):
             with suppress(OSError):
-                self._json(408, {"ok": False, "error": "Førespurnaden tok for lang tid."})
+                self._json(408, {"ok": False, "error": tr("web.server.timeout")})
 
     def _export(self) -> None:
         if not self.server.export_slots.acquire(blocking=False):
-            self._json(503, {"ok": False, "error": "For mange samtidige eksportar."})
+            self._json(503, {"ok": False, "error": tr("web.server.export_limit")})
             return
         sock = stream = None
         try:
-            with using_language("nn"):
-                sock, stream = open_export(self.server.app.settings)
+            sock, stream = open_export(self.server.app.settings)
             content = bytearray()
             metadata = complete = False
             rows = 0
             for raw in stream:
                 if len(content) + len(raw) > 20 * 1024 * 1024:
                     raise CLIError(
-                        "Eksporten er større enn 20 MiB. Bruk meshpi export i terminalen."
+                        tr("web.server.export_size")
                     )
                 record = json.loads(raw)
                 if not isinstance(record, dict) or complete or record.get("ok") is False:
-                    raise CLIError("Daemonen leverte ein ugyldig eksport.")
+                    raise CLIError(tr("web.server.export_invalid"))
                 kind = record.get("record")
                 if not metadata:
                     if kind != "metadata" or record.get("format") != "meshpi-database-export":
-                        raise CLIError("Eksporten manglar gyldige metadata.")
+                        raise CLIError(tr("web.server.export_metadata"))
                     metadata = True
                 elif kind == "row":
                     rows += 1
                 elif kind == "complete" and record.get("rows") == rows:
                     complete = True
                 else:
-                    raise CLIError("Eksporten har ugyldige radtal eller postar.")
+                    raise CLIError(tr("web.server.export_rows"))
                 content.extend(raw if raw.endswith(b"\n") else raw + b"\n")
             if not complete:
-                raise CLIError("Eksporten blei avbroten; inga fil blir levert.")
+                raise CLIError(tr("web.server.export_interrupted"))
             if not self._authenticated():
                 return
             self._reply(200, bytes(content), "application/x-ndjson; charset=utf-8")
@@ -701,7 +800,7 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def _events(self) -> None:
         if not self.server.event_slots.acquire(blocking=False):
-            self._json(503, {"ok": False, "error": "For mange opne sanntidsvisingar."})
+            self._json(503, {"ok": False, "error": tr("web.server.events_limit")})
             return
         try:
             with self.server.app.events.subscribe() as subscriber:
@@ -743,8 +842,8 @@ def run_web(
             server = WebServer(settings, port=port, public_url=public_url, base_path=base_path)
             stack.callback(server.server_close)
         except OSError as exc:
-            raise CLIError(f"Kunne ikkje starte weblyttaren: {exc}") from exc
+            raise CLIError(tr("web.server.listener_failed", error=exc)) from exc
         print(f"MeshPi-web: {server.auth_origin}{base_path}/")
-        print("Bruk meshpi web-code i ein lokal terminal for innlogging eller gjenoppretting.")
+        print(tr("web.server.login_help"))
         with suppress(KeyboardInterrupt):
             server.serve_forever()

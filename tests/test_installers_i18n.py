@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from test_installers import _shell_function
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTALLERS = ROOT / "installers"
@@ -17,6 +18,40 @@ POSIX_SCRIPTS = (
     "uninstall-macos.sh",
 )
 POWERSHELL_SCRIPTS = ("install-windows.ps1", "uninstall-windows.ps1")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX shell")
+@pytest.mark.parametrize("name", ["install-linux.sh", "install-macos.sh"])
+@pytest.mark.parametrize("language", ["nb", "nn", "en"])
+@pytest.mark.parametrize("answer,enabled", [("j", "true"), ("n", "false")])
+def test_fresh_interactive_web_choice(name, language, answer, enabled):
+    import pty
+
+    source = (INSTALLERS / name).read_text()
+    script = "set -eu\n" + "\n".join(
+        _shell_function(source, function) for function in ("message", "choose_web")
+    )
+    script += (
+        f"\nLANGUAGE={language}\nFRESH_INSTALL=1\nWEB_CHOICE=keep\n"
+        "get_env_value() { :; }\n"
+        "choose_web\nprintf '\\nWEB_ENABLED=%s\\n' \"$WEB_ENABLED\"\n"
+    )
+    # Only stdin needs a terminal; all installer side effects are excluded.
+    master, slave = pty.openpty()
+    try:
+        with subprocess.Popen(
+            ["sh", "-c", script], stdin=slave, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True,
+        ) as process:
+            os.write(master, (answer + "\n").encode())
+            stdout, stderr = process.communicate(timeout=5)
+        assert process.returncode == 0, stderr
+        assert ("Enable the web interface?" if language == "en"
+                else "Vil du aktivere webgrensesnittet?") in stdout
+        assert f"WEB_ENABLED={enabled}" in stdout
+    finally:
+        os.close(master)
+        os.close(slave)
 
 
 def _posix_shell() -> str | None:
@@ -101,9 +136,11 @@ def test_posix_message_catalogues_have_matching_language_keys(name: str) -> None
     source = _text(name)
     nynorsk = set(re.findall(r"^\s{8}([a-z0-9_]+):nn\)", source, re.MULTILINE))
     english = set(re.findall(r"^\s{8}([a-z0-9_]+):en\)", source, re.MULTILINE))
+    bokmal = set(re.findall(r"^\s{8}([a-z0-9_]+):nb\)", source, re.MULTILINE))
 
     assert nynorsk
-    assert nynorsk == english
+    assert nynorsk == english == bokmal
+    assert "--language=nb" in source
     assert "--language=nn" in source
     assert "--language=en" in source
     assert "MESHPI_LANGUAGE" in source
@@ -114,7 +151,7 @@ def test_powershell_message_catalogues_are_parallel(name: str) -> None:
     source = _text(name)
     rows = re.findall(
         r"^\s{4}([a-z0-9_]+)\s*=\s*@\{\s*nn\s*=\s*'[^']*';\s*"
-        r"en\s*=\s*'[^']*'\s*\}",
+        r"nb\s*=\s*'[^']*';\s*en\s*=\s*'[^']*'\s*\}",
         source,
         re.MULTILINE,
     )
@@ -126,7 +163,7 @@ def test_powershell_message_catalogues_are_parallel(name: str) -> None:
     if name.startswith("install-"):
         assert '$detectedLanguage = "en"' in source
     else:
-        assert '"^(nn|nb|no)(-|$)"' in source
+        assert '"^(nb|no)(-|$)"' in source
 
 
 @pytest.mark.skipif(
@@ -200,3 +237,20 @@ def test_uninstallers_never_delete_preferences_without_purge() -> None:
     assert '[ "$PURGE" = "1" ]' in macos
     assert "Remove-Item -LiteralPath $configRoot" in windows
     assert "if ($PurgeData)" in windows
+
+
+@pytest.mark.skipif(POSIX_SHELL is None, reason="krev POSIX-shell")
+@pytest.mark.parametrize("name", POSIX_SCRIPTS)
+def test_posix_scripts_accept_bokmal_override(name):
+    result = _run_posix_argument_error(name, "--language=nb")
+    assert result.returncode == 2
+    assert "Ukjent argument" in result.stderr
+    assert "nb" not in result.stderr
+
+
+@pytest.mark.skipif(POSIX_SHELL is None, reason="krev POSIX-shell")
+@pytest.mark.parametrize("name", POSIX_SCRIPTS)
+def test_posix_scripts_accept_bokmal_environment(name):
+    result = _run_posix_argument_error(name, environment_language="nb")
+    assert result.returncode == 2
+    assert "Ukjent argument" in result.stderr

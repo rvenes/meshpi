@@ -4,9 +4,10 @@
 )
 
 $ErrorActionPreference = "Stop"
-$detectedLanguage = if (
-    [Globalization.CultureInfo]::CurrentUICulture.Name -match "^(nn|nb|no)(-|$)"
-) { "nn" } else { "en" }
+$cultureName = [Globalization.CultureInfo]::CurrentUICulture.Name
+$detectedLanguage = if ($cultureName -match "^nn(-|$)") { "nn" } elseif (
+    $cultureName -match "^(nb|no)(-|$)"
+) { "nb" } else { "en" }
 if (-not $Language) {
     $Language = if ($env:MESHPI_LANGUAGE) {
         $env:MESHPI_LANGUAGE
@@ -16,12 +17,12 @@ if (-not $Language) {
 }
 $Language = $Language.ToLowerInvariant()
 $Messages = @{
-    invalid_language = @{ nn = 'Språket må vere «nn» eller «en».'; en = 'Language must be “nn” or “en”.' }
-    removed = @{ nn = 'Fjerna MeshPi-programmet og autostarten.'; en = 'Removed the MeshPi application and autostart.' }
-    purged = @{ nn = 'Sletta konfigurasjon og lokale data.'; en = 'Deleted configuration and local data.' }
-    kept_config = @{ nn = 'Bevarte konfigurasjon: {0}'; en = 'Preserved configuration: {0}' }
-    kept_data = @{ nn = 'Bevarte database og loggar: {0}'; en = 'Preserved database and logs: {0}' }
-    purge_hint = @{ nn = 'Bruk -PurgeData for å slette desse òg.'; en = 'Use -PurgeData to delete these as well.' }
+    invalid_language = @{ nn = 'Språket må vere «nb», «nn» eller «en».'; nb = 'Språket må være «nb», «nn» eller «en».'; en = 'Language must be “nb”, “nn” or “en”.' }
+    removed = @{ nn = 'Fjerna MeshPi-programmet og autostarten.'; nb = 'Fjernet MeshPi-programmet og autostarten.'; en = 'Removed the MeshPi application and autostart.' }
+    purged = @{ nn = 'Sletta konfigurasjon og lokale data.'; nb = 'Slettet konfigurasjon og lokale data.'; en = 'Deleted configuration and local data.' }
+    kept_config = @{ nn = 'Bevarte konfigurasjon: {0}'; nb = 'Bevarte konfigurasjon: {0}'; en = 'Preserved configuration: {0}' }
+    kept_data = @{ nn = 'Bevarte database og loggar: {0}'; nb = 'Bevarte database og logger: {0}'; en = 'Preserved database and logs: {0}' }
+    purge_hint = @{ nn = 'Bruk -PurgeData for å slette desse òg.'; nb = 'Bruk -PurgeData for å slette disse også.'; en = 'Use -PurgeData to delete these as well.' }
 }
 
 function Get-Message {
@@ -31,7 +32,7 @@ function Get-Message {
     return [string]::Format($template, $Values)
 }
 
-if ($Language -notin @("nn", "en")) {
+if ($Language -notin @("nb", "nn", "en")) {
     $Language = $detectedLanguage
     throw (Get-Message invalid_language)
 }

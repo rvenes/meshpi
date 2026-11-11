@@ -30,6 +30,8 @@ from fido2.webauthn import (
     RegistrationResponse,
 )
 
+from meshpi.i18n import tr
+
 
 class AuthError(ValueError):
     """An authentication request that must fail closed."""
@@ -61,7 +63,7 @@ def canonical_origin(value: str) -> str:
         host = parsed.hostname
         port = parsed.port
     except ValueError as exc:
-        raise AuthError("Ugyldig innloggingsadresse.") from exc
+        raise AuthError(tr("web.server.auth_invalid_origin")) from exc
     if (
         not host
         or parsed.username is not None
@@ -71,9 +73,9 @@ def canonical_origin(value: str) -> str:
         or parsed.fragment
         or parsed.scheme not in ("https", "http")
     ):
-        raise AuthError("Innloggingsadressa må vere ein origin utan sti.")
+        raise AuthError(tr("web.server.auth_origin_path"))
     if parsed.scheme == "http" and host not in ("localhost", "127.0.0.1", "::1"):
-        raise AuthError("Innlogging utan HTTPS er berre tillaten på localhost.")
+        raise AuthError(tr("web.server.auth_https"))
     host = host.encode("idna").decode("ascii").lower()
     display_host = f"[{host}]" if ":" in host else host
     suffix = f":{port}" if port and port != (443 if parsed.scheme == "https" else 80) else ""
@@ -81,7 +83,9 @@ def canonical_origin(value: str) -> str:
 
 
 class AuthStore:
-    """Owns passkeys and codes on disk, and bounded sessions in this process.
+    """Owns passkeys, codes and hashed authenticated sessions on disk.
+
+    Unauthenticated sessions and passkey challenges remain process-local.
 
     The HTTP adapter must enforce this store's exact origin and call verify_csrf
     on every browser mutation, including login. Never infer authentication from
@@ -91,7 +95,7 @@ class AuthStore:
     CODE_TTL = 300
     CODE_ATTEMPTS = 5
     PREAUTH_TTL = 600
-    SESSION_TTL = 8 * 3600
+    SESSION_TTL = 30 * 24 * 3600
     FRESH_TTL = 300
     CHALLENGE_TTL = 120
     MAX_SESSIONS = 256
@@ -147,15 +151,15 @@ class AuthStore:
         # Reject symlinked state paths, including parents, before opening files.
         for candidate in (self.directory, *self.directory.parents):
             if candidate.is_symlink():
-                raise AuthError("Innloggingsmappa kan ikkje vere ei symbolsk lenkje.")
+                raise AuthError(tr("web.server.auth_symlink"))
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         info = self.directory.stat()
         if not stat.S_ISDIR(info.st_mode):
-            raise AuthError("Ugyldig innloggingsmappe.")
+            raise AuthError(tr("web.server.auth_invalid_directory"))
         if os.name != "nt":
             if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
                 raise AuthError(
-                    "Innloggingsmappa må vere privat (0700) og eigd av tenestebrukaren."
+                    tr("web.server.auth_directory_private")
                 )
         else:
             self._secure_windows_path(self.directory, directory=True)
@@ -197,9 +201,9 @@ class AuthStore:
         except FileNotFoundError:
             return
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-            raise AuthError("Utrygg innloggingsfil.")
+            raise AuthError(tr("web.server.auth_unsafe_file"))
         if os.name != "nt" and (info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077):
-            raise AuthError("Innloggingsfila må vere privat (0600).")
+            raise AuthError(tr("web.server.auth_file_private"))
 
     @contextmanager
     def _locked(self):
@@ -246,17 +250,43 @@ class AuthStore:
                     != entry["id"]
                 ):
                     raise ValueError("credential")
+            sessions = state.get("sessions", {})
+            if not isinstance(sessions, dict) or len(sessions) > self.MAX_SESSIONS:
+                raise ValueError("sessions")
+            for digest, entry in sessions.items():
+                if (
+                    not re.fullmatch(r"[0-9a-f]{64}", digest)
+                    or not isinstance(entry, dict)
+                    or set(entry) != {
+                        "csrf", "expires_at", "generation", "authenticated_at", "credential_id",
+                    }
+                    or not isinstance(entry.get("csrf"), str)
+                    or not re.fullmatch(r"[A-Za-z0-9_-]{43}", entry["csrf"])
+                    or not isinstance(entry.get("generation"), str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", entry["generation"])
+                    or any(
+                        type(entry.get(key)) not in (int, float)
+                        or not 0 <= entry[key] < float("inf")
+                        for key in ("expires_at", "authenticated_at")
+                    )
+                    or not 0 < entry["expires_at"] - entry["authenticated_at"] <= self.SESSION_TTL
+                    or (
+                        entry.get("credential_id") is not None
+                        and not isinstance(entry["credential_id"], str)
+                    )
+                ):
+                    raise ValueError("session")
             return state
         except (OSError, ValueError, TypeError, KeyError) as exc:
             raise AuthError(
-                "Innloggingsfila er ugyldig eller høyrer til ei anna innloggingsadresse."
+                tr("web.server.auth_file_invalid")
             ) from exc
 
     def _write(self, state: dict) -> None:
         self._check_file(self._path)
         serialized = json.dumps(state, separators=(",", ":"))
         if len(serialized.encode("utf-8")) > 128 * 1024:
-            raise AuthError("Innloggingslageret er fullt. Eksisterande nøklar er bevarte.")
+            raise AuthError(tr("web.server.auth_full"))
         fd, name = tempfile.mkstemp(prefix=".auth-", dir=self.directory)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
@@ -282,7 +312,7 @@ class AuthStore:
             if state["origin"] != self.origin:
                 origins = state.setdefault("previous_origins", {})
                 if state["origin"] not in origins and len(origins) >= 16:
-                    raise AuthError("For mange lagra innloggingsadresser.")
+                    raise AuthError(tr("web.server.auth_origin_limit"))
                 origins[state["origin"]] = {
                     "user_id": state["user_id"],
                     "credentials": state["credentials"],
@@ -294,6 +324,7 @@ class AuthStore:
                 state["credentials"] = restored["credentials"] if restored else []
                 state["origin"] = self.origin
             state["generation"] = secrets.token_hex(32)
+            state["sessions"] = {}
             state["code"] = {
                 "digest": hashlib.sha256(code.encode()).hexdigest(),
                 "expires_at": time.time() + self.CODE_TTL,
@@ -306,20 +337,45 @@ class AuthStore:
 
     def _prune(self, state: dict) -> None:
         now = time.time()
+        saved = state.setdefault("sessions", {})
+        for digest, entry in list(saved.items()):
+            if entry["expires_at"] <= now or entry["generation"] != state["generation"]:
+                saved.pop(digest)
         for token, session in list(self._sessions.items()):
-            if session.expires_at <= now or session.generation != state["generation"]:
+            if (
+                session.expires_at <= now
+                or session.generation != state["generation"]
+                or (session.authenticated and self._token_digest(token) not in saved)
+            ):
                 self._sessions.pop(token, None)
                 self._challenges.pop(token, None)
         for token, challenge in list(self._challenges.items()):
             if challenge.expires_at <= now:
                 self._challenges.pop(token, None)
 
+    @staticmethod
+    def _token_digest(token: str) -> str:
+        return hashlib.sha256(token.encode()).hexdigest()
+
+    def _lookup(self, token: str, state: dict) -> Session | None:
+        self._prune(state)
+        session = self._sessions.get(token)
+        if session is None:
+            entry = state["sessions"].get(self._token_digest(token))
+            if entry is not None:
+                session = Session(token=token, authenticated=True, **entry)
+                self._sessions[token] = session
+        return session
+
     def _new(
         self, state: dict, authenticated: bool = False, credential_id: str | None = None
     ) -> Session:
         self._prune(state)
-        if len(self._sessions) >= self.MAX_SESSIONS:
-            raise AuthError("For mange innloggingsforsøk. Prøv igjen seinare.")
+        count = len(state["sessions"]) + sum(
+            not session.authenticated for session in self._sessions.values()
+        )
+        if count >= self.MAX_SESSIONS:
+            raise AuthError(tr("web.server.auth_attempts"))
         now = time.time()
         session = Session(
             token=secrets.token_urlsafe(32),
@@ -330,6 +386,15 @@ class AuthStore:
             authenticated_at=now if authenticated else 0,
             credential_id=credential_id,
         )
+        if authenticated:
+            state["sessions"][self._token_digest(session.token)] = {
+                "csrf": session.csrf,
+                "expires_at": session.expires_at,
+                "generation": session.generation,
+                "authenticated_at": session.authenticated_at,
+                "credential_id": session.credential_id,
+            }
+            self._write(state)
         self._sessions[session.token] = session
         return session
 
@@ -339,18 +404,16 @@ class AuthStore:
 
     def session(self, token: str | None) -> Session | None:
         with self._locked():
-            self._prune(self._read())
-            return self._sessions.get(token or "")
+            return self._lookup(token or "", self._read())
 
     def _require(
         self, token: str, state: dict, *, authenticated: bool = False, fresh: bool = False
     ) -> Session:
-        self._prune(state)
-        session = self._sessions.get(token)
+        session = self._lookup(token, state)
         if not session or (authenticated and not session.authenticated):
-            raise AuthError("Du må logge inn på nytt.")
+            raise AuthError(tr("web.server.auth_login"))
         if fresh and session.authenticated_at + self.FRESH_TTL <= time.time():
-            raise AuthError("Stadfest innlogginga på nytt før du endrar passkeys.")
+            raise AuthError(tr("web.server.auth_fresh"))
         return session
 
     def verify_csrf(self, token: str | None, csrf: str) -> bool:
@@ -363,9 +426,15 @@ class AuthStore:
         )
 
     def logout(self, token: str) -> None:
-        with self._mutex:
-            self._sessions.pop(token, None)
-            self._challenges.pop(token, None)
+        with self._locked():
+            state = self._read()
+            if self._remove_session(token, state):
+                self._write(state)
+
+    def _remove_session(self, token: str, state: dict) -> bool:
+        self._sessions.pop(token, None)
+        self._challenges.pop(token, None)
+        return state.setdefault("sessions", {}).pop(self._token_digest(token), None) is not None
 
     def login_code(self, token: str, code: str) -> Session:
         with self._locked():
@@ -373,7 +442,7 @@ class AuthStore:
             self._require(token, state)
             entry = state["code"]
             if not entry or entry["expires_at"] <= time.time() or entry["attempts"] <= 0:
-                raise AuthError("Innloggingskoden er ugyldig eller utgått.")
+                raise AuthError(tr("web.server.auth_code_invalid"))
             entry["attempts"] -= 1
             valid = (
                 isinstance(code, str)
@@ -385,10 +454,10 @@ class AuthStore:
             )
             if valid:
                 state["code"] = None
-            self._write(state)
             if not valid:
-                raise AuthError("Innloggingskoden er ugyldig eller utgått.")
-            self.logout(token)
+                self._write(state)
+                raise AuthError(tr("web.server.auth_code_invalid"))
+            self._remove_session(token, state)
             return self._new(state, True)
 
     def status(self, token: str | None) -> dict:
@@ -409,7 +478,7 @@ class AuthStore:
     def _passkeys(self) -> Fido2Server:
         if not self._server:
             raise AuthError(
-                "Passkeys krev den faste HTTPS-adressa. Bruk ein terminalkode på localhost."
+                tr("web.server.auth_passkeys_https")
             )
         return self._server
 
@@ -418,7 +487,7 @@ class AuthStore:
             state = self._read()
             self._require(token, state, authenticated=True, fresh=True)
             if len(state["credentials"]) >= self.MAX_CREDENTIALS:
-                raise AuthError("Du har nådd grensa på 20 passkeys.")
+                raise AuthError(tr("web.server.auth_key_limit"))
             options, challenge = self._passkeys().register_begin(
                 {
                     "id": websafe_decode(state["user_id"]),
@@ -445,7 +514,7 @@ class AuthStore:
             or not challenge_id.isascii()
             or not hmac.compare_digest(challenge.challenge_id, challenge_id)
         ):
-            raise AuthError("Innloggingsførespurnaden er utgått eller allereie brukt.")
+            raise AuthError(tr("web.server.auth_challenge_expired"))
         return challenge
 
     @staticmethod
@@ -454,21 +523,21 @@ class AuthStore:
         # JSON boundary first: bytes(integer) would otherwise allocate that many
         # bytes despite the HTTP body limit. Ignore unused browser metadata.
         if not isinstance(response, dict) or response.get("type") != "public-key":
-            raise AuthError("Ugyldig passkey-svar.")
+            raise AuthError(tr("web.server.auth_invalid_response"))
         body = response.get("response")
         if not isinstance(body, dict):
-            raise AuthError("Ugyldig passkey-svar.")
+            raise AuthError(tr("web.server.auth_invalid_response"))
 
         def encoded(value: Any, maximum: int) -> str:
             if not isinstance(value, str) or not 1 <= len(value) <= maximum:
-                raise AuthError("Ugyldig passkey-svar.")
+                raise AuthError(tr("web.server.auth_invalid_response"))
             if not re.fullmatch(r"[A-Za-z0-9_-]+={0,2}", value):
-                raise AuthError("Ugyldig passkey-svar.")
+                raise AuthError(tr("web.server.auth_invalid_response"))
             return value
 
         raw_id = encoded(response.get("rawId"), 2048)
         if response.get("id", raw_id) != raw_id:
-            raise AuthError("Ugyldig passkey-svar.")
+            raise AuthError(tr("web.server.auth_invalid_response"))
         clean = {"clientDataJSON": encoded(body.get("clientDataJSON"), 8192)}
         if registration:
             clean["attestationObject"] = encoded(body.get("attestationObject"), 16384)
@@ -482,7 +551,7 @@ class AuthStore:
     @staticmethod
     def _check_client(client_data) -> None:
         if client_data.cross_origin or json.loads(client_data).get("topOrigin") is not None:
-            raise AuthError("Innlogging i ei innebygd ramme er ikkje tillaten.")
+            raise AuthError(tr("web.server.auth_frame"))
 
     def registration_complete(
         self, token: str, challenge_id: str, response: dict, name: str
@@ -493,7 +562,7 @@ class AuthStore:
             or len(name) > 80
             or any(ord(char) < 32 for char in name)
         ):
-            raise AuthError("Gi passkeyen eit namn på 1–80 teikn.")
+            raise AuthError(tr("web.server.auth_name"))
         with self._locked():
             state = self._read()
             self._require(token, state, authenticated=True, fresh=True)
@@ -524,7 +593,7 @@ class AuthStore:
                 OverflowError,
                 RecursionError,
             ) as exc:
-                raise AuthError("Passkeyen kunne ikkje stadfestast.") from exc
+                raise AuthError(tr("web.server.auth_verify")) from exc
             entry = {
                 "id": credential_id,
                 "name": name.strip(),
@@ -542,7 +611,7 @@ class AuthStore:
             state = self._read()
             self._require(token, state)
             if not state["credentials"]:
-                raise AuthError("Ingen passkeys er registrerte. Bruk ein terminalkode først.")
+                raise AuthError(tr("web.server.auth_no_keys"))
             options, challenge = self._passkeys().authenticate_begin(
                 self._credentials(state),
                 user_verification="required",
@@ -590,10 +659,9 @@ class AuthStore:
                 RecursionError,
                 StopIteration,
             ) as exc:
-                raise AuthError("Passkey-innlogginga kunne ikkje stadfestast.") from exc
+                raise AuthError(tr("web.server.auth_verify_login")) from exc
             entry["counter"] = data.counter
-            self._write(state)
-            self.logout(token)
+            self._remove_session(token, state)
             return self._new(state, True, credential_id)
 
     def list_credentials(self, token: str) -> list[dict]:
@@ -612,9 +680,10 @@ class AuthStore:
             self._require(token, state, authenticated=True, fresh=True)
             entries = [entry for entry in state["credentials"] if entry["id"] != credential_id]
             if len(entries) == len(state["credentials"]):
-                raise AuthError("Passkeyen finst ikkje.")
+                raise AuthError(tr("web.server.auth_key_missing"))
             state["credentials"] = entries
             state["generation"] = secrets.token_hex(32)
+            state["sessions"] = {}
             state["code"] = None
             self._write(state)
             self._sessions.clear()

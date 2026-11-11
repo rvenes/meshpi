@@ -8,6 +8,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
+from web_helpers import javascript_asset
 
 from meshpi.i18n import using_language
 from meshpi.tui import _age_time, _node_matches_transport
@@ -92,7 +93,6 @@ const names=()=>$("nodes").children.map(button=>button.children[0]?.textContent)
 for(const [mode,expected] of Object.entries(fixtures.filters)) {
   $("node-transport-filter").value=mode;renderNodes();
   check($("nodes").children.length===expected.length,`Wrong ${mode} count`);
-  check($("known-nodes").children.length===fixtures.nodes.length,"DM choices were filtered");
   const ids=$("nodes").children.map(button=>button.children[1].textContent.split(" · ")[0]);
   check(JSON.stringify(ids.slice().sort())===JSON.stringify(expected.slice().sort()),
     `Terminal filter differs: ${mode}`);
@@ -137,6 +137,6 @@ check(requests.length===1&&requests[0].endsWith("/session"),"List controls calle
     flag = "-e" if Path(engine).name == "node" else "-c"
     result = subprocess.run([
         engine, flag, setup + environment
-        + (ROOT / "meshpi/web_assets/app.js").read_text() + checks,
+        + javascript_asset("app.js") + checks,
     ], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr

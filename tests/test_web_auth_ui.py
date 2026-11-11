@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from web_helpers import javascript_asset
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -55,7 +56,7 @@ const config={
   async keys(){return {keys:keyList};},
 };
 """
-    source = (ROOT / "meshpi/web_assets/auth.js").read_text()
+    source = javascript_asset("auth.js")
     script = environment + source + "\nasync function scenario(){\n" + checks + r"""
 }
 scenario().then(()=>{if(typeof print==='function')print('auth-ok');else console.log('auth-ok');})
@@ -154,7 +155,10 @@ def test_key_removal_is_explicit_and_locks_all_local_views():
     run_auth(r"""
 meshpiAuth.init(config);meshpiAuth.update({authenticated:true,passkeys_available:true});
 keyList=[{id:'id-a',name:'Laptop <script>'}];
+el('settings-dialog').showModal();
 await el('auth-button').listeners.click();
+check(!el('settings-dialog').open&&el('auth-dialog').open,
+  'Login management stacked on settings');
 const row=el('auth-keys').children[0];
 check(row.children[0].textContent==='Laptop <script>','Key name not treated as text');
 await row.children[1].listeners.click();

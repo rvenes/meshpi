@@ -421,6 +421,108 @@ def test_csrf_tokens_bound_to_session_and_authenticated_session_expires(store, m
     assert not store.verify_csrf(authenticated.token, authenticated.csrf)
 
 
+@pytest.mark.parametrize("method", ["code", "passkey"])
+def test_authenticated_session_survives_restart_for_thirty_days(store, monkeypatch, method):
+    if method == "code":
+        authenticated = owner(store)
+    else:
+        _, authenticator, _ = register(store)
+        preauth = store.new_session()
+        begin = store.authentication_begin(preauth.token)
+        authenticated = store.authentication_complete(
+            preauth.token, begin["challenge_id"], authenticator.authenticate(begin)
+        )
+    preauth = store.new_session()
+    assert authenticated.expires_at - authenticated.authenticated_at == 30 * 24 * 3600
+    path = store.directory / "auth.json"
+    assert authenticated.token not in path.read_text()
+    assert preauth.token not in path.read_text()
+    before = path.stat().st_mtime_ns
+    restarted = AuthStore(store.directory, ORIGIN)
+    assert restarted.session(preauth.token) is None
+    assert restarted.session(authenticated.token) == authenticated
+    assert restarted.verify_csrf(authenticated.token, authenticated.csrf)
+    monkeypatch.setattr(
+        "meshpi.web_auth.time.time", lambda: authenticated.authenticated_at + 29 * 24 * 3600
+    )
+    assert restarted.session(authenticated.token) == authenticated
+    assert restarted.list_credentials(authenticated.token) == store.list_credentials(
+        authenticated.token
+    )
+    with pytest.raises(AuthError):
+        restarted.registration_begin(authenticated.token)
+    # Reading a remembered session neither renews its deadline nor writes to disk.
+    assert path.stat().st_mtime_ns == before
+    monkeypatch.setattr("meshpi.web_auth.time.time", lambda: authenticated.expires_at)
+    assert restarted.session(authenticated.token) is None
+    assert AuthStore(store.directory, ORIGIN).session(authenticated.token) is None
+    assert not restarted.verify_csrf(authenticated.token, authenticated.csrf)
+
+
+def test_logout_persists_and_revokes_cached_session_in_other_instance(store):
+    authenticated = owner(store)
+    other = AuthStore(store.directory, ORIGIN)
+    assert other.session(authenticated.token) == authenticated
+    other.logout(authenticated.token)
+    assert store.session(authenticated.token) is None
+    assert not store.verify_csrf(authenticated.token, authenticated.csrf)
+    assert AuthStore(store.directory, ORIGIN).session(authenticated.token) is None
+
+
+@pytest.mark.parametrize("action", ["code", "remove_key"])
+def test_revocation_clears_remembered_sessions_on_disk(store, action):
+    authenticated, _, entry = register(store)
+    other = AuthStore(store.directory, ORIGIN)
+    assert other.session(authenticated.token) == authenticated
+    if action == "code":
+        store.issue_code()
+    else:
+        store.delete_credential(authenticated.token, entry["id"])
+    assert other.session(authenticated.token) is None
+    assert AuthStore(store.directory, ORIGIN).session(authenticated.token) is None
+    assert json.loads((store.directory / "auth.json").read_text())["sessions"] == {}
+
+
+def test_remembered_sessions_count_toward_capacity_after_restart(store, monkeypatch):
+    authenticated = owner(store)
+    restarted = AuthStore(store.directory, ORIGIN)
+    monkeypatch.setattr(restarted, "MAX_SESSIONS", 2)
+    restarted.new_session()
+    with pytest.raises(AuthError):
+        restarted.new_session()
+    assert restarted.session(authenticated.token) == authenticated
+
+
+def test_legacy_auth_store_without_sessions_preserves_passkeys(store):
+    _, _, credential = register(store)
+    path = store.directory / "auth.json"
+    state = json.loads(path.read_text())
+    state.pop("sessions")
+    path.write_text(json.dumps(state))
+    restarted = AuthStore(store.directory, ORIGIN)
+    assert restarted.list_credentials(owner(restarted).token) == [credential]
+
+
+@pytest.mark.parametrize("field, value", [
+    ("expires_at", float("nan")), ("expires_at", float("inf")),
+    ("expires_at", "later"), ("expires_at", True), ("authenticated_at", -1),
+    ("csrf", "bad"), ("generation", "bad"), ("credential_id", []),
+    ("extra", "unexpected"),
+])
+def test_invalid_remembered_session_fails_closed_and_keeps_file(store, field, value):
+    authenticated = owner(store)
+    path = store.directory / "auth.json"
+    state = json.loads(path.read_text())
+    next(iter(state["sessions"].values()))[field] = value
+    path.write_text(json.dumps(state))
+    before = path.read_bytes()
+    with pytest.raises(AuthError):
+        store.session(authenticated.token)
+    with pytest.raises(AuthError):
+        AuthStore(store.directory, ORIGIN)
+    assert path.read_bytes() == before
+
+
 def test_browser_cannot_register_more_than_limit_or_reuse_registration(store, monkeypatch):
     session = owner(store)
     authenticator = SoftwareAuthenticator()

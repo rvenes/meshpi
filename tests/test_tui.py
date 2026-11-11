@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from textual.widgets import Button, Input, ListView, RichLog, Select, Static
 
+from meshpi import __version__
 from meshpi.config import Settings
 from meshpi.tui import (
     ConversationItem,
@@ -745,7 +746,7 @@ def test_status_bar_shows_current_meshpi_version_and_host(monkeypatch):
             await pilot.pause(0.3)
             rendered = app.query_one("#status-bar", Static).render()
             text = rendered.plain if hasattr(rendered, "plain") else str(rendered)
-            assert "MeshPi 0.9.8" in text
+            assert f"MeshPi {__version__}" in text
             assert "Vert: testvert" in text
 
     run_scenario(scenario)
@@ -1489,6 +1490,7 @@ def test_keyboard_opens_node_action_menu_and_starts_traceroute():
             assert app.current_conversation == RESERVE_DM_CONVERSATION
             assert {
                 "command": "node_action",
+                "expected_local_node_id": "!040840a0",
                 "action": "traceroute",
                 "node_id": "!710365c8",
             } in backend.calls
@@ -1648,6 +1650,7 @@ def test_node_info_uses_one_screen_for_metrics_position_and_traceroute(monkeypat
             await pilot.pause(0.2)
             assert {
                 "command": "node_action",
+                "expected_local_node_id": "!040840a0",
                 "action": "position_exchange",
                 "node_id": "!710365c8",
             } in backend.calls
@@ -1705,6 +1708,7 @@ def test_node_info_uses_one_screen_for_metrics_position_and_traceroute(monkeypat
             )
             assert {
                 "command": "node_action",
+                "expected_local_node_id": "!040840a0",
                 "action": "traceroute",
                 "node_id": "!710365c8",
             } in backend.calls

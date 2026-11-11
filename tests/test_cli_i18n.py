@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from meshpi.cli import build_parser, main, run
 from meshpi.config import Settings
 from meshpi.i18n import get_language, set_language, using_language
 
 
-def test_cli_help_is_available_in_both_languages():
+def test_cli_help_is_available_in_all_languages():
+    with using_language("nb"):
+        assert "vis eller velg språk" in build_parser().format_help()
     with using_language("nn"):
         assert "vis eller vel språk" in build_parser().format_help()
         assert "val:" in build_parser().format_help()
@@ -44,3 +48,18 @@ def test_language_command_does_not_start_daemon(tmp_path, monkeypatch, capsys):
     main(["language", "en"])
 
     assert "Language set to English" in capsys.readouterr().out
+
+
+def test_bokmal_language_command_persists_and_uses_bokmal_help(tmp_path, monkeypatch, capsys):
+    preference = tmp_path / "language.json"
+    monkeypatch.setenv("MESHPI_LANGUAGE_FILE", str(preference))
+    run(build_parser().parse_args(["language", "nb"]), Settings())
+    assert get_language() == "nb"
+    assert "Bokmål" in capsys.readouterr().out
+    assert json.loads(preference.read_text(encoding="utf-8"))["language"] == "nb"
+    assert "vis eller velg språk" in build_parser().format_help()
+
+
+@pytest.mark.parametrize("language", ["nb", "nn", "en"])
+def test_language_subcommand_accepts_all_choices(language):
+    assert build_parser().parse_args(["language", language]).language == language

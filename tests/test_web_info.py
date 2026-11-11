@@ -1,6 +1,9 @@
 """Read-only address discovery and login guidance; no daemon or radio."""
+import base64
 import json
+import os
 import shlex
+import shutil
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -10,6 +13,11 @@ import pytest
 from meshpi.cli import main
 from meshpi.config import Settings
 from meshpi.web_setup import tailscale_address, web_info
+
+
+@pytest.fixture(autouse=True)
+def _isolate_cli_language(monkeypatch):
+    monkeypatch.setenv('MESHPI_LANGUAGE', 'nn')
 
 
 @pytest.fixture
@@ -130,7 +138,43 @@ def test_displayed_command_uses_running_install_and_quotes_config(tmp_path, monk
     main(['--env-file', str(env), 'web-info', '--local'])
     output = capsys.readouterr().out
     command = output.split('serveren:\n\n  ', 1)[1].split('\n\n', 1)[0]
-    assert shlex.split(command.replace('\\\n', '')) == [
+    if os.name == 'nt':
+        encoded = base64.b64encode(command.encode('utf-8')).decode('ascii')
+        script = """
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$command = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__COMMAND__'))
+$tokens = $null
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseInput(
+    $command, [ref]$tokens, [ref]$errors)
+if ($errors) { throw 'The displayed command has syntax errors.' }
+$commands = @($ast.FindAll({ param($node)
+    $node -is [System.Management.Automation.Language.CommandAst]
+}, $true))
+if ($commands.Count -ne 1 -or $commands[0].InvocationOperator -ne 'Ampersand') {
+    throw 'Expected one explicit executable invocation.'
+}
+$elements = @($commands[0].CommandElements | ForEach-Object {
+    if ($_ -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) {
+        throw 'Every command argument must be literal.'
+    }
+    $_.Value
+})
+ConvertTo-Json -InputObject $elements -Compress
+""".replace('__COMMAND__', encoded)
+        powershell = shutil.which('powershell.exe')
+        assert powershell is not None
+        result = subprocess.run(
+            [powershell, '-NoProfile', '-NonInteractive', '-EncodedCommand',
+             base64.b64encode(script.encode('utf-16le')).decode('ascii')],
+            capture_output=True, text=True, encoding='utf-8', timeout=10,
+        )
+        assert result.returncode == 0, result.stderr
+        arguments = json.loads(result.stdout)
+    else:
+        arguments = shlex.split(command.replace('\\\n', ''))
+    assert arguments == [
         sys.executable, '-m', 'meshpi', '--env-file', str(env), 'web-code', '--local',
     ]
     assert '\n\nOPNE I NETTLESAREN\n' in output

@@ -1,0 +1,7 @@
+{
+  "message.status.uncertain": "Usikker sending – kontroller mottak før nytt forsøk",
+  "database.schema_too_new": "Databasen kommer fra en nyere MeshPi-versjon. Oppdater programmet; databasen er ikke endret.",
+  "client.untrusted_peer": "IPC-motparten kunne ikke bekreftes som en prosess under din Windows-bruker. Ingen token eller melding ble sendt.",
+  "backend.send.uncertain": "Meldingen kan være sendt, men utfallet kunne ikke lagres. Ikke send på nytt uten å kontrollere mottaket.",
+  "backend.send.not_sent": "Meldingen kunne ikke lagres før sending. Ingenting ble sendt."
+}

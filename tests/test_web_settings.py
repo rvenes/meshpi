@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from web_helpers import javascript_asset
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -34,7 +35,7 @@ const original={local_node_id:"!00000001",retention_days:0,needs_review:true,
   max_messages:50000,counts:{messages:20,telemetry_samples:3,positions:2,node_actions:1}};
 let calls=[];let responder;
 """
-    source = (ROOT / "meshpi/web_assets/app.js").read_text()
+    source = javascript_asset("app.js")
     scenario = r"""
 api=async(command,fields={})=>{calls.push({command,...fields});return responder(command,fields);};
 refresh=async()=>{};updateComposer=()=>{};
@@ -65,6 +66,23 @@ def test_removed_controls_and_accessible_settings():
     assert 'for="retention-days"' in markup
     assert 'for="cleanup-scope"' in markup
     assert "eigen database" in markup
+    header = markup.split('<header class="topbar">', 1)[1].split('</header>', 1)[0]
+    settings = markup.split('<dialog id="settings-dialog"', 1)[1].split('</dialog>', 1)[0]
+    for control in ("connections-button", "auth-button", "theme-toggle", "install-button"):
+        assert f'id="{control}"' in settings
+        assert f'id="{control}"' not in header
+        assert markup.count(f'id="{control}"') == 1
+
+
+def test_connections_open_from_settings_without_stacked_dialogs():
+    run_settings(r"""
+await openHistorySettings();
+showConnections=async()=>{};
+await $("connections-button").listeners.click();
+check(!$("settings-dialog").open && $("connections-dialog").open,
+  "Connections must replace the settings dialog");
+check(calls.length===1,"Opening connections sent a configuration change");
+""")
 
 
 def test_existing_policy_is_unchanged_until_explicit_confirmation():

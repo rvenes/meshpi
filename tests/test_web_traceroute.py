@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from web_helpers import javascript_asset
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -13,7 +14,7 @@ def test_traceroute_preserves_direction_names_zero_snr_and_missing_values():
     engine = shutil.which("node") or shutil.which("gjs")
     if engine is None:
         pytest.skip("Ingen lokal JavaScript-motor for modelltesten")
-    source = (ROOT / "meshpi/web_assets/traceroute.js").read_text()
+    source = javascript_asset("traceroute.js")
     checks = r"""
 function check(condition, message) {
   if (!condition) throw new Error(message);

@@ -1,4 +1,6 @@
+import errno
 import json
+import socket
 import struct
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -74,6 +76,48 @@ def http(server, path="/meshpi/api/request", payload=None, headers=None, method=
     return result
 
 
+def test_node_info_exchange_is_forwarded_through_authenticated_ipc(web):
+    server, calls = web
+    payload = {"command": "node_action", "action": "node_info_exchange", "node_id": PEER,
+               "expected_local_node_id": LOCAL}
+    status, _, _ = http(server, payload=payload)
+    assert status == 200
+    assert calls == [payload]
+
+
+def test_update_check_requires_login_csrf_and_never_forwards_to_daemon(web, monkeypatch):
+    from meshpi.update import UpdateNotice
+
+    server, calls = web
+    monkeypatch.setattr("meshpi.web.check_for_update", lambda _: UpdateNotice(
+        "0.9.8", "0.9.9", "sudo meshpi update",
+    ))
+    payload = {"command": "update_check"}
+    assert http(server, payload=payload, headers={"Cookie": ""})[0] == 401
+    assert http(server, payload=payload, headers={"X-MeshPi-CSRF": "wrong"})[0] == 403
+    assert http(server, payload={**payload, "url": "https://example.com"})[0] == 400
+    status, _, body = http(server, payload=payload)
+    assert status == 200
+    assert json.loads(body)["data"]["command"] == "sudo meshpi update"
+    assert json.loads(body)["data"]["state"] == "available"
+    assert calls == []
+    status, headers, body = http(server, "/meshpi/updates.js")
+    assert status == 200
+    assert headers["Cache-Control"] == "no-store"
+    assert b"meshpiUpdates" in body
+
+
+def test_confirmed_node_removal_still_requires_csrf_and_runs_only_once(web):
+    server, calls = web
+    payload = {"command": "remove_nodes", "node_ids": [PEER],
+               "expected_local_node_id": LOCAL, "confirmed": True}
+    assert http(server, payload=payload, headers={"X-MeshPi-CSRF": "wrong"})[0] == 403
+    assert calls == []
+    assert http(server, payload=payload)[0] == 200
+    assert http(server, payload=payload)[0] == 200
+    assert calls == [payload]
+
+
 def test_authenticated_tailnet_client_can_read_and_send(web):
     server, calls = web
     status, headers, body = http(server, payload={"command": "status"})
@@ -111,7 +155,9 @@ def test_session_identifies_web_host_without_calling_daemon(web, monkeypatch):
 ])
 def test_untrusted_requests_never_reach_ipc(web, headers):
     server, calls = web
-    assert http(server, payload={"command": "status"}, headers=headers)[0] == 403
+    # Isolate header rejection. Closing with an unread body can reset a Winsock
+    # connection before the client receives the 403 response.
+    assert http(server, method="POST", headers=headers)[0] == 403
     assert calls == []
 
 
@@ -221,6 +267,13 @@ def test_web_rejects_every_non_loopback_bind_address(address):
 
 
 def test_secondary_loopback_listener_still_requires_canonical_login(tmp_path):
+    with socket.socket() as probe:
+        try:
+            probe.bind(("127.0.0.2", 0))
+        except OSError as exc:
+            if exc.errno in {errno.EADDRNOTAVAIL, 10049}:
+                pytest.skip("Denne plattforma har ikkje den sekundære loopback-adressa.")
+            raise
     settings = Settings(database_path=tmp_path / "mock.db")
     with WebServer(settings, port=0, bind_address="127.0.0.2") as server:
         authenticate(server)
@@ -264,6 +317,7 @@ def test_run_web_bind_failure_does_not_require_daemon(tmp_path, monkeypatch):
         raise AssertionError("Weboppstart kravde daemonkontakt")
 
     monkeypatch.setattr("meshpi.web.request", forbidden)
+    monkeypatch.setattr(WebServer, "serve_forever", forbidden)
     settings = Settings(database_path=tmp_path / "mock.db")
     with (
         WebServer(settings, port=0) as occupied,
@@ -300,9 +354,10 @@ def test_proxy_stripped_html_uses_mount_urls_even_without_trailing_slash(web, ba
     assets.feed(body.decode())
     assert assets.base_path == base_path
     assert assets.urls == [
-        base_path + "/theme.js", base_path + "/style.css",
+        base_path + "/text.js", base_path + "/theme.js",
+        base_path + "/i18n.js", base_path + "/style.css",
         base_path + "/traceroute.js", base_path + "/auth.js", base_path + "/app.js",
-        base_path + "/install.js",
+        base_path + "/updates.js", base_path + "/install.js",
     ]
     origin = "https://mesh-test.example.ts.net"
     for suffix in ("", "/"):

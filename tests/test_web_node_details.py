@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from web_helpers import javascript_asset
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -82,6 +83,16 @@ const overview={node:{node_id:"!00000002",local_node_id:"!00000001",long_name:"T
   latest_position:{latitude:0,longitude:0,altitude_msl:0,sample_time:"2026-10-21T12:00:00Z"},
   extra:{future:"bevart"}};
 const summary=new Element("div");renderNodeOverview(summary,overview);
+const exchangeView=new Element("div");
+renderNodeOverview(exchangeView,{...overview,node_info_exchanges:[{
+  status:"completed",result:{public_key_received:true,public_key_shared:true},
+}]});
+check(text(exchangeView).includes("Noden sende ein offentleg nøkkel"),"Key receipt missing");
+check(nodeInfoExchangeText({status:"completed",result:{}}).includes("ikkje ein offentleg"),
+  "A reply without a key was reported as successful key exchange");
+check(nodeInfoExchangeText({status:"failed",error:"Tidsavbrot"})==="Tidsavbrot",
+  "Node info failure disappeared");
+check(nodeInfoExchangeText({status:"started"}).includes("Ventar på svar"),"Pending state lost");
 const facts=nodes(summary,"dl").map(text).join(" ").replaceAll("−","-");
 check(facts.includes("0 dB")&&facts.includes("-90 dBm")&&facts.includes("Gateway"),
   "Link metrics or gateway name lost");
@@ -115,8 +126,17 @@ async function testTabs() {
   check(text($("node-data"))===content,"Late response overwrote current tab");
   check(requests[1].command==="node_telemetry"&&requests[1].limit===100
     &&requests[1].node_id===overview.node.node_id,"Wrong history request");
-  check(requests.length===4,"Rendering caused an unexpected request/write");
-  check($("traceroute").disabled&&$("position-exchange").disabled,"Availability ignored");
+  check(requests.length===5,"Rendering caused an unexpected request/write");
+  check($("traceroute").disabled&&$("position-exchange").disabled
+    &&$("node-info-exchange").disabled,"Availability ignored");
+  api=async(command,fields)=>{
+    if(command==="node_telemetry")return samples;
+    if(fields.action==="node_info_exchange")throw new Error("Ukjend nodehandling");
+    return {available:true};
+  };
+  await renderNode();
+  check(!$("traceroute").disabled&&$("node-info-exchange").disabled,
+    "An older daemon must preserve existing node controls");
   api=async()=>{throw new Error("offline");};
   await renderNode().catch(()=>{});
   check(text($("node-data")).includes("Kunne ikkje hente"),"Loading error stuck");
@@ -127,7 +147,7 @@ testTabs().catch(error=>{throw error;});
 """
     flag = "-e" if Path(engine).name == "node" else "-c"
     result = subprocess.run([
-        engine, flag, environment + (ROOT / "meshpi/web_assets/app.js").read_text() + checks,
+        engine, flag, environment + javascript_asset("app.js") + checks,
     ], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
     assert "node details checked" in result.stdout, result.stderr

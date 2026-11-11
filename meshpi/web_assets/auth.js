@@ -6,6 +6,7 @@ const meshpiAuth = (() => {
   let session = {authenticated: false};
   let hooks;
   let busy = false;
+  let savedKeys = null;
   function decode(value) {
     const padded = value.replace(/-/g, "+").replace(/_/g, "/");
     return Uint8Array.from(atob(padded + "=".repeat((4 - padded.length % 4) % 4)), c => c.charCodeAt(0)).buffer;
@@ -39,7 +40,7 @@ const meshpiAuth = (() => {
     byId("auth-login").hidden = !!session.authenticated;
     byId("auth-manage").hidden = !session.authenticated;
     byId("auth-close").hidden = !session.authenticated;
-    byId("auth-title").textContent = session.authenticated ? "Innlogging og nøklar" : "Logg inn i MeshPi";
+    byId("auth-title").textContent = session.authenticated ? webText("Innlogging og nøklar") : webText("Logg inn i MeshPi");
     byId("auth-passkey").disabled = busy || !supported();
     byId("auth-register").disabled = busy || !supported();
     byId("auth-code-submit").disabled = busy;
@@ -51,16 +52,16 @@ const meshpiAuth = (() => {
         const url = new URL(session.canonical_url);
         if (url.protocol === "https:" || (url.protocol === "http:" && url.hostname === "localhost")) {
           link.href = url.href;
-          link.textContent = `Opne innloggingsadressa: ${url.host}`;
+          link.textContent = webText`Opne innloggingsadressa: ${url.host}`;
           link.hidden = false;
         }
       } catch (_) { /* Ignore a malformed server URL. */ }
     }
     byId("auth-passkey-note").textContent = supported()
-      ? "Passkeys er knytte til denne adressa. Du kan bruke Bitwarden, Apple Passord, Windows Hello eller ein tryggleiksnøkkel. Legg gjerne til ein ekstra nøkkel."
+      ? webText("Passkeys er knytte til denne adressa. Du kan bruke Bitwarden, Apple Passord, Windows Hello eller ein tryggleiksnøkkel. Legg gjerne til ein ekstra nøkkel.")
       : session.passkeys_available
-        ? "Denne nettlesaren støttar ikkje passkeys. Bruk ein oppdatert nettlesar eller ein eingongskode."
-        : "Passkeys krev den faste HTTPS-adressa. På localhost brukar du ein eingongskode frå terminalen på MeshPi-maskina.";
+        ? webText("Denne nettlesaren støttar ikkje passkeys. Bruk ein oppdatert nettlesar eller ein eingongskode.")
+        : webText("Passkeys krev den faste HTTPS-adressa. På localhost brukar du ein eingongskode frå terminalen på MeshPi-maskina.");
     if (!session.authenticated) {
       for (const dialog of document.querySelectorAll("dialog[open]")) {
         if (dialog.id !== "auth-dialog") dialog.close();
@@ -76,8 +77,9 @@ const meshpiAuth = (() => {
   }
   function lock() {
     update({...session, authenticated: false});
+    savedKeys = null;
     byId("auth-keys").replaceChildren();
-    byId("auth-error").textContent = "Logg inn for å halde fram. Utkastet ditt er bevart i denne fana.";
+    byId("auth-error").textContent = webText("Logg inn for å halde fram. Utkastet ditt er bevart i denne fana.");
   }
   async function action(fn) {
     if (busy) return;
@@ -87,20 +89,25 @@ const meshpiAuth = (() => {
     try { await fn(); }
     catch (error) {
       byId("auth-error").textContent = ["NotAllowedError", "AbortError"].includes(error.name)
-        ? "Innlogginga blei avbroten eller tok for lang tid. Du kan prøve igjen."
-        : error.message || "Kunne ikkje fullføre innlogginga.";
+        ? webText("Innlogginga blei avbroten eller tok for lang tid. Du kan prøve igjen.")
+        : error.message || webText("Kunne ikkje fullføre innlogginga.");
     } finally { busy = false; render(); }
   }
   async function loggedIn(data) {
     hooks.session(data);
     update(data);
-    if (!data.authenticated) throw new Error("Innlogginga blei ikkje godkjend.");
+    if (!data.authenticated) throw new Error(webText("Innlogginga blei ikkje godkjend."));
     byId("auth-code").value = "";
     byId("auth-dialog").close();
     await hooks.resume();
   }
   async function keys() {
-    const data = await hooks.keys();
+    savedKeys = await hooks.keys();
+    renderKeys();
+  }
+  function renderKeys() {
+    if (!savedKeys) return;
+    const data = savedKeys;
     const root = byId("auth-keys");
     root.replaceChildren();
     for (const key of data.keys || []) {
@@ -111,10 +118,10 @@ const meshpiAuth = (() => {
       const remove = document.createElement("button");
       remove.className = "quiet";
       remove.type = "button";
-      remove.textContent = "Fjern";
-      remove.setAttribute("aria-label", `Fjern nøkkelen ${key.name}`);
+      remove.textContent = webText("Fjern");
+      remove.setAttribute("aria-label", webText`Fjern nøkkelen ${key.name}`);
       remove.addEventListener("click", () => action(async () => {
-        if (!confirm(`Fjerne nøkkelen «${key.name}»? Alle nettlesarar blir logga ut. Du kan få ein ny eingongskode frå terminalen.`)) return;
+        if (!confirm(webText`Fjerne nøkkelen «${key.name}»? Alle nettlesarar blir logga ut. Du kan få ein ny eingongskode frå terminalen.`)) return;
         await hooks.request("auth/remove", {id: key.id});
         hooks.lock();
         await hooks.renew();
@@ -122,13 +129,14 @@ const meshpiAuth = (() => {
       row.append(label, remove);
       root.append(row);
     }
-    if (!root.children.length) root.textContent = "Ingen passkeys er registrerte enno.";
+    if (!root.children.length) root.textContent = webText("Ingen passkeys er registrerte enno.");
   }
   function init(callbacks) {
     hooks = callbacks;
     byId("auth-dialog").addEventListener("cancel", event => {if (!session.authenticated) event.preventDefault();});
     byId("auth-close").addEventListener("click", () => byId("auth-dialog").close());
     byId("auth-button").addEventListener("click", () => action(async () => {
+      byId("settings-dialog")?.close();
       await hooks.renew();
       if (!byId("auth-dialog").open) byId("auth-dialog").showModal();
       if (session.authenticated) await keys();
@@ -149,7 +157,7 @@ const meshpiAuth = (() => {
       await hooks.renew();
       const begin = await hooks.request("auth/login/begin", {});
       const credential = await navigator.credentials.get({publicKey: options(begin.options, false)});
-      if (!credential) throw new Error("Ingen nøkkel blei vald.");
+      if (!credential) throw new Error(webText("Ingen nøkkel blei vald."));
       await loggedIn(await hooks.request("auth/login/finish", {challenge_id: begin.challenge_id, credential: credentialJSON(credential)}));
     }));
     byId("auth-register-form").addEventListener("submit", event => {
@@ -159,11 +167,11 @@ const meshpiAuth = (() => {
       return action(async () => {
         const begin = await hooks.request("auth/register/begin", {});
         const credential = await navigator.credentials.create({publicKey: options(begin.options, true)});
-        if (!credential) throw new Error("Ingen nøkkel blei oppretta.");
+        if (!credential) throw new Error(webText("Ingen nøkkel blei oppretta."));
         await hooks.request("auth/register/finish", {challenge_id: begin.challenge_id, name, credential: credentialJSON(credential)});
         byId("auth-name").value = "";
         await keys();
-        byId("auth-error").textContent = "Nøkkelen er lagra.";
+        byId("auth-error").textContent = webText("Nøkkelen er lagra.");
       });
     });
     byId("auth-logout").addEventListener("click", () => action(async () => {
@@ -173,5 +181,6 @@ const meshpiAuth = (() => {
     }));
     render();
   }
+  if (typeof meshpiI18n !== "undefined") meshpiI18n.onChange(() => {render();renderKeys();});
   return {init, update, lock, options, credentialJSON};
 })();

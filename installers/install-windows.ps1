@@ -25,42 +25,52 @@ if (-not $Language) {
 $Language = $Language.ToLowerInvariant()
 
 $Messages = @{
-    invalid_language = @{ nn = 'Språket må vere «nn» eller «en».'; en = 'Language must be “nn” or “en”.' }
-    windows_folders = @{ nn = 'Klarte ikkje finne Windows-mappene for gjeldande brukar.'; en = 'Could not locate the Windows folders for the current user.' }
-    invalid_release = @{ nn = 'Ugyldig versjonsmappe for Windows-launcheren.'; en = 'Invalid release folder for the Windows launcher.' }
-    legacy_locked = @{ nn = 'Den gamle MeshPi-launcheren er i bruk. Lukk andre MeshPi-terminalar og køyr installatøren på nytt.'; en = 'The old MeshPi launcher is in use. Close other MeshPi terminals and run the installer again.' }
-    check_python = @{ nn = 'Kontrollerer Python 3.11 eller nyare …'; en = 'Checking for Python 3.11 or newer …' }
-    python_required = @{ nn = 'MeshPi krev Python 3.11+. Installer frå https://python.org og køyr skriptet igjen.'; en = 'MeshPi requires Python 3.11+. Install it from https://python.org and run the script again.' }
-    install_python = @{ nn = 'Installerer Python 3.11 for gjeldande brukar …'; en = 'Installing Python 3.11 for the current user …' }
-    winget_failed = @{ nn = 'Klarte ikkje installere Python 3.11 med winget.'; en = 'Could not install Python 3.11 with winget.' }
-    reopen_powershell = @{ nn = 'Python blei installert, men er ikkje tilgjengeleg enno. Opne PowerShell på nytt.'; en = 'Python was installed but is not available yet. Reopen PowerShell.' }
-    fetch_manifest = @{ nn = 'Hentar og kontrollerer signert versjonsinformasjon …'; en = 'Downloading and checking signed version information …' }
-    signature_mismatch = @{ nn = 'Signaturen på versjonsmanifestet stemmer ikkje.'; en = 'The version manifest signature does not match.' }
-    invalid_version = @{ nn = 'Ugyldig versjon i version.json.'; en = 'Invalid version in version.json.' }
-    invalid_package = @{ nn = 'Ugyldig pakkenamn i version.json.'; en = 'Invalid package name in version.json.' }
-    invalid_sha = @{ nn = 'Ugyldig SHA-256 i version.json.'; en = 'Invalid SHA-256 in version.json.' }
-    invalid_lock_hash = @{ nn = 'Ugyldig låsefil-hash i version.json.'; en = 'Invalid lock-file hash in version.json.' }
-    download_release = @{ nn = 'Lastar ned MeshPi {0} og låste avhengigheiter …'; en = 'Downloading MeshPi {0} and locked dependencies …' }
-    check_hashes = @{ nn = 'Kontrollerer SHA-256 for alle nedlasta filer …'; en = 'Checking SHA-256 for all downloaded files …' }
-    sha_mismatch = @{ nn = 'SHA-256 stemmer ikkje. Installasjonen er avbroten.'; en = 'SHA-256 does not match. Installation aborted.' }
-    lock_mismatch = @{ nn = 'SHA-256 for låsefila stemmer ikkje. Installasjonen er avbroten.'; en = 'The lock-file SHA-256 does not match. Installation aborted.' }
-    create_environment = @{ nn = 'Opprettar programmiljø og installerer avhengigheiter. Dette kan ta nokre minutt …'; en = 'Creating the application environment and installing dependencies. This may take a few minutes …' }
-    venv_failed = @{ nn = 'Klarte ikkje opprette Python-miljøet.'; en = 'Could not create the Python environment.' }
-    deps_failed = @{ nn = 'Klarte ikkje installere låste avhengigheiter.'; en = 'Could not install locked dependencies.' }
-    package_failed = @{ nn = 'Klarte ikkje installere MeshPi-pakken.'; en = 'Could not install the MeshPi package.' }
-    already_installed = @{ nn = 'MeshPi {0} er alt installert; bruker programfilene på nytt …'; en = 'MeshPi {0} is already installed; reusing the application files …' }
-    selftest = @{ nn = 'Kontrollerer installert versjon og køyrer sjølvtest …'; en = 'Checking the installed version and running the self-test …' }
-    wrong_version = @{ nn = 'Pakken rapporterer «{0}», venta MeshPi {1}.'; en = 'The package reports “{0}”; expected MeshPi {1}.' }
-    selftest_failed = @{ nn = 'MeshPi-sjølvtesten feila.'; en = 'The MeshPi self-test failed.' }
-    activate = @{ nn = 'Aktiverer MeshPi og konfigurerer bakgrunnstenesta …'; en = 'Activating MeshPi and configuring the background service …' }
-    powershell_missing = @{ nn = 'Fann ikkje Windows PowerShell på den godkjende systemstien.'; en = 'Could not find Windows PowerShell at the approved system path.' }
-    service_description = @{ nn = 'MeshPi Meshtastic-bakgrunnsteneste'; en = 'MeshPi Meshtastic background service' }
-    rollback = @{ nn = 'Oppdateringa feila. Førre versjon er sett tilbake.'; en = 'The update failed. The previous version has been restored.' }
-    no_rollback = @{ nn = 'Oppdateringa feila, og ingen førre versjon finst.'; en = 'The update failed, and no previous version is available.' }
-    managed_pip = @{ nn = 'MeshPi held pip og programpakkane oppdaterte gjennom testa utgivingar. Bruk meshpi update.'; en = 'MeshPi updates pip and dependencies through tested releases. Use meshpi update.' }
-    complete = @{ nn = 'Installasjonen er ferdig.'; en = 'Installation is complete.' }
-    installed = @{ nn = 'MeshPi {0} er installert i {1}-modus.'; en = 'MeshPi {0} is installed in {1} mode.' }
-    start = @{ nn = 'Opne eit nytt terminalvindauge og start med: meshpi'; en = 'Open a new terminal window and start with: meshpi' }
+    invalid_language = @{ nn = 'Språket må vere «nb», «nn» eller «en».'; nb = 'Språket må være «nb», «nn» eller «en».'; en = 'Language must be “nb”, “nn” or “en”.' }
+    windows_folders = @{ nn = 'Klarte ikkje finne Windows-mappene for gjeldande brukar.'; nb = 'Klarte ikke å finne Windows-mappene for gjeldende bruker.'; en = 'Could not locate the Windows folders for the current user.' }
+    invalid_release = @{ nn = 'Ugyldig versjonsmappe for Windows-launcheren.'; nb = 'Ugyldig versjonsmappe for Windows-starteren.'; en = 'Invalid release folder for the Windows launcher.' }
+    legacy_locked = @{ nn = 'Den gamle MeshPi-launcheren er i bruk. Lukk andre MeshPi-terminalar og køyr installatøren på nytt.'; nb = 'Den gamle MeshPi-starteren er i bruk. Lukk andre MeshPi-terminaler og kjør installasjonsprogrammet på nytt.'; en = 'The old MeshPi launcher is in use. Close other MeshPi terminals and run the installer again.' }
+    check_python = @{ nn = 'Kontrollerer Python 3.11 eller nyare …'; nb = 'Kontrollerer Python 3.11 eller nyere …'; en = 'Checking for Python 3.11 or newer …' }
+    python_required = @{ nn = 'MeshPi krev Python 3.11+. Installer frå https://python.org og køyr skriptet igjen.'; nb = 'MeshPi krever Python 3.11+. Installer fra https://python.org og kjør skriptet igjen.'; en = 'MeshPi requires Python 3.11+. Install it from https://python.org and run the script again.' }
+    install_python = @{ nn = 'Installerer Python 3.11 for gjeldande brukar …'; nb = 'Installerer Python 3.11 for gjeldende bruker …'; en = 'Installing Python 3.11 for the current user …' }
+    winget_failed = @{ nn = 'Klarte ikkje installere Python 3.11 med winget.'; nb = 'Klarte ikke å installere Python 3.11 med winget.'; en = 'Could not install Python 3.11 with winget.' }
+    reopen_powershell = @{ nn = 'Python blei installert, men er ikkje tilgjengeleg enno. Opne PowerShell på nytt.'; nb = 'Python ble installert, men er ikke tilgjengelig ennå. Åpne PowerShell på nytt.'; en = 'Python was installed but is not available yet. Reopen PowerShell.' }
+    fetch_manifest = @{ nn = 'Hentar og kontrollerer signert versjonsinformasjon …'; nb = 'Henter og kontrollerer signert versjonsinformasjon …'; en = 'Downloading and checking signed version information …' }
+    signature_mismatch = @{ nn = 'Signaturen på versjonsmanifestet stemmer ikkje.'; nb = 'Signaturen på versjonsmanifestet stemmer ikke.'; en = 'The version manifest signature does not match.' }
+    invalid_version = @{ nn = 'Ugyldig versjon i version.json.'; nb = 'Ugyldig versjon i version.json.'; en = 'Invalid version in version.json.' }
+    invalid_package = @{ nn = 'Ugyldig pakkenamn i version.json.'; nb = 'Ugyldig pakkenavn i version.json.'; en = 'Invalid package name in version.json.' }
+    invalid_sha = @{ nn = 'Ugyldig SHA-256 i version.json.'; nb = 'Ugyldig SHA-256 i version.json.'; en = 'Invalid SHA-256 in version.json.' }
+    invalid_lock_hash = @{ nn = 'Ugyldig låsefil-hash i version.json.'; nb = 'Ugyldig låsefil-hash i version.json.'; en = 'Invalid lock-file hash in version.json.' }
+    download_release = @{ nn = 'Lastar ned MeshPi {0} og låste avhengigheiter …'; nb = 'Laster ned MeshPi {0} og låste avhengigheter …'; en = 'Downloading MeshPi {0} and locked dependencies …' }
+    check_hashes = @{ nn = 'Kontrollerer SHA-256 for alle nedlasta filer …'; nb = 'Kontrollerer SHA-256 for alle nedlastede filer …'; en = 'Checking SHA-256 for all downloaded files …' }
+    sha_mismatch = @{ nn = 'SHA-256 stemmer ikkje. Installasjonen er avbroten.'; nb = 'SHA-256 stemmer ikke. Installasjonen er avbrutt.'; en = 'SHA-256 does not match. Installation aborted.' }
+    lock_mismatch = @{ nn = 'SHA-256 for låsefila stemmer ikkje. Installasjonen er avbroten.'; nb = 'SHA-256 for låsefilen stemmer ikke. Installasjonen er avbrutt.'; en = 'The lock-file SHA-256 does not match. Installation aborted.' }
+    create_environment = @{ nn = 'Opprettar programmiljø og installerer avhengigheiter. Dette kan ta nokre minutt …'; nb = 'Oppretter programmiljø og installerer avhengigheter. Dette kan ta noen minutter …'; en = 'Creating the application environment and installing dependencies. This may take a few minutes …' }
+    venv_failed = @{ nn = 'Klarte ikkje opprette Python-miljøet.'; nb = 'Klarte ikke å opprette Python-miljøet.'; en = 'Could not create the Python environment.' }
+    deps_failed = @{ nn = 'Klarte ikkje installere låste avhengigheiter.'; nb = 'Klarte ikke å installere låste avhengigheter.'; en = 'Could not install locked dependencies.' }
+    package_failed = @{ nn = 'Klarte ikkje installere MeshPi-pakken.'; nb = 'Klarte ikke å installere MeshPi-pakken.'; en = 'Could not install the MeshPi package.' }
+    already_installed = @{ nn = 'MeshPi {0} er alt installert; bruker programfilene på nytt …'; nb = 'MeshPi {0} er allerede installert; bruker programfilene på nytt …'; en = 'MeshPi {0} is already installed; reusing the application files …' }
+    selftest = @{ nn = 'Kontrollerer installert versjon og køyrer sjølvtest …'; nb = 'Kontrollerer installert versjon og kjører selvtest …'; en = 'Checking the installed version and running the self-test …' }
+    wrong_version = @{ nn = 'Pakken rapporterer «{0}», venta MeshPi {1}.'; nb = 'Pakken rapporterer «{0}», forventet MeshPi {1}.'; en = 'The package reports “{0}”; expected MeshPi {1}.' }
+    selftest_failed = @{ nn = 'MeshPi-sjølvtesten feila.'; nb = 'MeshPi-selvtesten mislyktes.'; en = 'The MeshPi self-test failed.' }
+    activate = @{ nn = 'Aktiverer MeshPi og konfigurerer bakgrunnstenesta …'; nb = 'Aktiverer MeshPi og konfigurerer bakgrunnstjenesten …'; en = 'Activating MeshPi and configuring the background service …' }
+    powershell_missing = @{ nn = 'Fann ikkje Windows PowerShell på den godkjende systemstien.'; nb = 'Fant ikke Windows PowerShell på den godkjente systemstien.'; en = 'Could not find Windows PowerShell at the approved system path.' }
+    service_description = @{ nn = 'MeshPi Meshtastic-bakgrunnsteneste'; nb = 'MeshPi Meshtastic-bakgrunnstjeneste'; en = 'MeshPi Meshtastic background service' }
+    rollback = @{ nn = 'Oppdateringa feila. Førre versjon er sett tilbake.'; nb = 'Oppdateringen mislyktes. Forrige versjon er gjenopprettet.'; en = 'The update failed. The previous version has been restored.' }
+    no_rollback = @{ nn = 'Oppdateringa feila, og ingen førre versjon finst.'; nb = 'Oppdateringen mislyktes, og ingen tidligere versjon finnes.'; en = 'The update failed, and no previous version is available.' }
+    managed_pip = @{ nn = 'MeshPi held pip og programpakkane oppdaterte gjennom testa utgivingar. Bruk meshpi update.'; nb = 'MeshPi holder pip og programpakkene oppdatert gjennom testede utgivelser. Bruk meshpi update.'; en = 'MeshPi updates pip and dependencies through tested releases. Use meshpi update.' }
+    complete = @{ nn = 'Installasjonen er ferdig.'; nb = 'Installasjonen er ferdig.'; en = 'Installation is complete.' }
+    installed = @{ nn = 'MeshPi {0} er installert i {1}-modus.'; nb = 'MeshPi {0} er installert i {1}-modus.'; en = 'MeshPi {0} is installed in {1} mode.' }
+    start = @{ nn = 'Opne eit nytt terminalvindauge og start med: meshpi'; nb = 'Åpne et nytt terminalvindu og start med: meshpi'; en = 'Open a new terminal window and start with: meshpi' }
+    web_prompt = @{ nn = 'Vil du aktivere webgrensesnittet? [j/N]'; nb = 'Vil du aktivere webgrensesnittet? [j/N]'; en = 'Enable the web interface? [y/N]' }
+    web_invalid = @{ nn = 'WEB_ENABLED må vere true eller false.'; nb = 'WEB_ENABLED må være true eller false.'; en = 'WEB_ENABLED must be true or false.' }
+    install_busy = @{ nn = 'Ei anna MeshPi-installering køyrer. Vent til ho er ferdig og prøv igjen.'; nb = 'En annen MeshPi-installasjon kjører. Vent til den er ferdig og prøv igjen.'; en = 'Another MeshPi installation is running. Wait for it to finish and try again.' }
+    web_off = @{ nn = 'Webgrensesnittet er avslått. Køyr meshpi web-info for steg til aktivering og tilgang.'; nb = 'Webgrensesnittet er slått av. Kjør meshpi web-info for hjelp til aktivering og tilgang.'; en = 'The web interface is disabled. Run meshpi web-info for activation and access instructions.' }
+    web_address = @{ nn = 'Webgrensesnitt: {0}/'; nb = 'Webgrensesnitt: {0}/'; en = 'Web interface: {0}/' }
+    web_start = @{ nn = 'Start webgrensesnittet med: meshpi web'; nb = 'Start webgrensesnittet med: meshpi web'; en = 'Start the web interface with: meshpi web' }
+    web_code = @{ nn = 'Hent ein eingongskode for innlogging med: meshpi web-code'; nb = 'Hent en engangskode for innlogging med: meshpi web-code'; en = 'Get a one-time login code with: meshpi web-code' }
+    web_serve = @{ nn = 'Tilgang via Tailscale Serve må setjast opp separat. Køyr meshpi web-info for kommandoane.'; nb = 'Tilgang via Tailscale Serve må settes opp separat. Kjør meshpi web-info for kommandoene.'; en = 'Access through Tailscale Serve requires separate setup. Run meshpi web-info for the commands.' }
+    daemon_not_stopped = @{ nn = 'MeshPi-daemonen er ikkje ferdig avslutta.'; nb = 'MeshPi-daemonen er ikke ferdig avsluttet.'; en = 'The MeshPi daemon has not finished shutting down.' }
+    services_not_ready = @{ nn = 'MeshPi-tenestene vart ikkje klare etter installasjonen.'; nb = 'MeshPi-tjenestene ble ikke klare etter installasjonen.'; en = 'The MeshPi services did not become ready after installation.' }
 }
 
 function Get-Message {
@@ -70,7 +80,7 @@ function Get-Message {
     return [string]::Format($template, $Values)
 }
 
-if ($Language -notin @("nn", "en")) {
+if ($Language -notin @("nb", "nn", "en")) {
     $Language = $detectedLanguage
     throw (Get-Message invalid_language)
 }
@@ -349,12 +359,26 @@ $languageFile = if ($env:MESHPI_LANGUAGE_FILE) {
     Join-Path $installRoot "language.json"
 }
 
+function Open-InstallLock {
+    param([string]$Root)
+    [IO.Directory]::CreateDirectory($Root) | Out-Null
+    try {
+        # Keep a stable lock file: deleting it would allow a second lock owner.
+        return [IO.File]::Open((Join-Path $Root ".install.lock"),
+            [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    } catch [IO.IOException] {
+        throw (Get-Message install_busy)
+    }
+}
+
 function ConvertTo-PowerShellLiteral {
     param([string]$Value)
     return "'" + $Value.Replace("'", "''") + "'"
 }
 $freshInstall = -not (Test-Path -LiteralPath $installRoot) -and `
     -not (Test-Path -LiteralPath $configRoot)
+$installLock = Open-InstallLock $installRoot
+try {
 $webEnabled = "false"
 if ($Web -eq "Keep") {
     if (Test-Path -LiteralPath $configFile) {
@@ -362,14 +386,14 @@ if ($Web -eq "Keep") {
         if ($savedWeb) { $webEnabled = $savedWeb }
     } elseif ($freshInstall -and [Environment]::UserInteractive -and
               -not [Console]::IsInputRedirected -and $Host.Name -eq "ConsoleHost") {
-        $answer = Read-Host 'Vil du aktivere webgrensesnittet? [j/N]'
+        $answer = Read-Host (Get-Message web_prompt)
         if ($answer -match '^(j|ja|y|yes)$') { $webEnabled = "true" }
     }
 } elseif ($Web -eq "Enabled") {
     $webEnabled = "true"
 }
 if ($webEnabled -notin @("true", "false")) {
-    throw 'WEB_ENABLED må vere true eller false.'
+    throw (Get-Message web_invalid)
 }
 $tempDir = Join-Path ([IO.Path]::GetTempPath()) ("meshpi-" + [guid]::NewGuid())
 $manifestFile = Join-Path $tempDir "version.json"
@@ -447,6 +471,13 @@ messages = {
         "unknown_key": "Ukjend signeringsnøkkel",
         "invalid_signature": "Ugyldig manifestsignatur",
         "signature_mismatch": "Signaturen på versjonsmanifestet stemmer ikkje",
+    },
+    "nb": {
+        "missing_signature": "Versjonsmanifestet mangler en gyldig signatur",
+        "revoked_key": "Tilbakekalt signeringsnøkkel",
+        "unknown_key": "Ukjent signeringsnøkkel",
+        "invalid_signature": "Ugyldig manifestsignatur",
+        "signature_mismatch": "Signaturen på versjonsmanifestet stemmer ikke",
     },
     "en": {
         "missing_signature": "The version manifest is missing a valid signature",
@@ -682,6 +713,7 @@ BACKGROUND_MODE=$modeValue
     $dataLiteral = ConvertTo-PowerShellLiteral $dataDir
     $supervisorLiteral = ConvertTo-PowerShellLiteral $supervisorFile
     $descriptionLiteral = ConvertTo-PowerShellLiteral (Get-Message service_description)
+    $daemonNotStoppedLiteral = ConvertTo-PowerShellLiteral (Get-Message daemon_not_stopped)
     @"
 `$ErrorActionPreference = "Stop"
 `$log = Join-Path $dataLiteral "meshpi-supervisor.log"
@@ -782,7 +814,7 @@ if (`$Action -eq "enable") {
         if (`$daemons.Count -eq 0) { break }
         Start-Sleep -Milliseconds 250
     }
-    if (`$daemons.Count -gt 0) { throw 'MeshPi-daemonen er ikkje ferdig avslutta.' }
+    if (`$daemons.Count -gt 0) { throw $daemonNotStoppedLiteral }
     Get-MeshPiChildren | Where-Object { `$_.CommandLine -match '\sweb\s*$' } | ForEach-Object {
         Stop-Process -Id `$_.ProcessId -Force -ErrorAction SilentlyContinue
     }
@@ -857,7 +889,7 @@ if (`$Action -eq "enable") {
             }
         }
         if (-not $ready) {
-            throw 'MeshPi-tenestene vart ikkje klare etter installasjonen.'
+            throw (Get-Message services_not_ready)
         }
     }
 
@@ -878,12 +910,12 @@ if (`$Action -eq "enable") {
     if ($webEnabled -eq "true") {
         $webUrl = Get-EnvValue $configFile "WEB_PUBLIC_URL"
         if (-not $webUrl) { $webUrl = "http://localhost:" + (Get-EnvValue $configFile "WEB_PORT") }
-        Write-Host ("Webgrensesnitt: " + $webUrl + (Get-EnvValue $configFile "WEB_BASE_PATH") + "/")
-        if ($Mode -eq "Session") { Write-Host 'Start webgrensesnittet med: meshpi web' }
-        Write-Host 'Hent ein eingongskode for innlogging med: meshpi web-code'
-        Write-Host 'Tilgang via Tailscale Serve må setjast opp separat. Køyr meshpi web-info for kommandoane.'
+        Write-Host (Get-Message web_address @($webUrl + (Get-EnvValue $configFile "WEB_BASE_PATH")))
+        if ($Mode -eq "Session") { Write-Host (Get-Message web_start) }
+        Write-Host (Get-Message web_code)
+        Write-Host (Get-Message web_serve)
     } else {
-        Write-Host 'Webgrensesnittet er avslått. Køyr meshpi web-info for steg til aktivering og tilgang.'
+        Write-Host (Get-Message web_off)
     }
 } catch {
     $installError = $_
@@ -907,4 +939,7 @@ if (`$Action -eq "enable") {
     throw $installError
 } finally {
     Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+} finally {
+    $installLock.Dispose()
 }

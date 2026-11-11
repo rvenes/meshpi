@@ -7,8 +7,8 @@ function tracerouteModel(action, nodes = []) {
     const id = typeof value === "string" ? value.toLowerCase() : "";
     const known = byId.get(id);
     return {
-      id: id || "Ikkje oppgitt",
-      name: known?.long_name || known?.short_name || "Ukjend node",
+      id: id || webText("Ikkje oppgitt"),
+      name: known?.long_name || known?.short_name || webText("Ukjend node"),
     };
   }
 
@@ -32,8 +32,8 @@ function tracerouteModel(action, nodes = []) {
   const finished = Date.parse(action.finished_at);
   const result = action.result && typeof action.result === "object" ? action.result : {};
   return {
-    status: {started: "Ventar på svar", completed: "Fullført", failed: "Feila"}[action.status]
-      || "Ukjend status",
+    status: {started: webText("Ventar på svar"), completed: webText("Fullført"), failed: webText("Feila")}[action.status]
+      || webText("Ukjend status"),
     duration: Number.isFinite(started) && Number.isFinite(finished) && finished >= started
       ? (finished - started) / 1000 : null,
     source: nodeInfo(action.local_node_id),

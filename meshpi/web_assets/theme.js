@@ -17,10 +17,14 @@ const meshpiTheme = (() => {
   function apply() {
     document.documentElement.dataset.theme = preference === "system"
       ? (media.matches ? "dark" : "light") : preference;
+    const dark = document.documentElement.dataset.theme === "dark";
+    document.querySelector?.('meta[name="theme-color"]')?.setAttribute(
+      "content", dark ? "#101f2d" : "#eaf1f6");
     if (toggleButton) {
-      const dark = document.documentElement.dataset.theme === "dark";
       toggleButton.setAttribute("aria-pressed", String(dark));
-      toggleButton.title = dark ? "Byt til lys modus" : "Byt til mørk modus";
+      toggleButton.title = dark ? webText("Byt til lys modus") : webText("Byt til mørk modus");
+      const label = toggleButton.querySelector?.(".theme-label");
+      if (label) label.textContent = toggleButton.title;
     }
   }
   apply();
@@ -39,6 +43,7 @@ const meshpiTheme = (() => {
     apply();
   }
 
+  if (typeof meshpiI18n !== "undefined") meshpiI18n.onChange(apply);
   return {
     getPreference: () => preference,
     setPreference,
@@ -47,6 +52,7 @@ const meshpiTheme = (() => {
       button.addEventListener("click", () => setPreference(
         document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
       apply();
+      if (typeof meshpiI18n !== "undefined") meshpiI18n.onChange(apply);
     },
   };
 })();

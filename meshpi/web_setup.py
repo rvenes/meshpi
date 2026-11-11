@@ -13,6 +13,7 @@ from http.client import HTTPConnection
 from pathlib import Path
 
 from meshpi.config import Settings, validate_web_config
+from meshpi.i18n import tr
 
 
 def tailscale_address() -> tuple[str, str]:
@@ -78,10 +79,10 @@ def configure_web(
         updated = replace(updated, web_enabled=enabled)
     path = Path(env_file).expanduser().absolute()
     if path.is_symlink():
-        raise ValueError("Konfigurasjonsfila kan ikkje vere ei symbolsk lenkje.")
+        raise ValueError(tr('backend.config.symlink'))
     info = path.stat() if path.exists() else None
     if info is not None and not stat.S_ISREG(info.st_mode):
-        raise ValueError("Konfigurasjonen må vere ei vanleg fil.")
+        raise ValueError(tr('backend.config.regular_file'))
     values = {
         "WEB_ENABLED": str(updated.web_enabled).lower(),
         "WEB_PORT": str(updated.web_port),
@@ -107,8 +108,7 @@ def configure_web(
         os.replace(temporary, path)
     except PermissionError as exc:
         raise RuntimeError(
-            "Manglar rettar til konfigurasjonsmappa. "
-            "Bruk administratorrettar for systeminstallasjonen."
+            tr('backend.config.permission')
         ) from exc
     finally:
         if temporary is not None:

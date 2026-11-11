@@ -6,7 +6,8 @@ PURGE=0
 detect_language() {
     locale_hint="${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}"
     case "$locale_hint" in
-        nn* | NN* | nb* | NB* | no* | NO*) printf '%s\n' nn ;;
+        nn* | NN*) printf '%s\n' nn ;;
+        nb* | NB* | no* | NO*) printf '%s\n' nb ;;
         *) printf '%s\n' en ;;
     esac
 }
@@ -16,19 +17,26 @@ LANGUAGE="${MESHPI_LANGUAGE:-$DETECTED_LANGUAGE}"
 
 message() {
     case "$1:$LANGUAGE" in
-        invalid_language:nn) printf '%s' 'Språket må vere «nn» eller «en».' ;;
-        invalid_language:en) printf '%s' 'Language must be “nn” or “en”.' ;;
+        invalid_language:nn) printf '%s' 'Språket må vere «nb», «nn» eller «en».' ;;
+        invalid_language:nb) printf '%s' 'Språket må være «nb», «nn» eller «en».' ;;
+        invalid_language:en) printf '%s' 'Language must be “nb”, “nn” or “en”.' ;;
         unknown_argument:nn) printf '%s' 'Ukjent argument: %s' ;;
+        unknown_argument:nb) printf '%s' 'Ukjent argument: %s' ;;
         unknown_argument:en) printf '%s' 'Unknown argument: %s' ;;
         removed:nn) printf '%s' 'Fjerna MeshPi-programmet og LaunchAgent.' ;;
+        removed:nb) printf '%s' 'Fjernet MeshPi-programmet og LaunchAgent.' ;;
         removed:en) printf '%s' 'Removed the MeshPi application and LaunchAgent.' ;;
         purged:nn) printf '%s' 'Sletta konfigurasjon, loggar og lokale data.' ;;
+        purged:nb) printf '%s' 'Slettet konfigurasjon, logger og lokale data.' ;;
         purged:en) printf '%s' 'Deleted configuration, logs, and local data.' ;;
         kept_config:nn) printf '%s' 'Bevarte konfigurasjon: %s' ;;
+        kept_config:nb) printf '%s' 'Bevarte konfigurasjon: %s' ;;
         kept_config:en) printf '%s' 'Preserved configuration: %s' ;;
         kept_data:nn) printf '%s' 'Bevarte database, profilar og loggar: %s' ;;
+        kept_data:nb) printf '%s' 'Bevarte database, profiler og logger: %s' ;;
         kept_data:en) printf '%s' 'Preserved database, profiles, and logs: %s' ;;
         purge_hint:nn) printf '%s' 'Bruk --purge-data for å slette desse òg.' ;;
+        purge_hint:nb) printf '%s' 'Bruk --purge-data for å slette disse også.' ;;
         purge_hint:en) printf '%s' 'Use --purge-data to delete these as well.' ;;
         *) return 1 ;;
     esac
@@ -48,6 +56,7 @@ say_error() {
 for argument in "$@"; do
     case "$argument" in
         --purge-data) PURGE=1 ;;
+        --language=nb) LANGUAGE=nb ;;
         --language=nn) LANGUAGE=nn ;;
         --language=en) LANGUAGE=en ;;
         --language=*) say_error invalid_language; exit 2 ;;
@@ -55,7 +64,7 @@ for argument in "$@"; do
     esac
 done
 case "$LANGUAGE" in
-    nn | en) ;;
+    nb | nn | en) ;;
     *) LANGUAGE="$DETECTED_LANGUAGE"; say_error invalid_language; exit 2 ;;
 esac
 
