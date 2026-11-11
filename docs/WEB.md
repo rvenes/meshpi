@@ -6,7 +6,7 @@ nettlesarfana servernamnet, slik at du kan skilje fleire MeshPi-installasjonar. 
 SQLite-tilgang går gjennom den lokale IPC-en; terminalklienten kan brukast
 samstundes. Berre éin gateway er aktiv om gongen.
 
-Webserveren følgjer med **MeshPi 0.9.12** og er valfri ved installasjon.
+Webserveren følgjer med **MeshPi 0.9.13** og er valfri ved installasjon.
 Utgåva blir distribuert gjennom den ordinære kanalen for praktisk utprøving
 fram mot 1.0.0; det blir ikkje oppretta ein ny betakanal. HTTP-delen bruker
 Python sitt standardbibliotek, med avgrensa klienttal og tidsfristar. Han er
@@ -358,7 +358,7 @@ legacy-historikk ligg att i dei bevarte kopiane.
   vertsmaskina. Éin gateway er aktiv om gongen.
 - Historikkinnstillingar og stadfesta opprydding gjennom daemonen.
 - Éin delt IPC-watch for nettlesarane, med ny tilkopling og periodisk oppfrisking.
-- Tilpassa smal og brei skjerm. MeshPi 0.9.12 har bokmål,
+- Tilpassa smal og brei skjerm. MeshPi 0.9.13 har bokmål,
   nynorsk og engelsk. Vel språk på innloggingssida eller i **Innstillingar → Språk**.
   Valet blir lagra per nettlesar. Usende utkast blir bevarte ved språkbyte.
 - Under **Innstillingar** finn du **Tilkoplingar**, **Innlogging og nøklar**,
@@ -413,7 +413,7 @@ passkeys med dei nettlesarane og nøkkellagra brukarane faktisk har.
 
 WebAuthn bruker `fido2`. Plattformlåsene og dei signerte installasjonsfilene
 høyrer til same MeshPi-versjon. Kjeldekoden for denne utgåva ligg i
-[kjeldearkivet for 0.9.12](https://venes.org/meshpi/downloads/meshpi-0.9.12.tar.gz).
+[kjeldearkivet for 0.9.13](https://venes.org/meshpi/downloads/meshpi-0.9.13.tar.gz).
 Meld reproducerbare feil og testresultat i
 [GitHub Issues](https://github.com/rvenes/meshpi/issues), utan private data
 eller innloggingsløyndomar.

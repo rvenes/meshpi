@@ -1569,6 +1569,8 @@ def test_status_bar_budgets_long_host_and_endpoint_at_all_widths(monkeypatch):
 def test_node_info_uses_one_screen_for_metrics_position_and_traceroute(monkeypatch):
     monkeypatch.delenv("SSH_CONNECTION", raising=False)
     monkeypatch.delenv("SSH_TTY", raising=False)
+    monkeypatch.delenv("SSH_CLIENT", raising=False)
+    monkeypatch.setenv("DISPLAY", ":mock")
     async def scenario():
         backend = FakeBackend()
         backend.node_actions["!710365c8"] = [
@@ -1670,7 +1672,8 @@ def test_node_info_uses_one_screen_for_metrics_position_and_traceroute(monkeypat
             ] == position_calls
 
             opened = []
-            app.open_url = opened.append
+            monkeypatch.setattr("meshpi.tui._launch_map_browser",
+                                lambda url: opened.append(url) or True)
             url = (
                 "https://www.google.com/maps/search/"
                 "?api=1&query=60.1234567%2C5.1234567"

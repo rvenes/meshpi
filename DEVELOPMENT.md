@@ -1,7 +1,7 @@
 # Utviklingsstatus og vidare plan
 
 Sist oppdatert: 11. november 2026
-Utgåve: MeshPi 0.9.12 i ordinær kanal, med praktisk utprøving fram mot 1.0.0.
+Utgåve: MeshPi 0.9.13 i ordinær kanal, med praktisk utprøving fram mot 1.0.0.
 Eksisterande beta-verktøy blir bevart; webutgivinga opprettar ingen ny betakanal.
 
 Denne fila er den varige overleveringa mellom utviklingstrådar. Ho skal
@@ -58,7 +58,7 @@ oppdatering/tilbakeføring. Kvar utgiving må framleis følgje `RELEASING.md`;
 denne statusfila er ikkje dokumentasjon på at ein bestemt publiserings- eller
 plattformtest er fullført.
 
-[Kjeldearkivet for 0.9.12](https://venes.org/meshpi/downloads/meshpi-0.9.12.tar.gz)
+[Kjeldearkivet for 0.9.13](https://venes.org/meshpi/downloads/meshpi-0.9.13.tar.gz)
 er kjeldegrunnlaget for akkurat den utgivinga. GitHub-repoet kan ha ein annan
 revisjon. Feilrapportar og bidrag går gjennom
 [GitHub Issues](https://github.com/rvenes/meshpi/issues) og pull requests.
@@ -77,6 +77,14 @@ Det viktigaste skiljet mot ein vanleg klient er derfor:
 - trygg drift, oppdatering og tilbakeføring på Linux, macOS og Windows;
 - eitt tydeleg grensesnitt for operatørarbeid, ikkje alle funksjonane i den
   offisielle klienten.
+
+### 0.9.13: trygg kartopning i terminalen
+
+- Kartknappen under F10 og kartlenkjene i Nodeinfo bruker same opningsflyt.
+- SSH og terminalar utan skrivebord viser ei kopierbar lenkje med Esc-lukking.
+- Skrivebordsopnaren køyrer fråkopla frå terminalen og kan ikkje overta MeshPi
+  med ein tekstnettlesar eller eit cookiespørsmål.
+- Ingen avhengigheiter, plattformlåser eller databaseskjema er endra.
 
 ### 0.9.12: stabilisering før 1.0.0
 
@@ -341,6 +349,7 @@ og BLE i Docker, er ikkje ferdig plattformtesta.
 | 0.8.8b8 | Dato i Nodeinfo-loggar og synleg cooldown-nedtelling |
 | 0.8.9 | Stabil samling av dataskilje-, chat-, Nodeinfo- og Windows-rettingane frå 0.8.8-betaane |
 | 0.9.0 | Komplett nynorsk/engelsk terminalgrensesnitt med lagra språkval og direkte språkbyte |
+| 0.9.13 | Trygg kartopning frå F10 og Nodeinfo, med kopierbar lenkje over SSH |
 | 0.9.12 | Gatewaytryggleik, installasjonslås, TUI-resynk og retta ventesperrer |
 | 0.9.11 | Webinnlogging i 30 dagar, også etter omstart; varig tilbakekalling |
 | 0.9.10 | Bokmål, nynorsk og engelsk; retta installasjonsdialog og samla webtekst |

@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="MeshPi 0.9.12 for Linux, Raspberry Pi, macOS og Windows, med valfri privat webserver og passkeys.">
+  <meta name="description" content="MeshPi 0.9.13 for Linux, Raspberry Pi, macOS og Windows, med valfri privat webserver og passkeys.">
   <meta name="theme-color" content="#090d0e">
   <title data-en="MeshPi – Meshtastic in your terminal and browser">MeshPi – Meshtastic i terminal og nettlesar</title>
-  <link rel="stylesheet" href="styles.css?v=0.9.12">
-  <script src="script.js?v=0.9.12" defer></script>
+  <link rel="stylesheet" href="styles.css?v=0.9.13">
+  <script src="script.js?v=0.9.13" defer></script>
 </head>
-<body data-title-nn="MeshPi – Meshtastic i terminal og nettlesar" data-title-en="MeshPi – Meshtastic in your terminal and browser" data-description-nn="MeshPi 0.9.12 for Linux, Raspberry Pi, macOS og Windows, med valfri privat webserver og passkeys." data-description-en="MeshPi 0.9.12 for Linux, Raspberry Pi, macOS and Windows, with an optional private web server and passkeys.">
+<body data-title-nn="MeshPi – Meshtastic i terminal og nettlesar" data-title-en="MeshPi – Meshtastic in your terminal and browser" data-description-nn="MeshPi 0.9.13 for Linux, Raspberry Pi, macOS og Windows, med valfri privat webserver og passkeys." data-description-en="MeshPi 0.9.13 for Linux, Raspberry Pi, macOS and Windows, with an optional private web server and passkeys.">
   <a class="skip-link" href="#installasjon" data-en="Skip to installation">Gå til installasjon</a>
 
   <header class="site-header">
@@ -35,17 +35,17 @@
   <main>
     <section class="hero">
       <div class="hero-copy">
-        <div class="eyebrow"><span class="status-dot"></span> <span data-en="Version 0.9.12">Versjon 0.9.12</span></div>
+        <div class="eyebrow"><span class="status-dot"></span> <span data-en="Version 0.9.13">Versjon 0.9.13</span></div>
         <h1><span class="heading-line" data-en="Meshtastic chat.">Meshtastic-chat.</span><br><span data-en="Terminal and browser.">Terminal og nettlesar.</span></h1>
         <p class="lead" data-en="MeshPi keeps the radio connection open in the background, receives messages in real time, and gives you public chat, direct messages, history, and a node list in the terminal or optional private web interface.">
           MeshPi held radiosambandet ope i bakgrunnen, tek imot meldingar i
           sanntid og gir deg public chat, DM, historikk og nodeliste i eit
           terminalgrensesnitt eller eit valfritt privat webgrensesnitt.
         </p>
-        <p data-en-html="0.9.12 uses the ordinary channel for evaluation on the way to 1.0.0. No separate beta channel is needed. Bug reports and real-world feedback are welcome.">0.9.12 kjem i ordinær kanal for utprøving fram mot 1.0.0. Ingen eigen betakanal er nødvendig. Meld gjerne feil og erfaringar.</p>
+        <p data-en-html="0.9.13 uses the ordinary channel for evaluation on the way to 1.0.0. No separate beta channel is needed. Bug reports and real-world feedback are welcome.">0.9.13 kjem i ordinær kanal for utprøving fram mot 1.0.0. Ingen eigen betakanal er nødvendig. Meld gjerne feil og erfaringar.</p>
         <div class="hero-actions">
           <a class="button primary" href="#installasjon" data-en="Install MeshPi">Installer MeshPi</a>
-          <a class="button secondary" href="downloads/meshpi-0.9.12.tar.gz" data-en="Download 0.9.12 source">Last ned kjeldekode for 0.9.12</a>
+          <a class="button secondary" href="downloads/meshpi-0.9.13.tar.gz" data-en="Download 0.9.13 source">Last ned kjeldekode for 0.9.13</a>
         </div>
         <ul class="badges" aria-label="Teknisk informasjon" data-aria-en="Technical information">
           <li>Linux</li>
@@ -61,7 +61,7 @@
           <strong>meshpi</strong>
         </div>
         <div class="terminal-status">
-          <b>MeshPi 0.9.12</b><i>●</i> <span data-en="Connected">Tilkopla</span>
+          <b>MeshPi 0.9.13</b><i>●</i> <span data-en="Connected">Tilkopla</span>
           <span>BLE Meshtastic</span>
         </div>
         <div class="terminal-grid">
@@ -313,7 +313,7 @@
           Eksisterande konfigurasjon, tilkoplingsprofilar og SQLite-historikk
           blir tekne vare på.
         </p>
-        <p data-en-html="0.9.12 uses the ordinary channel. Update without &lt;code&gt;--beta&lt;/code&gt;; no separate beta channel is being created for the web interface. We welcome bug reports and feedback before 1.0.0.">0.9.12 bruker ordinær kanal. Oppdater utan <code>--beta</code>; det blir ikkje laga ein eigen betakanal for webgrensesnittet. Me tek imot feilrapportar og erfaringar før 1.0.0.</p>
+        <p data-en-html="0.9.13 uses the ordinary channel. Update without &lt;code&gt;--beta&lt;/code&gt;; no separate beta channel is being created for the web interface. We welcome bug reports and feedback before 1.0.0.">0.9.13 bruker ordinær kanal. Oppdater utan <code>--beta</code>; det blir ikkje laga ein eigen betakanal for webgrensesnittet. Me tek imot feilrapportar og erfaringar før 1.0.0.</p>
         <p data-en-html="pip and the Python libraries inside MeshPi are updated through signed MeshPi releases. Use &lt;code&gt;meshpi update&lt;/code&gt; instead of upgrading them manually with pip. Keep Python, the operating system and Tailscale updated separately.">pip og Python-biblioteka inne i MeshPi blir oppdaterte gjennom signerte MeshPi-utgivingar. Bruk <code>meshpi update</code> i staden for å oppgradere dei manuelt med pip. Hald Python, operativsystemet og Tailscale oppdaterte separat.</p>
         <p data-en-html="MeshPi checks &lt;a href=&quot;version.json&quot;&gt;version.json&lt;/a&gt; at startup. When a new version is available, the update command appears as a local system message in the chat log. It is never sent to the mesh network.">
           MeshPi sjekkar <a href="version.json">version.json</a> ved oppstart.
@@ -390,7 +390,7 @@
         <div><code>meshpi doctor [--offline]</code><span data-en="Run the self-test; offline does not require an available node.">Køyr sjølvtest; offline krev ikkje ein tilgjengeleg node.</span></div>
         <div><code data-en="meshpi export [FILE] [--force]">meshpi export [FIL] [--force]</code><span data-en="Export the entire database as UTF-8 JSON Lines without stopping the service.">Eksporter heile databasen som UTF-8 JSON Lines utan å stoppe tenesta.</span></div>
         <div><code>meshpi service {status,start,stop,enable,disable}</code><span data-en="Show or control the service and automatic startup.">Vis eller styr tenesta og autostart.</span></div>
-        <div><code>meshpi update [--check] [--yes] [--beta]</code><span data-en-html="Check for or install a signed update. 0.9.12 uses the ordinary channel; &lt;code&gt;--beta&lt;/code&gt; remains for older beta workflows.">Sjekk eller installer ei signert oppdatering. 0.9.12 bruker ordinær kanal; <code>--beta</code> er bevart for eldre betaflytar.</span></div>
+        <div><code>meshpi update [--check] [--yes] [--beta]</code><span data-en-html="Check for or install a signed update. 0.9.13 uses the ordinary channel; &lt;code&gt;--beta&lt;/code&gt; remains for older beta workflows.">Sjekk eller installer ei signert oppdatering. 0.9.13 bruker ordinær kanal; <code>--beta</code> er bevart for eldre betaflytar.</span></div>
         <div><code>meshpi language [nn|en]</code><span data-en="Show or choose the interface language.">Vis eller vel språk for brukargrensesnittet.</span></div>
         <div><code>meshpi status</code><span data-en="Show connection and transport status.">Vis sambands- og tilkoplingsstatus.</span></div>
         <div><code data-en="meshpi nodes [--search TEXT] [--sort name|seen|id]">meshpi nodes [--search TEKST] [--sort name|seen|id]</code><span data-en="Show, filter, and sort known nodes.">Vis, filtrer og sorter kjende nodar.</span></div>
@@ -450,9 +450,27 @@
       </div>
     </section>
 
+    <section id="release-0.9.13" class="section release-section">
+      <div class="section-heading">
+        <span data-en="Latest version">Siste versjon</span><h2>MeshPi 0.9.13</h2>
+      </div>
+      <div class="release-card">
+        <ul>
+          <li data-en="Fixed Open map under F10: a text browser can no longer take over the MeshPi terminal with a cookie prompt.">Retta Opne kart under F10: ein tekstnettlesar kan ikkje lenger overta MeshPi-terminalen med eit cookiespørsmål.</li>
+          <li data-en="Over SSH or without a desktop, copy the map link and open it on your own computer. Escape closes the dialog.">Over SSH eller utan skrivebord kan du kopiere kartlenkja og opne henne på di eiga maskin. Esc lukkar vindauget.</li>
+          <li data-en="Both node detail views share the safe map opener. Desktop browsers start independently of the terminal.">Begge nodevindauga bruker same trygge kartopning. Skrivebordsnettlesaren startar uavhengig av terminalen.</li>
+        </ul>
+        <div class="release-links">
+          <a href="downloads/meshpi-0.9.13-py3-none-any.whl" data-en="Download the Python package">Last ned Python-pakken</a>
+          <a href="downloads/meshpi-0.9.13.tar.gz" data-en="Download the exact 0.9.13 source">Last ned kjeldekode for nøyaktig 0.9.13</a>
+          <a href="https://github.com/rvenes/meshpi/issues" data-en="Report a bug or suggest an improvement">Meld feil eller foreslå forbetringar</a>
+        </div>
+        <p data-en="Profiles, history and sign-in keys are preserved.">Profilar, historikk og innloggingsnøklar blir bevarte.</p>
+      </div>
+    </section>
     <section id="release-0.9.12" class="section release-section">
       <div class="section-heading">
-        <span data-en="Latest version">Siste versjon</span>
+        <span data-en="Previous version">Førre versjon</span>
         <h2>MeshPi 0.9.12</h2>
       </div>
       <div class="release-card">

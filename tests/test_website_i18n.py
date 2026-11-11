@@ -119,11 +119,11 @@ def test_language_picker_is_responsive_and_stable_release_copy_is_current() -> N
     assert "@media (max-width: 900px)" in styles
     assert "@media (max-width: 720px)" in styles
 
-    assert "Versjon 0.9.12" in html
-    assert "Version 0.9.12" in html
-    assert "downloads/meshpi-0.9.12-py3-none-any.whl" in html
-    assert "downloads/meshpi-0.9.12.tar.gz" in html
-    assert 'id="release-0.9.12"' in html
+    assert "Versjon 0.9.13" in html
+    assert "Version 0.9.13" in html
+    assert "downloads/meshpi-0.9.13-py3-none-any.whl" in html
+    assert "downloads/meshpi-0.9.13.tar.gz" in html
+    assert 'id="release-0.9.13"' in html
     assert 'id="release-0.9.8"' in html
     assert 'id="release-0.9.7"' in html
     assert 'id="release-0.9.6"' in html

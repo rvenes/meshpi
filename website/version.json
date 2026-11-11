@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "product": "MeshPi",
-  "latest_version": "0.9.12",
-  "published_at": "2026-11-11T06:42:28Z",
+  "latest_version": "0.9.13",
+  "published_at": "2026-11-11T15:45:58Z",
   "minimum_python": "3.11",
-  "release_notes_url": "https://venes.org/meshpi/#release-0.9.12",
+  "release_notes_url": "https://venes.org/meshpi/#release-0.9.13",
   "package": {
-    "url": "https://venes.org/meshpi/downloads/meshpi-0.9.12-py3-none-any.whl",
-    "filename": "meshpi-0.9.12-py3-none-any.whl",
-    "sha256": "e1da93e68b5ff58b159c7dddccd756f347befc9d6a95a1d8b3bfa75a1113313e",
-    "size": 331749,
+    "url": "https://venes.org/meshpi/downloads/meshpi-0.9.13-py3-none-any.whl",
+    "filename": "meshpi-0.9.13-py3-none-any.whl",
+    "sha256": "bd399ea2deea6620893fd3a7fc72f3a24634dd7767c6d76054479ca5ebc0bfdc",
+    "size": 332551,
     "format": "wheel"
   },
   "locks": {
@@ -55,17 +55,14 @@
     }
   },
   "release_notes": [
-    "Gatewaybyte under mottak bevarer rett gatewayhistorikk.",
-    "Nodehandlingar i terminal og web er bundne til gatewayen brukaren såg.",
-    "Installatørane tillèt berre éi installering om gongen, også under tilbakeføring.",
-    "Terminalen hentar manglande historikk etter IPC-brot og bevarer utkast utan å gjenta sendingar.",
-    "Samtidige traceroute-førespurnader respekterer ventesperra.",
-    "Handlingsknappane i web blir tilgjengelege att etter ventesperre og mellombelse sambandsbrot."
+    "Retta kartknappen under F10, som kunne starte ein tekstnettlesar og låse terminalen ved eit cookiespørsmål.",
+    "Over SSH eller utan skrivebord blir kartlenkja vist i eit kopierbart vindauge som kan lukkast med Esc.",
+    "Begge nodevindauga bruker same trygge opning; skrivebordsnettlesaren køyrer utan tilgang til MeshPi-terminalen."
   ],
   "channel": "stable",
   "signature": {
     "algorithm": "rsa-pkcs1v15-sha256",
     "key_id": "meshpi-release-2026-01",
-    "value": "LBU5haZRKgr3Py52IEdzdFADjXHNL+zAP+M+eaolziJzoGjx+Eg34z3Ib4LxyzQgpMhNDw0J5i7uMRQtHvrFytD65upseNJrECXw9XW6+f2/+DFrkLCOMx3KYOb0E7CIV/RMx3RsGfGLecuf6mkhsVfzq2JGlVK468IaRsNqK4LHpiF/OmAu7VXkJdjhOzzBPbVzFM9R+qHGM+9gmGDyS/gP/jW+sN8WS6jPb60yuvf2aZD8xmm61E9mZdaybp9jk8TRvFAjJlfJN4jlca6kJ3ldw1w4z86CKkw/ZmAYMgKD/Qv1E9p9U84b6gCyhZcKAda+U1EMdYn8Vg6p/UF8uoGRUHELKX/56lVpjcpofNtZFbwjq+94Dg/2wKQAlbEGfQ5Gqb7IH+T57sJUw1esuYQ+8vKTQlimCVwAlsMfOPkOgx+Czv2ACMMDJn+f5C76VjZ/+xxUZyy+1Dtjasza4EAPl8GfYCd+zw2PXQfJAoPaW1JxxH3jgQWGS7hmB1Qo"
+    "value": "CNQWm+x+cRlNqQaWgTmXEH5VLzscXj660cPbkF66Za+inesUP8LqFw8Mts/vYgdGWUEAz4kh1C1mCKZNiMR5mmskyCMMu0vYNemIoxi8S0/Nqo25Uv/ccqBjw1h88LzTSMlqInOSwHd9XqT1uGxKd8kdEW0C/QBV7Ib1MMQme1X+yueaPnCywQ145MbgUhHsESiSzWICVe48Qn9rhZWcb5x/9ADU+VVBsYu3pImS+gbTCmRda6jxeE9TEFHFKLcL/STZGQiIv8IkivoSBxG9Lu2iyONLQByEg64wSk+7ad4ncb7SCNgbADxBZ9HPGdOv+9CTUhPHDTwlKKvFFJp5jzZY7St6Iay246BAh7fgzYRPsBkmua/bklN185wuGrcZinKQeuCokPfIu4Ba5SbpMtuOO3kiFQO0zy0RuHFeSU+vizq+lr353uQaj4V0Lw/3qWaonFcjXnCb/fLu5ePXXuxbm8NEqTlDU7xKUR7f3YftTvLt4MMcK4RXaKJi4ofy"
   }
 }

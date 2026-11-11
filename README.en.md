@@ -13,7 +13,7 @@ Nynorsk and English, including over SSH.
 > in critical or production-like environments.
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for development history, architecture
-decisions, and the prioritized roadmap. **MeshPi 0.9.12** includes an optional
+decisions, and the prioritized roadmap. **MeshPi 0.9.13** includes an optional
 private web interface using the same local IPC as the terminal client. It
 listens on loopback only; other devices connect through Tailscale Serve.
 Sign-in uses a local one-time code or passkeys at a fixed private HTTPS
@@ -21,9 +21,9 @@ address. See the [web guide](docs/WEB.md) for setup and test limitations.
 This release uses the ordinary update channel, without creating another beta
 channel. We are collecting real-world feedback on the way to 1.0.0.
 
-0.9.12 fixes gateway switches during reception and node actions, concurrent
-installations, terminal history recovery, and web/traceroute cooldowns. It is
-a stabilization release for evaluation before 1.0.0.
+0.9.13 fixes map opening under F10 and in Nodeinfo. Over SSH or without a
+desktop, use the copyable map link. A text browser can no longer take over
+the MeshPi terminal.
 
 ## Features
 
@@ -71,7 +71,7 @@ an IP address, hostname, COM port, serial path, or `ble://IDENTIFIER` manually.
 
 ## Language
 
-MeshPi 0.9.12 supports Bokmål (`nb`), Nynorsk (`nn`) and English (`en`)
+MeshPi 0.9.13 supports Bokmål (`nb`), Nynorsk (`nn`) and English (`en`)
 in the terminal and web app.
 
 ```bash
@@ -176,7 +176,7 @@ and SHA-256 values. Every Python dependency has an exact version and hash and
 is installed with `pip --require-hashes`. Existing configuration and data are
 preserved.
 
-### Optional web interface in 0.9.12
+### Optional web interface in 0.9.13
 
 The installers ask whether to activate web access on a fresh
 interactive installation; the default is no. Linux/macOS accept `--web` or
@@ -193,7 +193,7 @@ code revokes existing web sessions. If the daemon is unavailable, the same
 OS account as the web process can use `meshpi web-code --local` for recovery;
 see the web guide.
 
-In 0.9.12, `meshpi web-info` shows copyable steps for enabling disabled web
+In 0.9.13, `meshpi web-info` shows copyable steps for enabling disabled web
 access and setting up Tailscale Serve with the saved port and path. It does
 not change anything until you run the commands yourself.
 
@@ -289,7 +289,7 @@ Use `meshpi update --check` to check only. Installation requires typing the
 localized confirmation token (`UPDATE` in English or `OPPDATER` in Nynorsk),
 or explicit non-interactive confirmation with `--yes`.
 
-0.9.12 uses the ordinary update channel. Use the commands above without
+0.9.13 uses the ordinary update channel. Use the commands above without
 `--beta`. The older beta mechanism remains for compatibility but is not used
 for this rollout.
 
@@ -305,7 +305,7 @@ automatically restores the previous working release on failure.
 ## Source code and contributions
 
 MeshPi is free software under GPL-3.0-only. Download the
-[exact 0.9.12 source archive](https://venes.org/meshpi/downloads/meshpi-0.9.12.tar.gz)
+[exact 0.9.13 source archive](https://venes.org/meshpi/downloads/meshpi-0.9.13.tar.gz)
 to inspect or build this release. It also includes the web guide, installers,
 lock files, and tests. The development repository on
 [GitHub](https://github.com/rvenes/meshpi) may be at a different revision from

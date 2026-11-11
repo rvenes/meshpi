@@ -5,11 +5,14 @@ import math
 import os
 import re
 import socket
+import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
@@ -55,6 +58,24 @@ UpdateChecker = Callable[[Settings], UpdateNotice | None]
 
 def _t(key: str, **values: Any) -> str:
     return tr(f"tui.{key}", **values)
+
+
+def _launch_map_browser(url: str) -> bool:
+    """Desktop launchers must never inherit the TUI's terminal or input."""
+    try:
+        if os.name == "nt":
+            os.startfile(url)
+            return True
+        opener = "/usr/bin/open" if sys.platform == "darwin" else "/usr/bin/xdg-open"
+        if not Path(opener).is_file():
+            return False
+        subprocess.Popen(  # nosec B603
+            [opener, url], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True,
+        )
+        return True
+    except OSError:
+        return False
 
 
 def _localize_bindings(node: Any, bindings: tuple[tuple[str, str, str, bool], ...]) -> None:
@@ -1558,16 +1579,7 @@ class NodeInfoScreen(ModalScreen[None]):
         self._end_action_cooldown(action)
 
     def action_open_map(self, url: str) -> None:
-        if not url.startswith("https://www.google.com/maps/search/?"):
-            self.notify(_t("map.invalid"), severity="error")
-            return
-        if os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY"):
-            self.notify(
-                _t("map.ssh_hint"),
-                title=_t("map.ssh_title"),
-            )
-            return
-        self.app.open_url(url)
+        self.app.open_map(url)
 
     def action_close(self) -> None:
         self.dismiss(None)
@@ -1782,8 +1794,45 @@ class StoredNodeScreen(ModalScreen[None]):
         if event.button.id == "stored-node-map":
             position = _known_position(self.node)
             if position:
-                self.app.open_url(_google_maps_url(position))
+                self.app.open_map(_google_maps_url(position))
         elif event.button.id == "stored-node-close":
+            self.action_close()
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
+class MapLinkScreen(ModalScreen[None]):
+    BINDINGS = [Binding("escape", "close", "", priority=True)]
+    DEFAULT_CSS = """
+    MapLinkScreen { align: center middle; background: rgba(0,0,0,0.8); }
+    #map-link-dialog { width: 88; max-width: 96%; height: auto;
+        padding: 1 2; border: round #58d65c; background: #0d1112; }
+    #map-link-dialog Label { height: auto; margin-bottom: 1; }
+    #map-link-buttons { height: 3; margin-top: 1; }
+    #map-link-buttons Button { width: 1fr; }
+    """
+
+    def __init__(self, url: str):
+        super().__init__()
+        self.url = url
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="map-link-dialog"):
+            yield Label(_t("map.link_title"))
+            yield Label(_t("map.link_hint"))
+            yield Input(self.url, id="map-link-url")
+            with Horizontal(id="map-link-buttons"):
+                yield Button(_t("map.copy"), id="map-link-copy")
+                yield Button(_t("common.close"), id="map-link-close")
+
+    @on(Button.Pressed)
+    def choose(self, event: Button.Pressed) -> None:
+        event.stop()
+        if event.button.id == "map-link-copy":
+            self.app.copy_to_clipboard(self.url)
+            self.notify(_t("map.copied"))
+        elif event.button.id == "map-link-close":
             self.action_close()
 
     def action_close(self) -> None:
@@ -5158,6 +5207,17 @@ class MeshPiTUI(App[str | None]):
             return
         self.copy_to_clipboard(self.update_notice.command)
         self.notify(_t("notice.update_command_copied"))
+
+    def open_map(self, url: str) -> None:
+        if not url.startswith("https://www.google.com/maps/search/?"):
+            self.notify(_t("map.invalid"), severity="error")
+            return
+        remote = any(os.environ.get(key) for key in ("SSH_CONNECTION", "SSH_TTY", "SSH_CLIENT"))
+        headless = sys.platform.startswith("linux") and not (
+            os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
+        )
+        if remote or headless or not _launch_map_browser(url):
+            self.push_screen(MapLinkScreen(url))
 
     def action_settings(self) -> None:
         if isinstance(self.screen, (StoredNodeScreen, RemoveNodeScreen,

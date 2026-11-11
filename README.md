@@ -14,16 +14,16 @@ og gir eit nynorsk fullskjermsgrensesnitt og vanlege CLI-kommandoar over SSH.
 Sjå [DEVELOPMENT.md](DEVELOPMENT.md) for utviklingshistorikk, arkitekturval og
 prioritert roadmap for mellom anna fleirkanalar og Blåtann/BLE.
 
-**MeshPi 0.9.12** har eit valfritt privat webgrensesnitt over same lokale IPC som
+**MeshPi 0.9.13** har eit valfritt privat webgrensesnitt over same lokale IPC som
 terminalklienten. Det lyttar berre lokalt og kan nåast frå andre einingar
 gjennom Tailscale Serve. Innlogging bruker lokal eingongskode eller passkeys
 på ei fast privat HTTPS-adresse. Sjå [webrettleiinga](docs/WEB.md) for oppsett,
 installasjonsval og testgrenser. Utgåva går gjennom den ordinære kanalen,
 utan ein ny betakanal. Me samlar praktiske erfaringar fram mot 1.0.0.
 
-0.9.12 rettar gatewaybyte under mottak og nodehandlingar, samtidige
-installasjonar, gjenoppretting av terminalhistorikk og ventesperrer i web og
-traceroute. Dette er ei stabiliseringsutgåve for utprøving før 1.0.0.
+0.9.13 rettar kartopninga under F10 og i Nodeinfo. Over SSH eller utan
+skrivebord får du ei kopierbar kartlenkje; ein tekstnettlesar kan ikkje
+lenger overta MeshPi-terminalen.
 
 ## Funksjonar
 
@@ -72,7 +72,7 @@ BLE-einingar. Du kan òg skrive IP, vertsnamn, COM-port, seriellsti eller
 
 ## Språk
 
-MeshPi 0.9.12 har bokmål, nynorsk og engelsk i terminalen og webappen.
+MeshPi 0.9.13 har bokmål, nynorsk og engelsk i terminalen og webappen.
 Vis gjeldande språk eller lagre eit nytt terminalval med:
 
 ```bash
@@ -181,7 +181,7 @@ SHA-256. Alle Python-avhengigheiter har eksakt versjon og hash og blir
 installerte med `pip --require-hashes`. Eksisterande konfigurasjon og data blir
 bevarte.
 
-### Valfritt webgrensesnitt i 0.9.12
+### Valfritt webgrensesnitt i 0.9.13
 
 Installatørane spør ved fersk interaktiv installasjon om web
 skal aktiverast; standard er nei. Bruk `--web`/`--no-web` på Linux og macOS,
@@ -198,7 +198,7 @@ Ein ny eingongskode avsluttar eksisterande websesjonar. Dersom daemonen
 er utilgjengeleg, kan same OS-konto som webprosessen bruke
 `meshpi web-code --local` til gjenoppretting; sjå webrettleiinga.
 
-I 0.9.12 viser `meshpi web-info` kopierbare steg for å slå på web som er
+I 0.9.13 viser `meshpi web-info` kopierbare steg for å slå på web som er
 avslått, og for å setje opp Tailscale Serve med den lagra porten og stien.
 Rettleiinga endrar ingenting før du sjølv køyrer kommandoane.
 
@@ -302,7 +302,7 @@ Bruk `meshpi update --check` for berre å sjekke. Sjølve installasjonen krev at
 du skriv `OPPDATER`, eller at du legg til `--yes` for ei uttrykkeleg
 ikkje-interaktiv stadfesting.
 
-0.9.12 blir distribuert gjennom den ordinære kanalen. Bruk oppdateringskommandoane
+0.9.13 blir distribuert gjennom den ordinære kanalen. Bruk oppdateringskommandoane
 ovanfor utan `--beta`. Den eldre beta-mekanismen er bevart for kompatibilitet,
 men blir ikkje brukt til denne utrullinga.
 
@@ -321,7 +321,7 @@ helsesjekken feilar, blir førre fungerande versjon sett tilbake automatisk.
 ## Kjeldekode og bidrag
 
 MeshPi er fri programvare under GPL-3.0-only. Last ned
-[kjeldearkivet for nøyaktig 0.9.12](https://venes.org/meshpi/downloads/meshpi-0.9.12.tar.gz)
+[kjeldearkivet for nøyaktig 0.9.13](https://venes.org/meshpi/downloads/meshpi-0.9.13.tar.gz)
 for å undersøkje eller byggje denne utgåva. Arkivet inneheld òg webrettleiing,
 installatørar, låsefiler og testar. Utviklingsrepoet på
 [GitHub](https://github.com/rvenes/meshpi) kan ha ein annan revisjon enn
@@ -660,7 +660,7 @@ Alle CLI-kommandoane:
 | `meshpi doctor [--offline]` | Køyr sjølvtest; `--offline` krev ikkje ein tilgjengeleg node. |
 | `meshpi export [FIL] [--force]` | Eksporter den valde gateway-databasen som UTF-8 JSON Lines. |
 | `meshpi service {status,start,stop,enable,disable}` | Vis eller styr bakgrunnstenesta og autostart. |
-| `meshpi update [--check] [--yes] [--beta]` | Sjekk eller installer ei signert oppdatering; `--beta` er bevart for eldre betaflytar; 0.9.12 bruker ordinær kanal. |
+| `meshpi update [--check] [--yes] [--beta]` | Sjekk eller installer ei signert oppdatering; `--beta` er bevart for eldre betaflytar; 0.9.13 bruker ordinær kanal. |
 | `meshpi language [nb\|nn\|en]` | Vis eller lagre språkvalet for brukargrensesnittet. |
 | `meshpi status` | Vis sambands- og tilkoplingsstatus. |
 | `meshpi nodes [--search TEKST] [--sort name\|seen\|id]` | Vis, filtrer og sorter kjende nodar. |
